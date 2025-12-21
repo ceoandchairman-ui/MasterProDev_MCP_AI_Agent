@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: mcpagent-postgres
+    environment:
+      POSTGRES_DB: mcpagent
+      POSTGRES_USER: mcpagent
+      POSTGRES_PASSWORD: mcpagent_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/postgres:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcpagent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mcpagent-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: mcpagent-redis
+    command: redis-server --requirepass mcpagent_dev_password --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mcpagent-network
+
+  # MCP Host
+  mcp-host:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.mcp_host
+    container_name: mcpagent-mcp-host
+    env_file:
+      - ../.env
+    
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mcpagent-network
+
+  # Calendar MCP Server
+  calendar-server:
+    build:
+      context: ..
+      dockerfile: mcp_servers/calendar_server/Dockerfile
+    container_name: mcpagent-calendar
+    ports:
+      - "8001:8001"
+    environment:
+      PORT: 8001
+      DEBUG: "true"
+    networks:
+      - mcpagent-network
+
+  # Gmail MCP Server
+  gmail-server:
+    build:
+      context: ..
+      dockerfile: mcp_servers/gmail_server/Dockerfile
+    container_name: mcpagent-gmail
+    ports:
+      - "8002:8002"
+    environment:
+      PORT: 8002
+      DEBUG: "true"
+    networks:
+      - mcpagent-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  mcpagent-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

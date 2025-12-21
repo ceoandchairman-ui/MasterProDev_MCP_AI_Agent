@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent Chat</title>
+    <link rel="stylesheet" href="/static/chat-widget.css">
+</head>
+<body>
+    <!-- Chat Widget Container -->
+    <div id="ai-chat-widget" class="chat-widget">
+        <!-- Chat Bubble Button -->
+        <button id="chat-toggle" class="chat-bubble" aria-label="Open chat">
+            <svg class="chat-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z" fill="currentColor"/>
+                <circle cx="7" cy="9" r="1.5" fill="white"/>
+                <circle cx="12" cy="9" r="1.5" fill="white"/>
+                <circle cx="17" cy="9" r="1.5" fill="white"/>
+            </svg>
+            <svg class="close-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z" fill="currentColor"/>
+            </svg>
+        </button>
+
+        <!-- Chat Window -->
+        <div id="chat-window" class="chat-window">
+            <!-- Chat Header -->
+            <div class="chat-header">
+                <div class="header-content">
+                    <div class="logo-container">
+                        <svg class="logo-svg" viewBox="0 0 300 200" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Arrow Path -->
+                            <path d="M 20 150 Q 75 100, 150 120 T 280 30" 
+                                  stroke="#10b981" 
+                                  stroke-width="25" 
+                                  fill="none" 
+                                  stroke-linecap="round"/>
+                            
+                            <!-- Arrow Head -->
+                            <path d="M 260 10 L 280 30 L 270 50 Z" 
+                                  fill="#10b981"/>
+                            
+                            <!-- Circles on the path -->
+                            <circle cx="50" cy="135" r="12" fill="#fbbf24"/>
+                            <circle cx="50" cy="135" r="8" fill="#f59e0b" opacity="0.7"/>
+                            
+                            <circle cx="100" cy="115" r="12" fill="#fbbf24"/>
+                            <circle cx="100" cy="115" r="8" fill="#f59e0b" opacity="0.7"/>
+                            
+                            <circle cx="150" cy="120" r="12" fill="#fbbf24"/>
+                            <circle cx="150" cy="120" r="8" fill="#f59e0b" opacity="0.7"/>
+                            
+                            <circle cx="200" cy="90" r="12" fill="#fbbf24"/>
+                            <circle cx="200" cy="90" r="8" fill="#f59e0b" opacity="0.7"/>
+                            
+                            <circle cx="250" cy="50" r="12" fill="#fbbf24"/>
+                            <circle cx="250" cy="50" r="8" fill="#f59e0b" opacity="0.7"/>
+                        </svg>
+                    </div>
+                    <div class="header-text">
+                        <h3 class="chat-title">AI Assistant</h3>
+                        <p class="chat-status">
+                            <span class="status-dot"></span>
+                            Online
+                        </p>
+                    </div>
+                </div>
+                <button id="minimize-chat" class="minimize-button" aria-label="Minimize chat">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M19 13H5V11H19V13Z" fill="currentColor"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Chat Messages -->
+            <div id="chat-messages" class="chat-messages">
+                <div class="message bot-message">
+                    <div class="message-avatar">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="currentColor"/>
+                            <path d="M2 17L12 22L22 17V11L12 16L2 11V17Z" fill="currentColor" opacity="0.7"/>
+                        </svg>
+                    </div>
+                    <div class="message-content">
+                        <p>Hi! I'm your AI assistant. How can I help you today?</p>
+                        <span class="message-time">Just now</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="chat-input-container">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="chat-input" 
+                        class="chat-input" 
+                        placeholder="Type your message..."
+                        rows="1"
+                        maxlength="1000"
+                    ></textarea>
+                    <button id="send-button" class="send-button" aria-label="Send message">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M2 21L23 12L2 3V10L17 12L2 14V21Z" fill="currentColor"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="powered-by">
+                    Powered by <span class="brand-text">Master<span class="pro">Pro</span><span class="dev">Dev</span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/chat-widget.js"></script>
+</body>
+</html>

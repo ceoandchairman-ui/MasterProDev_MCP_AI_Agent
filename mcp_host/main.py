@@ -1,0 +1,247 @@
+"""FastAPI server for MCP Host"""
+
+from fastapi import FastAPI, HTTPException, Depends, status, Header
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from datetime import datetime, timedelta, timezone
+from contextlib import asynccontextmanager
+from pydantic_settings import BaseSettings
+import logging
+from typing import Optional
+from pathlib import Path
+
+from .config import settings
+from .models import (
+    LoginRequest, ChatRequest, TokenResponse, ChatResponse,
+    UserProfileResponse, HealthResponse
+)
+from .auth import hash_password, verify_password, create_access_token, decode_token
+from .state import state_manager
+from .agent import mcp_agent
+
+# Configure logging
+logging.basicConfig(level=settings.LOG_LEVEL)
+logger = logging.getLogger(__name__)
+
+# Get static directory path
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+# Lifespan event handler
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle startup and shutdown events"""
+    # Startup
+    logger.info("Starting MCP Host...")
+    await state_manager.initialize()
+    await mcp_agent.initialize()
+    logger.info("MCP Host started successfully")
+    yield
+    # Shutdown
+    logger.info("Shutting down MCP Host...")
+    await state_manager.shutdown()
+    logger.info("MCP Host shut down")
+
+
+# Create FastAPI app
+app = FastAPI(
+    title="MCP Host - Master Pro Dev AI Agent",
+    version="1.0.0",
+    description="AI Agent with MCP servers for Calendar and Gmail",
+    lifespan=lifespan
+)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Helper functions
+def get_token_from_header(authorization: Optional[str] = None) -> str:
+    """Extract token from authorization header"""
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization header"
+        )
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header"
+        )
+    return parts[1]
+
+
+# Routes
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """System health check"""
+    return HealthResponse(
+        status="healthy",
+        timestamp=datetime.now(timezone.utc),
+        services={
+            "api": "ok",
+            "database": "ok",  # TODO: Check actual status
+            "redis": "ok",     # TODO: Check actual status
+        }
+    )
+
+
+@app.post("/login", response_model=TokenResponse)
+async def login(request: LoginRequest):
+    """User login - returns JWT token"""
+    # TODO: Verify user against database
+    # For now, use dummy guest user
+    user_id = "00000000-0000-0000-0000-000000000123"
+    
+    # Create tokens
+    access_token = create_access_token(
+        data={"sub": user_id, "email": request.email},
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    refresh_token = create_access_token(
+        data={"sub": user_id, "type": "refresh"}
+    )
+    
+    # Create session
+    await state_manager.create_session(user_id, access_token, "employee")
+    
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )
+
+
+@app.post("/logout")
+async def logout(authorization: Optional[str] = Header(None)):
+    """Logout - invalidate session"""
+    token = get_token_from_header(authorization)
+    await state_manager.invalidate_session(token)
+    return {"message": "Logged out successfully"}
+
+
+@app.get("/user/profile", response_model=UserProfileResponse)
+async def get_profile(authorization: Optional[str] = Header(None)):
+    """Get user profile"""
+    token = get_token_from_header(authorization)
+    payload = decode_token(token)
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+    
+    return UserProfileResponse(
+        id=payload.get("sub"),
+        email=payload.get("email"),
+        name="User",
+        user_type="employee",
+        role="employee"
+    )
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)):
+    """Chat endpoint - processes messages through LangChain agent"""
+    token = get_token_from_header(authorization)
+    payload = decode_token(token)
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+    
+    user_id = payload.get("sub")
+    conversation_id = request.conversation_id or f"conv_{user_id}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+    
+    # Get conversation history for context
+    context = await state_manager.get_conversation_context(user_id, limit=5)
+    conversation_history: list[dict[str, str]] = []
+    if context and "messages" in context:
+        for msg in context["messages"]:
+            user_text = msg.get("message")
+            if user_text:
+                conversation_history.append({"role": "user", "content": user_text})
+            assistant_text = msg.get("response")
+            if assistant_text:
+                conversation_history.append({"role": "assistant", "content": assistant_text})
+    
+    # Process message through LangChain agent
+    agent_result = await mcp_agent.process_message(
+        message=request.message,
+        conversation_history=conversation_history
+    )
+    
+    response_text = agent_result.get("response", "I couldn't process that request.")
+    tool_calls = agent_result.get("tool_calls", [])
+    
+    # Determine which tool was used (if any)
+    tool_used = None
+    if tool_calls and len(tool_calls) > 0:
+        tool_used = tool_calls[0].get("tool", "multiple_tools")
+    
+    # Save conversation
+    await state_manager.save_conversation(
+        user_id, conversation_id, request.message, response_text
+    )
+    
+    return ChatResponse(
+        response=response_text,
+        tool_used=tool_used,
+        conversation_id=conversation_id
+    )
+
+
+@app.get("/conversations")
+async def get_conversations(authorization: Optional[str] = Header(None)):
+    """Get user conversations"""
+    token = get_token_from_header(authorization)
+    payload = decode_token(token)
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+    
+    # TODO: Retrieve from database
+    return {"conversations": []}
+
+
+@app.get("/")
+async def root():
+    """Redirect to login page"""
+    login_path = STATIC_DIR / "login.html"
+    return FileResponse(login_path)
+
+
+@app.get("/chat")
+async def chat_page():
+    """Serve authenticated chat page"""
+    embed_path = STATIC_DIR / "chat-embed.html"
+    return FileResponse(embed_path)
+
+
+@app.get("/chat-embed")
+async def chat_embed():
+    """Serve chat embed page (legacy)"""
+    embed_path = STATIC_DIR / "chat-embed.html"
+    return FileResponse(embed_path)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host=settings.HOST, port=settings.PORT)

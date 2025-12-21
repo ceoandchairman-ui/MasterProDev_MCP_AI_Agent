@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic pydantic-settings
+
+COPY ../mcp_servers ./mcp_servers
+	COPY ../.env .env
+COPY ../mcp_servers/calendar_server/credentials.json ./mcp_servers/calendar_server/credentials.json
+COPY ../mcp_servers/gmail_server/credentials.json ./mcp_servers/gmail_server/credentials.json
+
+EXPOSE 8001
+EXPOSE 8002
+
+# Default to calendar server (override in docker-compose.yml for gmail)
+CMD ["python", "-m", "uvicorn", "mcp_servers.calendar_server.main:app", "--host", "0.0.0.0", "--port", "8001"]
