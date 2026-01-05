@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -86,13 +84,46 @@ services:
     networks:
       - mcpagent-network
 
+  # Weaviate Vector Database
+  weaviate:
+    image: semitechnologies/weaviate:1.25.3
+    container_name: mcpagent-weaviate
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      DEFAULT_VECTORIZER_MODULE: "text2vec-huggingface"
+      ENABLE_MODULES: "text2vec-huggingface"
+      HUGGINGFACE_APIKEY: ${HUGGINGFACE_API_KEY}
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      CLUSTER_HOSTNAME: "node1"
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    networks:
+      - mcpagent-network
+
+  # Seeder Service
+  seeder:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.seeder
+    container_name: mcpagent-seeder
+    env_file:
+      - ../.env
+    volumes:
+      - ../Company_Documents:/app/Company_Documents
+    depends_on:
+      - weaviate
+    networks:
+      - mcpagent-network
+
 volumes:
   postgres_data:
   redis_data:
+  weaviate_data:
 
 networks:
   mcpagent-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16

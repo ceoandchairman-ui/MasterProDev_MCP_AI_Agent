@@ -7,6 +7,7 @@ from langchain.tools import BaseTool
 import httpx
 
 from .config import settings
+from .rag_service import rag_service
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,47 @@ class CalendarDeleteEventTool(BaseTool):
                 return result
         except Exception as e:
             logger.error(f"✗ Calendar delete error: {e}")
+            return {"status": "error", "error": str(e)}
+
+
+# ============================================================================
+# KNOWLEDGE BASE TOOL
+# ============================================================================
+
+class KnowledgeSearchInput(BaseModel):
+    """Input schema for searching the knowledge base"""
+    query: str = Field(description="The question to ask the knowledge base.")
+
+
+class KnowledgeSearchTool(BaseTool):
+    """Tool to search the internal knowledge base for information."""
+    
+    name: str = "search_knowledge_base"
+    description: str = """Search the internal knowledge base for documentation about tools, business policies, or other stored information.
+    Use this when you are unsure how a tool works, what its parameters are, or what the rules are for performing an action.
+    Example: 'What are the parameters for create_calendar_event?', 'What are the business hours for meetings?'"""
+    args_schema: Type[BaseModel] = KnowledgeSearchInput
+    
+    def _run(self, query: str) -> str:
+        """Synchronous run (not used in async context)"""
+        raise NotImplementedError("Use async version")
+    
+    async def _arun(self, query: str) -> Dict[str, Any]:
+        """Search the knowledge base asynchronously"""
+        try:
+            # Apply query processing (spelling correction, alias expansion)
+            from mcp_host.query_processor import QueryProcessor
+            processor = QueryProcessor()
+            processed_query = processor.process_query(query)
+            
+            logger.info(f"🔍 Searching knowledge base for: '{query}'")
+            if processed_query != query:
+                logger.info(f"   → Processed query: '{processed_query}'")
+            
+            results = rag_service.search(query=processed_query)
+            return {"status": "success", "results": results}
+        except Exception as e:
+            logger.error(f"✗ Knowledge base search error: {e}")
             return {"status": "error", "error": str(e)}
 
 
@@ -296,6 +338,9 @@ def get_all_mcp_tools() -> list[BaseTool]:
         CalendarGetEventsTool(),
         CalendarCreateEventTool(),
         CalendarDeleteEventTool(),
+        
+        # Knowledge base tools
+        KnowledgeSearchTool(),
         
         # Gmail tools
         GmailGetEmailsTool(),

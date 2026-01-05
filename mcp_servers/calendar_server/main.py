@@ -88,6 +88,78 @@ class CalendarMCPServer(BaseMCPServer):
                     </body>
                 </html>
                 """)
+        
+        # Register OAuth login endpoint
+        @self.app.get("/auth")
+        async def start_auth():
+            """Start OAuth flow and return authorization URL"""
+            try:
+                flow = Flow.from_client_secrets_file(
+                    self._creds_path,
+                    scopes=self._scopes,
+                    redirect_uri="http://localhost:8001/callback"
+                )
+                
+                auth_url, state = flow.authorization_url(prompt='consent')
+                
+                # Store flow for later use in callback
+                self._auth_flow = flow
+                self._auth_state = state
+                
+                return HTMLResponse(f"""
+                <html>
+                    <head>
+                        <style>
+                            body {{
+                                font-family: Arial, sans-serif;
+                                max-width: 600px;
+                                margin: 50px auto;
+                                padding: 20px;
+                                background: #f5f5f5;
+                            }}
+                            .container {{
+                                background: white;
+                                padding: 30px;
+                                border-radius: 8px;
+                                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                            }}
+                            h1 {{
+                                color: #1f2937;
+                            }}
+                            .auth-link {{
+                                display: inline-block;
+                                padding: 12px 24px;
+                                background: #4285f4;
+                                color: white;
+                                text-decoration: none;
+                                border-radius: 4px;
+                                margin-top: 20px;
+                            }}
+                            .auth-link:hover {{
+                                background: #357ae8;
+                            }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="container">
+                            <h1>🔐 Google Calendar Authorization</h1>
+                            <p>Click the button below to authorize access to your Google Calendar:</p>
+                            <a href="{auth_url}" class="auth-link">Authorize with Google</a>
+                            <p style="margin-top: 20px; color: #666;">You will be redirected back after authorization.</p>
+                        </div>
+                    </body>
+                </html>
+                """)
+            except Exception as e:
+                return HTMLResponse(f"""
+                <html>
+                    <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                        <h1>✗ Authorization Error</h1>
+                        <p>Error: {str(e)}</p>
+                        <p>Make sure credentials.json exists in the calendar_server directory.</p>
+                    </body>
+                </html>
+                """)
 
     def get_available_tools(self) -> List[Dict[str, Any]]:
         """Return available calendar tools"""

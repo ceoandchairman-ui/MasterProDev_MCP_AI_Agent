@@ -45,8 +45,17 @@ class Settings(BaseSettings):
     HUGGINGFACE_MODEL: Optional[str] = None
     ACTIVE_LLM_PROVIDER: Optional[str] = None
 
+    # Weaviate
+    WEAVIATE_HOST: str = "weaviate"
+    WEAVIATE_PORT: int = 8080
+    WEAVIATE_GRPC_PORT: int = 50051
+
+    # Knowledge Base
+    KNOWLEDGE_BASE_PATH: str = "knowledge_base"
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+
     class Config:
-        env_file = "/app/.env"
+        env_file = ".env"
         case_sensitive = True
         extra = "ignore"  # Ignore extra fields from .env
 

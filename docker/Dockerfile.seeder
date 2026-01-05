@@ -1,0 +1,30 @@
+# Use an official Python runtime as a parent image
+FROM python:3.11-slim
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy the requirements file into the container at /app
+COPY requirements.txt .
+
+# Install build-essential tools for compiling packages
+RUN apt-get update && apt-get install -y build-essential
+
+# Install CPU-only torch first to avoid downloading GPU packages
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install any needed packages specified in requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Download ALL necessary NLTK data for unstructured library
+RUN python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab'); nltk.download('averaged_perceptron_tagger'); nltk.download('averaged_perceptron_tagger_eng'); nltk.download('universal_tagset')"
+
+# Download spaCy model
+RUN python -m spacy download en_core_web_sm
+
+# Copy the seeder script and the mcp_host module
+COPY seed.py .
+COPY mcp_host/ ./mcp_host/
+
+# The command to run when the container launches
+CMD ["python", "seed.py"]

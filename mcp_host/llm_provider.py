@@ -4,6 +4,8 @@ import logging
 from typing import Optional, Dict, Any, List
 from abc import ABC, abstractmethod
 from enum import Enum
+import json
+import httpx
 from mcp_host.config import settings
 
 logger = logging.getLogger(__name__)
@@ -16,7 +18,7 @@ class LLMType(Enum):
     OLLAMA = "ollama"  # Ollama local (open source)
 
 
-class BaseLLMProvider(ABC):
+class LLMProvider(ABC):
     """Base class for LLM providers"""
     
     def __init__(self, model_name: str):
@@ -51,7 +53,90 @@ class BaseLLMProvider(ABC):
         pass
 
 
-class BedrockProvider(BaseLLMProvider):
+class HuggingFaceModelHandler(ABC):
+    """Base class for handling different Hugging Face model capabilities."""
+    
+    @abstractmethod
+    def prepare_tool_payload(self, payload: Dict[str, Any], tools: List[Dict[str, Any]]):
+        """Modifies the payload to include tools in the model-specific format."""
+        pass
+
+    @abstractmethod
+    def parse_tool_response(
+        self, choice: Dict[str, Any], tools: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Parses the model's response to extract text and tool calls."""
+        pass
+
+
+class KimiModelHandler(HuggingFaceModelHandler):
+    """Handler for Kimi-K2 native tool calling."""
+
+    def prepare_tool_payload(self, payload: Dict[str, Any], tools: List[Dict[str, Any]]):
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+    def parse_tool_response(
+        self, choice: Dict[str, Any], tools: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        message = choice.get("message", {})
+        tool_calls = []
+
+        if choice.get("finish_reason") == "tool_calls" and "tool_calls" in message:
+            for tc in message.get("tool_calls", []):
+                try:
+                    arguments = json.loads(tc.get("function", {}).get("arguments", "{}"))
+                except json.JSONDecodeError:
+                    arguments = {}
+                
+                tool_calls.append({
+                    "id": tc.get("id"),
+                    "function": tc.get("function", {}).get("name"),
+                    "arguments": arguments,
+                })
+        
+        return {
+            "text": message.get("content", ""),
+            "tool_calls": tool_calls,
+            "finish_reason": choice.get("finish_reason", "stop"),
+        }
+
+
+class LlamaModelHandler(HuggingFaceModelHandler):
+    """Fallback handler for Llama and other models without native tool calling."""
+
+    def prepare_tool_payload(self, payload: Dict[str, Any], tools: List[Dict[str, Any]]):
+        # Llama doesn't have a native tool format, so we don't modify the payload.
+        # The agent must rely on text parsing of the response.
+        pass
+
+    def parse_tool_response(
+        self, choice: Dict[str, Any], tools: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        message = choice.get("message", {})
+        text_response = message.get("content", "")
+        tool_calls = []
+
+        # Fallback: very basic text search for tool names.
+        if tools and text_response:
+            for tool in tools:
+                tool_name = tool.get("function", {}).get("name", "")
+                if tool_name and tool_name.lower() in text_response.lower():
+                    tool_calls.append({
+                        "id": f"fallback_{tool_name}",
+                        "function": tool_name,
+                        "arguments": {},  # Cannot reliably parse args from text
+                    })
+
+        return {
+            "text": text_response,
+            "tool_calls": tool_calls,
+            "finish_reason": choice.get("finish_reason", "stop"),
+        }
+
+
+class BedrockProvider(LLMProvider):
     """AWS Bedrock LLM Provider (Proprietary)"""
     
     def __init__(self, model_name: str = "amazon.nova-pro-v1:0"):
@@ -128,27 +213,36 @@ class BedrockProvider(BaseLLMProvider):
         }
 
 
-class HuggingFaceProvider(BaseLLMProvider):
-    """Hugging Face Inference API Provider (Open Source)"""
+class HuggingFaceProvider(LLMProvider):
+    """Hugging Face Inference API Provider using a factory for model-specific handlers."""
     
-    def __init__(self, model_name: str = "meta-llama/Meta-Llama-3-8B-Instruct"):
+    def __init__(self, model_name: str = "moonshotai/Kimi-K2-Instruct"):
         super().__init__(model_name)
         self.api_key = None
         self.api_url = "https://router.huggingface.co/v1/chat/completions"
+        self.handler = self._get_model_handler(model_name)
     
+    def _get_model_handler(self, model_name: str) -> HuggingFaceModelHandler:
+        """Factory to select the appropriate model handler."""
+        model_name_lower = model_name.lower()
+        if "kimi" in model_name_lower:
+            logger.info("Instantiating KimiModelHandler.")
+            return KimiModelHandler()
+        else:
+            logger.info("Instantiating LlamaModelHandler as fallback.")
+            return LlamaModelHandler()
+
     async def initialize(self) -> bool:
-        """Initialize Hugging Face client"""
+        """Initialize Hugging Face client."""
         try:
             self.api_key = settings.HUGGINGFACE_API_KEY
-            print(f"[DEBUG] HuggingFaceProvider.initialize: HUGGINGFACE_API_KEY = {self.api_key}")
             if not self.api_key:
                 logger.warning("⚠ HUGGINGFACE_API_KEY not found")
+                self.available = False
                 return False
             
-            # Skip model validation - just mark as available
-            # HuggingFace routing will handle model selection
             self.available = True
-            logger.info(f"✓ Hugging Face initialized: {self.model_name}")
+            logger.info(f"✓ Hugging Face initialized: {self.model_name} (Handler: {self.handler.__class__.__name__})")
             return True
             
         except Exception as e:
@@ -207,18 +301,42 @@ class HuggingFaceProvider(BaseLLMProvider):
         max_tokens: int = 1000,
         temperature: float = 0.7
     ) -> Dict[str, Any]:
-        """Generate with tool calling"""
-        import json
-        tool_prompt = f"{prompt}\n\nAvailable tools:\n{json.dumps(tools, indent=2)}\n\nRespond with the tool to use."
-        response = await self.generate(tool_prompt, max_tokens, temperature)
+        """Generate with tool calling using the model-specific handler."""
+        if not self.available:
+            raise RuntimeError("Hugging Face provider not available")
         
-        return {
-           
-            "tool_calls": []
+        messages = [{"role": "user", "content": prompt}]
+        
+        payload = {
+            "model": self.model_name,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
         }
+        
+        # Let the handler modify the payload for tools
+        self.handler.prepare_tool_payload(payload, tools)
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(self.api_url, json=payload, headers=headers)
+        
+        if response.status_code >= 400:
+            raise RuntimeError(f"Hugging Face error: {response.status_code} - {response.text}")
+        
+        data = response.json()
+        if not data.get("choices"):
+            raise RuntimeError("Hugging Face response missing choices")
+        
+        # Let the handler parse the response
+        return self.handler.parse_tool_response(data["choices"][0], tools)
 
 
-class OllamaProvider(BaseLLMProvider):
+class OllamaProvider(LLMProvider):
     """Ollama Local LLM Provider (Open Source)"""
     
     def __init__(self, model_name: str = "llama3.1:8b"):
@@ -312,10 +430,13 @@ class LLMManager:
     """Manages multiple LLM providers with automatic fallback and mock mode"""
     
     def __init__(self):
-        self.providers: Dict[LLMType, BaseLLMProvider] = {}
-        self.active_provider: Optional[BaseLLMProvider] = None
+        self.providers: Dict[LLMType, LLMProvider] = {}
+        self.active_provider: Optional[LLMProvider] = None
         self.mock_mode = False  # Fallback to mock responses if no providers available
         
+        # MAIN: Kimi-K2-Instruct (via HuggingFace Inference API)
+        # FALLBACK: Llama-3-8B-Instruct (via HuggingFace Inference API)
+        # OTHER: Bedrock, Ollama
         active_provider = (settings.ACTIVE_LLM_PROVIDER or 'huggingface').lower()
         # Set priority based on environment variable
         if active_provider == 'huggingface':
@@ -328,14 +449,16 @@ class LLMManager:
             self.priority = [LLMType.HUGGINGFACE, LLMType.BEDROCK, LLMType.OLLAMA]
 
     async def initialize(self):
-        """Initialize all providers"""
+        """Initialize all providers - Kimi-K2 as main, Llama-3-8B as fallback"""
         # AWS Bedrock (Proprietary)
         bedrock = BedrockProvider()
         await bedrock.initialize()
         self.providers[LLMType.BEDROCK] = bedrock
         
-        # Hugging Face (Open Source) - read model from settings
-        hf_model = settings.HUGGINGFACE_MODEL or 'meta-llama/Meta-Llama-3-8B-Instruct'
+        # Hugging Face (Open Source)
+        # MAIN: Kimi-K2-Instruct (via HuggingFace Inference API, no local download)
+        # FALLBACK: meta-llama/Meta-Llama-3-8B-Instruct
+        hf_model = settings.HUGGINGFACE_MODEL or 'moonshotai/Kimi-K2-Instruct'
         huggingface = HuggingFaceProvider(model_name=hf_model)
         await huggingface.initialize()
         self.providers[LLMType.HUGGINGFACE] = huggingface

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from pydantic_settings import BaseSettings
 import logging
+import uuid
 from typing import Optional
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from .models import (
 from .auth import hash_password, verify_password, create_access_token, decode_token
 from .state import state_manager
 from .agent import mcp_agent
+from .rag_service import rag_service
 
 # Configure logging
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -35,6 +37,7 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting MCP Host...")
     await state_manager.initialize()
+    rag_service.initialize()
     await mcp_agent.initialize()
     logger.info("MCP Host started successfully")
     yield
@@ -165,7 +168,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         )
     
     user_id = payload.get("sub")
-    conversation_id = request.conversation_id or f"conv_{user_id}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+    conversation_id = request.conversation_id or str(uuid.uuid4())
     
     # Get conversation history for context
     context = await state_manager.get_conversation_context(user_id, limit=5)
@@ -185,13 +188,15 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         conversation_history=conversation_history
     )
     
+    # Log full result for analytics/debugging
+    logger.info(f"🔍 Agent execution: tool_calls={len(agent_result.get('tool_calls', []))}, "
+                f"execution_time={agent_result.get('execution_time', 0):.2f}s, "
+                f"success={agent_result.get('success', False)}")
+    if agent_result.get("tool_calls"):
+        logger.debug(f"📋 Tools executed: {[tc.get('tool') for tc in agent_result['tool_calls']]}")
+    
     response_text = agent_result.get("response", "I couldn't process that request.")
     tool_calls = agent_result.get("tool_calls", [])
-    
-    # Determine which tool was used (if any)
-    tool_used = None
-    if tool_calls and len(tool_calls) > 0:
-        tool_used = tool_calls[0].get("tool", "multiple_tools")
     
     # Save conversation
     await state_manager.save_conversation(
@@ -200,7 +205,6 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
     
     return ChatResponse(
         response=response_text,
-        tool_used=tool_used,
         conversation_id=conversation_id
     )
 
