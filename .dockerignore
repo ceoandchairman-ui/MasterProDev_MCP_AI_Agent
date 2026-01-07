@@ -1,0 +1,61 @@
+# Virtual environments
+.venv
+venv
+env
+ENV
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+dist
+build
+.eggs
+
+# IDE & Editor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+.tox
+
+# Dependencies
+node_modules
+package-lock.json
+yarn.lock
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.docker
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Environment files (keep .env.example, exclude .env)
+.env
+.env.local
+.env.*.local
+
+# Misc
+.tmp
+*.log
+.DS_Store
+Thumbs.db

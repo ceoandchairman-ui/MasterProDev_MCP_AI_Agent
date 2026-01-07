@@ -1,6 +1,7 @@
 import os
 import logging
-from langchain_community.document_loaders import DirectoryLoader
+import json
+from pathlib import Path
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Weaviate
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
@@ -9,27 +10,27 @@ import weaviate
 import re
 from typing import List, Dict, Any, Tuple
 from langchain.schema import Document
-import nltk
 import uuid
 from docx import Document as DocxDocument
-from io import BytesIO
-import spacy
-
-# Download NLTK sentence tokenizer model (if not already downloaded)
-try:
-    nltk.data.find('tokenizers/punkt')
-except nltk.downloader.DownloadError:
-    nltk.download('punkt')
-
-# Download spaCy model if not available
-try:
-    nlp = spacy.load('en_core_web_sm')
-except OSError:
-    logging.warning("spaCy model 'en_core_web_sm' not found. Entity extraction will be disabled.")
-    nlp = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Simple sentence splitter (no nltk dependency)
+def simple_sent_tokenize(text: str) -> List[str]:
+    """Split text into sentences using regex."""
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    return [s.strip() for s in sentences if s.strip()]
+
+# Optional: Try to load spaCy for entity extraction
+try:
+    import spacy
+    nlp = spacy.load('en_core_web_sm')
+    SPACY_AVAILABLE = True
+except (ImportError, OSError):
+    logging.warning("spaCy not available. Entity extraction disabled.")
+    nlp = None
+    SPACY_AVAILABLE = False
 
 def extract_entities(text: str) -> Dict[str, List[str]]:
     """
@@ -52,43 +53,54 @@ def extract_entities(text: str) -> Dict[str, List[str]]:
         
     return entities
 
+def load_documents_from_directory(directory_path: str) -> List[Document]:
+    """
+    Load documents from directory using direct format-specific loaders.
+    Supports: .docx, .txt, .md
+    No unstructured dependency - robust and fast.
+    """
+    documents = []
+    path = Path(directory_path)
+    
+    # Supported extensions
+    supported_files = list(path.rglob('*.docx')) + list(path.rglob('*.txt')) + list(path.rglob('*.md'))
+    
+    logging.info(f"Found {len(supported_files)} supported files")
+    
+    for file_path in supported_files:
+        try:
+            if file_path.suffix == '.docx':
+                # Load DOCX using python-docx directly
+                doc = DocxDocument(str(file_path))
+                text = '\n'.join([para.text for para in doc.paragraphs if para.text.strip()])
+                documents.append(Document(
+                    page_content=text,
+                    metadata={"source": str(file_path), "type": "docx"}
+                ))
+                logging.info(f"✓ Loaded {file_path.name} ({len(text)} chars)")
+                
+            elif file_path.suffix in ['.txt', '.md']:
+                # Load text files directly
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+                documents.append(Document(
+                    page_content=text,
+                    metadata={"source": str(file_path), "type": file_path.suffix[1:]}
+                ))
+                logging.info(f"✓ Loaded {file_path.name} ({len(text)} chars)")
+                
+        except Exception as e:
+            logging.error(f"✗ Failed to load {file_path.name}: {e}")
+            continue
+    
+    return documents
+
 def extract_structure_and_text(doc: Document) -> List[Dict[str, Any]]:
     """
-    Extracts structured content from a document, with special handling for DOCX files.
-    For DOCX, it parses paragraphs and their styles. For other formats, it treats
-    the content as a single block.
-
-    Returns:
-        A list of content blocks (e.g., paragraphs, headings) with metadata.
+    Extracts structured content from a document.
+    Since we're loading with format-specific loaders, content is already clean.
     """
-    source = doc.metadata.get("source", "unknown")
-    
-    if source.lower().endswith(".docx"):
-        try:
-            with open(source, "rb") as f:
-                docx_document = DocxDocument(BytesIO(f.read()))
-            
-            blocks = []
-            for p in docx_document.paragraphs:
-                style_name = p.style.name
-                # Heuristic to identify heading styles vs. normal paragraphs
-                block_type = 'heading' if style_name.startswith('Heading') else 'paragraph'
-                
-                if p.text.strip():  # Ensure we don't add empty paragraphs
-                    blocks.append({
-                        "type": block_type,
-                        "content": p.text,
-                        "style": style_name
-                    })
-            logging.info(f"✓ Extracted {len(blocks)} structured blocks from {source}")
-            return blocks
-        except Exception as e:
-            logging.error(f"Error processing DOCX file {source}, falling back to text extraction: {e}")
-            # Fallback for corrupted or unreadable DOCX files
-            return [{"type": "paragraph", "content": doc.page_content, "style": "Normal"}]
-    else:
-        # For other files (like .md, .txt), treat the whole content as a single block
-        return [{"type": "paragraph", "content": doc.page_content, "style": "Normal"}]
+    return [{"type": "paragraph", "content": doc.page_content, "style": "Normal"}]
 
 def deterministic_chunking(
     documents: List[Document],
@@ -114,7 +126,7 @@ def deterministic_chunking(
         structured_content = extract_structure_and_text(doc)
         
         full_text = " ".join(block['content'] for block in structured_content)
-        sentences = nltk.sent_tokenize(full_text)
+        sentences = simple_sent_tokenize(full_text)
         
         if not sentences:
             continue
@@ -195,17 +207,14 @@ def seed_documents_from_local():
             logging.error(f"Knowledge base path '{knowledge_base_path}' is not a valid directory.")
             return
 
-        # 1. Load documents from local directory
+        # 1. Load documents from local directory using direct loaders (no unstructured)
         logging.info(f"Loading documents from local directory: {knowledge_base_path}")
-        loader = DirectoryLoader(knowledge_base_path, glob="**/*", show_progress=True)
-        documents = loader.load()
+        documents = load_documents_from_directory(knowledge_base_path)
         
         if not documents:
             logging.warning("No documents found in the specified local directory.")
             return
-        logging.info(f"✓ Successfully loaded {len(documents)} document(s).")
-        for doc in documents:
-            logging.info(f"  - Loaded: {doc.metadata.get('source', 'Unknown')} ({len(doc.page_content)} chars)")
+        logging.info(f"✓ Successfully loaded {len(documents)} document(s)")
 
         # 2. Create hierarchical chunks with multi-level summaries
         logging.info("Creating semantic chunks with multi-level summaries...")
