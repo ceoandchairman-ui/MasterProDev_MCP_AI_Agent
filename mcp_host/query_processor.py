@@ -76,16 +76,26 @@ class QueryProcessor:
 
     def process_query(self, query: str) -> str:
         """
-        Processes a raw query through all preprocessing steps.
+        Processes a raw query through preprocessing steps.
+        Step 1: Expand aliases (case-insensitive matching)
+        Step 2: Lowercase for search
+        Step 3: Light spelling correction only if needed
         """
-        # Step 1: Normalize (lowercase, etc.)
-        processed_query = query.lower().strip()
+        # Step 1: Expand aliases BEFORE lowercasing to preserve canonical forms
+        processed_query = self.alias_manager.expand_aliases(query)
         
-        # Step 2: Expand aliases
-        processed_query = self.alias_manager.expand_aliases(processed_query)
+        # Step 2: Lowercase for consistent search
+        processed_query = processed_query.lower()
         
-        # Step 3: Correct spelling
-        processed_query = self.spelling_corrector.correct(processed_query)
+        # Step 3: ONLY apply spelling correction to short, obvious typos
+        # Skip if query looks reasonable (contains mostly valid words)
+        words = processed_query.split()
+        if len(words) <= 3 and any(len(word) > 2 for word in words):
+            # Only correct if it's a short query with potentially misspelled words
+            corrected = self.spelling_corrector.correct(processed_query)
+            if corrected != processed_query:
+                logging.info(f"Spelling correction: '{processed_query}' -> '{corrected}'")
+                processed_query = corrected
         
         logging.info(f"Original Query: '{query}' | Processed Query: '{processed_query}'")
         return processed_query

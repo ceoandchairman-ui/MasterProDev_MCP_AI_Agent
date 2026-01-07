@@ -1,7 +1,7 @@
 import weaviate
 from mcp_host.config import settings
 import logging
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from typing import List, Dict, Any, Optional
 import json
 
@@ -28,9 +28,11 @@ class RAGService:
             )
             logger.info("✓ Successfully connected to Weaviate.")
 
-            # 2. Initialize Hugging Face embeddings
-            self.embeddings = HuggingFaceBgeEmbeddings()
-            logger.info("✓ Hugging Face BGE embeddings initialized.")
+            # 2. Initialize Hugging Face embeddings for Inference API
+            self.embeddings = HuggingFaceInferenceAPIEmbeddings(
+                api_key=self.hf_api_key, model_name=self.embedding_model
+            )
+            logger.info(f"✓ Hugging Face Inference API embeddings initialized with model {self.embedding_model}.")
 
         except Exception as e:
             logger.error(f"Failed to initialize RAG service: {e}", exc_info=True)
@@ -119,9 +121,24 @@ class RAGService:
                     'distance': item.metadata.distance
                 })
             
+            # 🔍 RETRIEVAL VISIBILITY LOGGING
+            logger.info("\n" + "="*80)
+            logger.info(f"🔎 RAG SEARCH OPERATION")
+            logger.info("="*80)
+            logger.info(f"Query: '{query}'")
+            logger.info(f"Raw results found: {len(raw_results)}")
+            
             if not raw_results:
                 logger.warning(f"No results found for query: '{query}'")
+                logger.info("="*80 + "\n")
                 return []
+            
+            for i, result in enumerate(raw_results):
+                logger.info(f"\n[RETRIEVED CHUNK {i}]")
+                logger.info(f"  Distance: {result['distance']}")
+                logger.info(f"  Source: {result['source']}")
+                logger.info(f"  Entities: {result['entities']}")
+                logger.info(f"  Content: {result['content'][:300]}...")
             
             # Rerank results
             reranked = self._rerank_results(query, raw_results, top_k=limit)

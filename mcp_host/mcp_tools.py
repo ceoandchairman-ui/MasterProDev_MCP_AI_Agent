@@ -176,6 +176,12 @@ class KnowledgeSearchTool(BaseTool):
                 logger.info(f"   → Processed query: '{processed_query}'")
             
             results = rag_service.search(query=processed_query)
+            
+            # DEBUG: Log what was retrieved
+            logger.info(f"📊 Knowledge base search returned {len(results)} result(s):")
+            for i, result in enumerate(results, 1):
+                logger.info(f"   Result {i}: {result.get('content', '')[:100]}...")
+            
             return {"status": "success", "results": results}
         except Exception as e:
             logger.error(f"✗ Knowledge base search error: {e}")

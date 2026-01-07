@@ -3,7 +3,7 @@ import logging
 from langchain_community.document_loaders import DirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Weaviate
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from mcp_host.config import Settings
 import weaviate
 import re
@@ -211,8 +211,11 @@ def seed_documents_from_local():
         logging.info("Creating semantic chunks with multi-level summaries...")
         
         # Initialize embeddings first for semantic chunking
-        logging.info("Initializing Hugging Face BGE embeddings.")
-        embeddings = HuggingFaceBgeEmbeddings()
+        logging.info(f"Initializing Hugging Face Inference API embeddings with model {settings.EMBEDDING_MODEL}.")
+        embeddings = HuggingFaceInferenceAPIEmbeddings(
+            api_key=settings.HUGGINGFACE_API_KEY,
+            model_name=settings.EMBEDDING_MODEL
+        )
         
         # Apply deterministic chunking
         chunks = deterministic_chunking(documents)
@@ -232,10 +235,25 @@ def seed_documents_from_local():
         for i, chunk in enumerate(enriched_chunks[:3]):
             if 'entities' in chunk.metadata:
                 logging.info(f"  - Chunk {i+1} entities: {chunk.metadata['entities']}")
+        
+        # 🔍 CHUNK VISIBILITY LOGGING
+        logging.info("\n" + "="*80)
+        logging.info("📋 SEEDING VERIFICATION - ALL CHUNKS CREATED:")
+        logging.info("="*80)
+        for i, chunk in enumerate(enriched_chunks):
+            logging.info(f"\n[CHUNK {i}]")
+            logging.info(f"  Size: {len(chunk.page_content)} chars")
+            logging.info(f"  Source: {chunk.metadata.get('source', 'unknown')}")
+            logging.info(f"  Entities: {chunk.metadata.get('entities', [])}")
+            logging.info(f"  Content: {chunk.page_content[:250]}...")
+        logging.info("="*80 + "\n")
 
         # 3. Initialize embeddings
-        logging.info("Initializing Hugging Face BGE embeddings for Weaviate.")
-        embeddings = HuggingFaceBgeEmbeddings()
+        logging.info(f"Initializing Hugging Face Inference API embeddings for Weaviate with model {settings.EMBEDDING_MODEL}.")
+        embeddings = HuggingFaceInferenceAPIEmbeddings(
+            api_key=settings.HUGGINGFACE_API_KEY,
+            model_name=settings.EMBEDDING_MODEL
+        )
 
         # 4. Seed Weaviate
         logging.info(f"Connecting to Weaviate at {settings.WEAVIATE_HOST}:{settings.WEAVIATE_PORT}...")

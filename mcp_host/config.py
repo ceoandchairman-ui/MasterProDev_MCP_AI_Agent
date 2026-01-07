@@ -52,7 +52,7 @@ class Settings(BaseSettings):
 
     # Knowledge Base
     KNOWLEDGE_BASE_PATH: str = "knowledge_base"
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     class Config:
         env_file = ".env"

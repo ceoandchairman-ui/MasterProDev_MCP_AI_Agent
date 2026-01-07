@@ -507,6 +507,7 @@ class MCPAgent:
             synthesis_prompt = f"Convert these tool results to a natural response:\n{tool_log_snippets}\n\nUser asked: {user_message}"
 
         logger.info(f"📊 Synthesis tokens allocated: {self.token_budget.get_synthesis_tokens()} tokens")
+        logger.info(f"📋 FINAL PROMPT BEING SENT TO LLM:\n{'='*80}\n{synthesis_prompt}\n{'='*80}")
         return await self.llm_manager.generate(
             prompt=synthesis_prompt,
             max_tokens=self.token_budget.get_synthesis_tokens(),
