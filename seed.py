@@ -219,34 +219,73 @@ def seed_documents_from_local():
         # 2. Create hierarchical chunks with multi-level summaries
         logging.info("Creating semantic chunks with multi-level summaries...")
         
-        # Initialize embeddings with fallback: API → Local
+        # Initialize embeddings with dual fallback: InferenceClient -> requests
         logging.info(f"Initializing embeddings with model {settings.EMBEDDING_MODEL}...")
-        try:
-            embeddings = HuggingFaceInferenceAPIEmbeddings(
-                api_key=settings.HUGGINGFACE_API_KEY,
-                model_name=settings.EMBEDDING_MODEL
-            )
-            # Test API
-            test_vec = embeddings.embed_query("test")
-            if not test_vec or len(test_vec) == 0:
-                raise ValueError("API returned empty")
-            logging.info("✓ Using HuggingFace API embeddings")
-        except Exception as e:
-            logging.warning(f"API failed ({e}), using local model")
-            from sentence_transformers import SentenceTransformer
-            local_model = SentenceTransformer(settings.EMBEDDING_MODEL)
-            
-            # Wrapper to match LangChain interface
-            class LocalEmbeddings:
-                def __init__(self, model):
-                    self.model = model
-                def embed_query(self, text):
-                    return self.model.encode(text, convert_to_numpy=True).tolist()
-                def embed_documents(self, texts):
-                    return [self.model.encode(t, convert_to_numpy=True).tolist() for t in texts]
-            
-            embeddings = LocalEmbeddings(local_model)
-            logging.info("✓ Using local sentence-transformers")
+        
+        class TripleFallbackEmbeddings:
+            def __init__(self, api_key, model_name):
+                self.api_key = api_key
+                self.model_name = model_name
+                self.fallback_model = "BAAI/bge-small-en-v1.5"
+                self.primary_model = "BAAI/bge-m3"
+                self.method = None
+                
+            def _try_inference_client(self, text, model):
+                from huggingface_hub import InferenceClient
+                client = InferenceClient(api_key=self.api_key)
+                result = client.feature_extraction(text, model=model)
+                return result
+                
+            def _try_requests(self, text, model):
+                import requests
+                url = f"https://router.huggingface.co/hf-inference/models/{model}/pipeline/feature-extraction"
+                headers = {"Authorization": f"Bearer {self.api_key}"}
+                response = requests.post(url, headers=headers, json={"inputs": text})
+                response.raise_for_status()
+                return response.json()
+                
+            def embed_query(self, text):
+                # 1. Try bge-m3 with InferenceClient
+                try:
+                    result = self._try_inference_client(text, self.primary_model)
+                    if result and len(result) > 0:
+                        if self.method != "InferenceClient-m3":
+                            logging.info(f"✓ Using InferenceClient with {self.primary_model}")
+                            self.method = "InferenceClient-m3"
+                        return result
+                except Exception as e:
+                    logging.warning(f"InferenceClient {self.primary_model} failed: {e}")
+                
+                # 2. Try bge-m3 with direct requests
+                try:
+                    result = self._try_requests(text, self.primary_model)
+                    if result and len(result) > 0:
+                        if self.method != "requests-m3":
+                            logging.info(f"✓ Using direct requests with {self.primary_model}")
+                            self.method = "requests-m3"
+                        return result
+                except Exception as e:
+                    logging.warning(f"Direct requests {self.primary_model} failed: {e}")
+                
+                # 3. Fallback to bge-small-en-v1.5 with requests
+                try:
+                    result = self._try_requests(text, self.fallback_model)
+                    if result and len(result) > 0:
+                        if self.method != "requests-fallback":
+                            logging.info(f"✓ Using fallback {self.fallback_model}")
+                            self.method = "requests-fallback"
+                        return result
+                except Exception as e:
+                    logging.error(f"All methods failed: {e}")
+                    raise ValueError(f"All embedding methods failed")
+                    
+            def embed_documents(self, texts):
+                return [self.embed_query(t) for t in texts]
+        
+        embeddings = TripleFallbackEmbeddings(
+            api_key=settings.HUGGINGFACE_API_KEY,
+            model_name=settings.EMBEDDING_MODEL
+        )
         
         # Apply deterministic chunking
         chunks = deterministic_chunking(documents)
@@ -279,14 +318,7 @@ def seed_documents_from_local():
             logging.info(f"  Content: {chunk.page_content[:250]}...")
         logging.info("="*80 + "\n")
 
-        # 3. Initialize embeddings
-        logging.info(f"Initializing Hugging Face Inference API embeddings for Weaviate with model {settings.EMBEDDING_MODEL}.")
-        embeddings = HuggingFaceInferenceAPIEmbeddings(
-            api_key=settings.HUGGINGFACE_API_KEY,
-            model_name=settings.EMBEDDING_MODEL
-        )
-
-        # 4. Seed Weaviate
+        # 3. Seed Weaviate
         logging.info(f"Connecting to Weaviate at {settings.WEAVIATE_HOST}:{settings.WEAVIATE_PORT}...")
         client = weaviate.connect_to_local(
             host=settings.WEAVIATE_HOST,

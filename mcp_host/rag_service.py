@@ -28,33 +28,72 @@ class RAGService:
             )
             logger.info("✓ Successfully connected to Weaviate.")
 
-            # 2. Initialize embeddings with fallback: API → Local
+            # 2. Initialize embeddings with dual fallback
             logger.info(f"Initializing embeddings with model {self.embedding_model}...")
-            try:
-                self.embeddings = HuggingFaceInferenceAPIEmbeddings(
-                    api_key=self.hf_api_key, model_name=self.embedding_model
-                )
-                # Test API
-                test_vec = self.embeddings.embed_query("test")
-                if not test_vec or len(test_vec) == 0:
-                    raise ValueError("API returned empty")
-                logger.info("✓ Using HuggingFace API embeddings")
-            except Exception as e:
-                logger.warning(f"API failed ({e}), using local model")
-                from sentence_transformers import SentenceTransformer
-                local_model = SentenceTransformer(self.embedding_model)
-                
-                # Wrapper to match LangChain interface
-                class LocalEmbeddings:
-                    def __init__(self, model):
-                        self.model = model
-                    def embed_query(self, text):
-                        return self.model.encode(text, convert_to_numpy=True).tolist()
-                    def embed_documents(self, texts):
-                        return [self.model.encode(t, convert_to_numpy=True).tolist() for t in texts]
-                
-                self.embeddings = LocalEmbeddings(local_model)
-                logger.info("✓ Using local sentence-transformers")
+            
+            class TripleFallbackEmbeddings:
+                def __init__(self, api_key, model_name):
+                    self.api_key = api_key
+                    self.model_name = model_name
+                    self.fallback_model = "BAAI/bge-small-en-v1.5"
+                    self.primary_model = "BAAI/bge-m3"
+                    self.method = None
+                    
+                def _try_inference_client(self, text, model):
+                    from huggingface_hub import InferenceClient
+                    client = InferenceClient(api_key=self.api_key)
+                    result = client.feature_extraction(text, model=model)
+                    return result
+                    
+                def _try_requests(self, text, model):
+                    import requests
+                    url = f"https://router.huggingface.co/hf-inference/models/{model}/pipeline/feature-extraction"
+                    headers = {"Authorization": f"Bearer {self.api_key}"}
+                    response = requests.post(url, headers=headers, json={"inputs": text})
+                    response.raise_for_status()
+                    return response.json()
+                    
+                def embed_query(self, text):
+                    # 1. Try bge-m3 with InferenceClient
+                    try:
+                        result = self._try_inference_client(text, self.primary_model)
+                        if result and len(result) > 0:
+                            if self.method != "InferenceClient-m3":
+                                logger.info(f"✓ Using InferenceClient with {self.primary_model}")
+                                self.method = "InferenceClient-m3"
+                            return result
+                    except Exception as e:
+                        logger.warning(f"InferenceClient {self.primary_model} failed: {e}")
+                    
+                    # 2. Try bge-m3 with direct requests
+                    try:
+                        result = self._try_requests(text, self.primary_model)
+                        if result and len(result) > 0:
+                            if self.method != "requests-m3":
+                                logger.info(f"✓ Using direct requests with {self.primary_model}")
+                                self.method = "requests-m3"
+                            return result
+                    except Exception as e:
+                        logger.warning(f"Direct requests {self.primary_model} failed: {e}")
+                    
+                    # 3. Fallback to bge-small-en-v1.5 with requests
+                    try:
+                        result = self._try_requests(text, self.fallback_model)
+                        if result and len(result) > 0:
+                            if self.method != "requests-fallback":
+                                logger.info(f"✓ Using fallback {self.fallback_model}")
+                                self.method = "requests-fallback"
+                            return result
+                    except Exception as e:
+                        logger.error(f"All methods failed: {e}")
+                        raise ValueError(f"All embedding methods failed")
+                        
+                def embed_documents(self, texts):
+                    return [self.embed_query(t) for t in texts]
+            
+            self.embeddings = TripleFallbackEmbeddings(
+                api_key=self.hf_api_key, model_name=self.embedding_model
+            )
 
         except Exception as e:
             logger.error(f"Failed to initialize RAG service: {e}", exc_info=True)
