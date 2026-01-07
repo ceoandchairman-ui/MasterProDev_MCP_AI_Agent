@@ -16,8 +16,8 @@ class RAGService:
      
     def initialize(self):
         """Initializes the Weaviate client and embeddings."""
-        if not self.hf_api_key or not self.embedding_model:
-            logger.error("Hugging Face API key or embedding model is not configured. RAG service will be disabled.")
+        if not self.embedding_model:
+            logger.error("Embedding model is not configured. RAG service will be disabled.")
             return
         try:
             # 1. Initialize Weaviate client
@@ -28,11 +28,33 @@ class RAGService:
             )
             logger.info("✓ Successfully connected to Weaviate.")
 
-            # 2. Initialize Hugging Face embeddings for Inference API
-            self.embeddings = HuggingFaceInferenceAPIEmbeddings(
-                api_key=self.hf_api_key, model_name=self.embedding_model
-            )
-            logger.info(f"✓ Hugging Face Inference API embeddings initialized with model {self.embedding_model}.")
+            # 2. Initialize embeddings with fallback: API → Local
+            logger.info(f"Initializing embeddings with model {self.embedding_model}...")
+            try:
+                self.embeddings = HuggingFaceInferenceAPIEmbeddings(
+                    api_key=self.hf_api_key, model_name=self.embedding_model
+                )
+                # Test API
+                test_vec = self.embeddings.embed_query("test")
+                if not test_vec or len(test_vec) == 0:
+                    raise ValueError("API returned empty")
+                logger.info("✓ Using HuggingFace API embeddings")
+            except Exception as e:
+                logger.warning(f"API failed ({e}), using local model")
+                from sentence_transformers import SentenceTransformer
+                local_model = SentenceTransformer(self.embedding_model)
+                
+                # Wrapper to match LangChain interface
+                class LocalEmbeddings:
+                    def __init__(self, model):
+                        self.model = model
+                    def embed_query(self, text):
+                        return self.model.encode(text, convert_to_numpy=True).tolist()
+                    def embed_documents(self, texts):
+                        return [self.model.encode(t, convert_to_numpy=True).tolist() for t in texts]
+                
+                self.embeddings = LocalEmbeddings(local_model)
+                logger.info("✓ Using local sentence-transformers")
 
         except Exception as e:
             logger.error(f"Failed to initialize RAG service: {e}", exc_info=True)

@@ -49,8 +49,8 @@ docs
 *.md
 !README.md
 
-# Environment files (keep .env.example, exclude .env)
-.env
+# Environment files (commented out - .env needed in container)
+# .env
 .env.local
 .env.*.local
 

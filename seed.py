@@ -219,12 +219,34 @@ def seed_documents_from_local():
         # 2. Create hierarchical chunks with multi-level summaries
         logging.info("Creating semantic chunks with multi-level summaries...")
         
-        # Initialize embeddings first for semantic chunking
-        logging.info(f"Initializing Hugging Face Inference API embeddings with model {settings.EMBEDDING_MODEL}.")
-        embeddings = HuggingFaceInferenceAPIEmbeddings(
-            api_key=settings.HUGGINGFACE_API_KEY,
-            model_name=settings.EMBEDDING_MODEL
-        )
+        # Initialize embeddings with fallback: API → Local
+        logging.info(f"Initializing embeddings with model {settings.EMBEDDING_MODEL}...")
+        try:
+            embeddings = HuggingFaceInferenceAPIEmbeddings(
+                api_key=settings.HUGGINGFACE_API_KEY,
+                model_name=settings.EMBEDDING_MODEL
+            )
+            # Test API
+            test_vec = embeddings.embed_query("test")
+            if not test_vec or len(test_vec) == 0:
+                raise ValueError("API returned empty")
+            logging.info("✓ Using HuggingFace API embeddings")
+        except Exception as e:
+            logging.warning(f"API failed ({e}), using local model")
+            from sentence_transformers import SentenceTransformer
+            local_model = SentenceTransformer(settings.EMBEDDING_MODEL)
+            
+            # Wrapper to match LangChain interface
+            class LocalEmbeddings:
+                def __init__(self, model):
+                    self.model = model
+                def embed_query(self, text):
+                    return self.model.encode(text, convert_to_numpy=True).tolist()
+                def embed_documents(self, texts):
+                    return [self.model.encode(t, convert_to_numpy=True).tolist() for t in texts]
+            
+            embeddings = LocalEmbeddings(local_model)
+            logging.info("✓ Using local sentence-transformers")
         
         # Apply deterministic chunking
         chunks = deterministic_chunking(documents)
@@ -291,19 +313,30 @@ def seed_documents_from_local():
         logging.info(f"Seeding {len(enriched_chunks)} hierarchically-structured chunks into Weaviate...")
         collection = client.collections.get(collection_name)
         
-        # Generate embeddings and seed documents
-        for chunk in enriched_chunks:
-            vector = embeddings.embed_query(chunk.page_content)
-            collection.data.insert(
-                properties={
-                    "content": chunk.page_content,
-                    "source": chunk.metadata.get("source", ""),
-                    "entities": json.dumps(chunk.metadata.get("entities", {})),
-                    "summary": chunk.metadata.get("summary", ""),
-                    "level": chunk.metadata.get("level", 1)
-                },
-                vector=vector
-            )
+        # Generate embeddings and seed documents with better error handling
+        for i, chunk in enumerate(enriched_chunks):
+            try:
+                logging.info(f"Embedding chunk {i+1}/{len(enriched_chunks)}...")
+                vector = embeddings.embed_query(chunk.page_content)
+                
+                if not vector or len(vector) == 0:
+                    logging.error(f"✗ Empty embedding returned for chunk {i}")
+                    continue
+                    
+                collection.data.insert(
+                    properties={
+                        "content": chunk.page_content,
+                        "source": chunk.metadata.get("source", ""),
+                        "entities": json.dumps(chunk.metadata.get("entities", {})),
+                        "summary": chunk.metadata.get("summary", ""),
+                        "level": chunk.metadata.get("level", 1)
+                    },
+                    vector=vector
+                )
+                logging.info(f"✓ Seeded chunk {i+1} successfully")
+            except Exception as e:
+                logging.error(f"✗ Failed to seed chunk {i}: {e}")
+                continue
         
         logging.info(f"✓ Successfully seeded Weaviate with {len(enriched_chunks)} document chunks (hierarchical structure with summaries).")
 
