@@ -159,32 +159,25 @@ async def get_profile(authorization: Optional[str] = Header(None)):
 async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)):
     """Chat endpoint - processes messages through LangChain agent"""
     token = get_token_from_header(authorization)
-    payload = decode_token(token)
+    session = await state_manager.get_session(token)
     
-    if not payload:
+    if not session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
+            detail="Invalid or expired session"
         )
     
-    user_id = payload.get("sub")
+    session_id = session["session_id"]
+    user_id = session["user_id"]
     conversation_id = request.conversation_id or str(uuid.uuid4())
     
     # Get conversation history for context
-    context = await state_manager.get_conversation_context(user_id, limit=5)
-    conversation_history: list[dict[str, str]] = []
-    if context and "messages" in context:
-        for msg in context["messages"]:
-            user_text = msg.get("message")
-            if user_text:
-                conversation_history.append({"role": "user", "content": user_text})
-            assistant_text = msg.get("response")
-            if assistant_text:
-                conversation_history.append({"role": "assistant", "content": assistant_text})
+    conversation_history = await state_manager.get_conversation_history(session_id)
     
     # Process message through LangChain agent
     agent_result = await mcp_agent.process_message(
         message=request.message,
+        session_id=session_id,
         conversation_history=conversation_history
     )
     
@@ -196,11 +189,10 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         logger.debug(f"📋 Tools executed: {[tc.get('tool') for tc in agent_result['tool_calls']]}")
     
     response_text = agent_result.get("response", "I couldn't process that request.")
-    tool_calls = agent_result.get("tool_calls", [])
     
-    # Save conversation
-    await state_manager.save_conversation(
-        user_id, conversation_id, request.message, response_text
+    # Save conversation turn
+    await state_manager.save_conversation_turn(
+        session_id, user_id, conversation_id, request.message, response_text
     )
     
     return ChatResponse(

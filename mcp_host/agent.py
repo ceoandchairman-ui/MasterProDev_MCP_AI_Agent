@@ -123,6 +123,7 @@ class MCPAgent:
     async def process_message(
         self,
         message: str,
+        session_id: str,  # Add session_id for state management
         conversation_history: Optional[List[Dict[str, str]]] = None
     ) -> Dict[str, Any]:
         """
@@ -139,7 +140,16 @@ class MCPAgent:
             await self.initialize()
 
         start_time = datetime.utcnow()
+
+        # First, check for and handle any pending actions for this session
+        processed_query = await self.query_processor.process_query(message, session_id)
         
+        # If process_query returns a result, it means a pending action was handled
+        if processed_query != message.lower(): # A bit of a hack, but if it's different, it's a result
+            if "tool_output" in processed_query: # Another hack to see if it was a tool call
+                 # This is a result from a pending action
+                return json.loads(processed_query)
+
         # Format and trim history to fit token budget
         history_text = self._format_history(conversation_history)
         history_text = self.token_budget.trim_context(history_text)
@@ -198,7 +208,7 @@ class MCPAgent:
 
             if plan.get("actions"):
                 # Execute the planned tools
-                tool_runs = await self._execute_plan(plan["actions"], message)
+                tool_runs = await self._execute_plan(plan["actions"], session_id) # Pass session_id
                 had_errors = any("error" in run for run in tool_runs)
                 planner_hint = None if had_errors else plan.get("final_response")
                 
@@ -232,6 +242,17 @@ class MCPAgent:
                     output_text = f"ERROR: {run.get('error')}"
                 else:
                     output_text = self._stringify_tool_output(run.get("output"))
+                
+                # If the output is a dict with 'status': 'pending_auth', it's an auth URL
+                if isinstance(run.get("output"), dict) and run["output"].get("status") == "pending_auth":
+                    return {
+                        "response": run["output"]["response"],
+                        "tool_calls": [],
+                        "execution_time": execution_time,
+                        "success": True,
+                        "llm_provider": self.llm_manager.get_active_provider_info(),
+                    }
+
                 tool_calls_payload.append(
                     {
                         "tool": run.get("tool"),
@@ -430,7 +451,7 @@ class MCPAgent:
             logger.warning(f"⚠ Planner parsing failed: {exc}")
             return {"actions": [], "final_response": ""}
 
-    async def _execute_plan(self, actions: List[Dict[str, Any]], user_message: str) -> List[Dict[str, Any]]:
+    async def _execute_plan(self, actions: List[Dict[str, Any]], session_id: str) -> List[Dict[str, Any]]:
         """Execute each planned tool step sequentially."""
         results: List[Dict[str, Any]] = []
         for step, action in enumerate(actions[: self.MAX_TOOL_STEPS], start=1):
@@ -450,11 +471,31 @@ class MCPAgent:
                 continue
 
             try:
-                normalized_args = self._normalize_tool_arguments(tool_name, arguments, user_message)
+                normalized_args = self._normalize_tool_arguments(tool_name, arguments, "") # user_message no longer available
                 record["arguments"] = normalized_args
                 logger.info(f"🔧 Executing tool step {step}: {tool_name} with args {normalized_args}")
+                
+                # Execute the tool
                 output = await tool._arun(**normalized_args)
+
+                # Check if the tool requires user to authenticate
+                if isinstance(output, dict) and output.get("status") == "pending_auth":
+                    logger.info(f"Tool {tool_name} requires authentication. Saving pending action.")
+                    
+                    # Get current state
+                    state = await state_manager.get_conversation_state(session_id)
+                    if not state:
+                        state = ConversationState(session_id=session_id, conversation_id=session_id)
+
+                    # Save the pending action
+                    pending_action_data = {"tool_name": tool_name, "params": normalized_args}
+                    state.pending_action = json.dumps(pending_action_data)
+                    
+                    # Update the state
+                    await state_manager.update_conversation_state(session_id, state)
+                
                 record["output"] = output
+
             except Exception as exc:
                 logger.error(f"✗ Tool {tool_name} failed: {exc}")
                 record["error"] = str(exc)

@@ -6,9 +6,18 @@ import re
 import logging
 from typing import Dict, List, Any
 import os
+import json
+from agent_logic import handle_pending_action
+from state import state_manager, ConversationState
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# List of confirmation phrases
+CONFIRMATION_PHRASES = [
+    "yes", "yep", "yeah", "ok", "okay", "done", "y", "sure", "alright",
+    "i have", "i've done it", "it is done", "completed"
+]
 
 class AliasManager:
     """Manages and resolves entity aliases."""
@@ -74,14 +83,17 @@ class QueryProcessor:
             logging.error(f"Error loading alias config: {e}")
             self.alias_manager = AliasManager({})
 
-    def process_query(self, query: str) -> str:
+    def process_query(self, query: str, session_id: str) -> str:
         """
         Processes a raw query through preprocessing steps.
-        Step 1: Expand aliases (case-insensitive matching)
-        Step 2: Lowercase for search
-        Step 3: Light spelling correction only if needed
+        Checks for pending actions first.
         """
-        # Step 1: Expand aliases BEFORE lowercasing to preserve canonical forms
+        # Check for pending actions
+        pending_action_result = await self.check_and_handle_pending_action(query, session_id)
+        if pending_action_result:
+            return pending_action_result
+
+        # Step 1: Expand aliases (case-insensitive matching)
         processed_query = self.alias_manager.expand_aliases(query)
         
         # Step 2: Lowercase for consistent search
@@ -99,6 +111,24 @@ class QueryProcessor:
         
         logging.info(f"Original Query: '{query}' | Processed Query: '{processed_query}'")
         return processed_query
+
+    async def check_and_handle_pending_action(self, query: str, session_id: str) -> Optional[str]:
+        """Checks for and handles a pending action if the user confirms."""
+        state = await state_manager.get_conversation_state(session_id)
+        if state and state.pending_action:
+            # Check if the user's query is a confirmation
+            if query.lower().strip() in CONFIRMATION_PHRASES:
+                logging.info(f"User confirmed pending action for session {session_id}.")
+                
+                # Handle the pending action
+                result = await handle_pending_action(session_id)
+                
+                # Clear the pending action from the state
+                state.pending_action = None
+                await state_manager.update_conversation_state(session_id, state)
+                
+                return result
+        return None
 
 # Example usage:
 if __name__ == '__main__':

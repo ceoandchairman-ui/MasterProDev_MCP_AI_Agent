@@ -6,7 +6,13 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 import uuid
 
-import redis.asyncio as aioredis
+try:
+    import redis.asyncio as aioredis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+    logging.warning("redis not available - Redis operations will be limited")
+
 
 try:
     import asyncpg
@@ -24,6 +30,41 @@ SESSION_TTL = 86400  # 24 hours in seconds
 CONVERSATION_CACHE_TTL = 3600  # 1 hour in seconds
 
 
+class ConversationState:
+    """Represents the state of a single conversation."""
+    def __init__(self, session_id: str, conversation_id: str):
+        self.session_id = session_id
+        self.conversation_id = conversation_id
+        self.history: List[Dict[str, Any]] = []
+        self.pending_action: Optional[str] = None  # Store pending tool calls as JSON string
+        self.last_updated = datetime.utcnow()
+
+    def add_turn(self, user_message: str, assistant_response: str):
+        """Adds a turn to the conversation history."""
+        self.history.append({"user": user_message, "assistant": assistant_response})
+        self.last_updated = datetime.utcnow()
+
+    def to_json(self) -> str:
+        """Serializes state to JSON."""
+        return json.dumps({
+            "session_id": self.session_id,
+            "conversation_id": self.conversation_id,
+            "history": self.history,
+            "pending_action": self.pending_action,
+            "last_updated": self.last_updated.isoformat()
+        })
+
+    @classmethod
+    def from_json(cls, json_str: str):
+        """Deserializes state from JSON."""
+        data = json.loads(json_str)
+        state = cls(data["session_id"], data["conversation_id"])
+        state.history = data.get("history", [])
+        state.pending_action = data.get("pending_action")
+        state.last_updated = datetime.fromisoformat(data.get("last_updated", datetime.utcnow().isoformat()))
+        return state
+
+
 class StateManager:
     """Manages state across Redis (cache) and PostgreSQL (persistent)"""
 
@@ -33,19 +74,22 @@ class StateManager:
         self.degraded_mode = False
         # In-memory storage for degraded mode
         self._memory_sessions: Dict[str, dict] = {}
-        self._memory_conversations: Dict[str, List[dict]] = {}
+        self._memory_conversations: Dict[str, ConversationState] = {}
 
     async def initialize(self):
         """Initialize Redis and PostgreSQL connections"""
         try:
             # Redis connection
-            self.redis = await aioredis.from_url(
-                settings.REDIS_URL,
-                encoding="utf8",
-                decode_responses=True
-            )
-            await self.redis.ping()
-            logger.info("✓ Redis connected")
+            if REDIS_AVAILABLE:
+                self.redis = await aioredis.from_url(
+                    settings.REDIS_URL,
+                    encoding="utf8",
+                    decode_responses=True
+                )
+                await self.redis.ping()
+                logger.info("✓ Redis connected")
+            else:
+                raise ConnectionError("Redis is not installed or available.")
 
             # PostgreSQL connection pool (if asyncpg available)
             if ASYNCPG_AVAILABLE:
@@ -167,11 +211,12 @@ class StateManager:
                     if session:
                         session_dict = dict(session)
                         # Repopulate Redis cache
-                        await self.redis.setex(
-                            f"session:{token}",
-                            SESSION_TTL,
-                            json.dumps(session_dict)
-                        )
+                        if self.redis:
+                            await self.redis.setex(
+                                f"session:{token}",
+                                SESSION_TTL,
+                                json.dumps(session_dict, default=str)
+                            )
                         logger.debug(f"✓ Session found in PostgreSQL, refreshed cache")
                         return session_dict
 
@@ -212,156 +257,74 @@ class StateManager:
             logger.error(f"✗ Error invalidating session: {e}")
             return False
 
-    async def save_conversation(
-        self, user_id: str, conversation_id: str, message: str, response: str
-    ) -> bool:
-        """Save conversation to PostgreSQL and cache in Redis"""
-        # Degraded mode - use in-memory storage
+    async def get_conversation_state(self, session_id: str) -> Optional[ConversationState]:
+        """Retrieves the full state of a conversation from Redis."""
         if self.degraded_mode:
-            if conversation_id not in self._memory_conversations:
-                self._memory_conversations[conversation_id] = []
-            self._memory_conversations[conversation_id].append({
-                "message": message,
-                "response": response,
-                "created_at": datetime.utcnow().isoformat()
-            })
-            logger.debug(f"✓ Conversation stored in memory")
-            return True
-        
+            return self._memory_conversations.get(session_id)
+
+        if not self.redis:
+            return None
+
         try:
-            # Store in PostgreSQL (persistent) if available
-            if ASYNCPG_AVAILABLE and self.db_pool:
+            state_json = await self.redis.get(f"conversation_state:{session_id}")
+            if state_json:
+                return ConversationState.from_json(state_json)
+            return None
+        except Exception as e:
+            logger.error(f"✗ Error retrieving conversation state: {e}")
+            return None
+
+    async def update_conversation_state(self, session_id: str, state: ConversationState):
+        """Saves the full state of a conversation to Redis."""
+        if self.degraded_mode:
+            self._memory_conversations[session_id] = state
+            return
+
+        if not self.redis:
+            return
+
+        try:
+            await self.redis.setex(
+                f"conversation_state:{session_id}",
+                CONVERSATION_CACHE_TTL,
+                state.to_json()
+            )
+        except Exception as e:
+            logger.error(f"✗ Error updating conversation state: {e}")
+
+
+    async def save_conversation_turn(
+        self, session_id: str, user_id: str, conversation_id: str, user_message: str, assistant_response: str
+    ):
+        """Saves a turn and updates the full conversation state."""
+        state = await self.get_conversation_state(session_id)
+        if not state:
+            state = ConversationState(session_id, conversation_id)
+        
+        state.add_turn(user_message, assistant_response)
+        await self.update_conversation_state(session_id, state)
+
+        # Also save to persistent storage if available
+        if ASYNCPG_AVAILABLE and self.db_pool:
+            try:
                 async with self.db_pool.acquire() as conn:
                     await conn.execute(
                         """
                         INSERT INTO conversations (conversation_id, user_id, message, response, created_at)
                         VALUES ($1, $2, $3, $4, NOW())
                         """,
-                        conversation_id, user_id, message, response
+                        conversation_id, user_id, user_message, assistant_response
                     )
-                logger.debug(f"✓ Conversation saved to PostgreSQL: {conversation_id}")
+                logger.debug(f"✓ Conversation turn saved to PostgreSQL: {conversation_id}")
+            except Exception as e:
+                logger.error(f"✗ Error saving conversation turn to PostgreSQL: {e}")
 
-            # Cache in Redis
-            if self.redis:
-                conversation_data = {
-                    "message": message,
-                    "response": response,
-                    "timestamp": datetime.utcnow().isoformat(),
-                }
-                await self.redis.setex(
-                    f"conversation:{conversation_id}",
-                    CONVERSATION_CACHE_TTL,
-                    json.dumps(conversation_data)
-                )
-                logger.debug(f"✓ Conversation cached in Redis: {conversation_id}")
-
-            return True
-
-        except Exception as e:
-            logger.error(f"✗ Error saving conversation: {e}")
-            return False
-
-    async def get_conversation_context(self, user_id: str, limit: int = 10) -> Optional[Dict[str, Any]]:
-        """Get recent conversation context from Redis (fast) or PostgreSQL (fallback)"""
-        # Degraded mode - use in-memory storage
-        if self.degraded_mode:
-            # Get all conversations for this user from memory
-            all_messages = []
-            for conv_id, messages in self._memory_conversations.items():
-                all_messages.extend(messages)
-            
-            if all_messages:
-                # Sort by created_at and limit
-                all_messages.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-                limited = all_messages[:limit]
-                return {
-                    "user_id": user_id,
-                    "conversation_count": len(limited),
-                    "messages": limited,
-                    "retrieved_at": datetime.utcnow().isoformat(),
-                }
-            return None
-        
-        try:
-            # Try Redis first
-            if self.redis:
-                cached_context = await self.redis.get(f"context:{user_id}")
-                if cached_context:
-                    logger.debug(f"✓ Context found in Redis cache")
-                    return json.loads(cached_context)
-
-            # Fallback to PostgreSQL
-            if ASYNCPG_AVAILABLE and self.db_pool:
-                async with self.db_pool.acquire() as conn:
-                    conversations = await conn.fetch(
-                        """
-                        SELECT id, message, response, created_at FROM conversations
-                        WHERE user_id = $1
-                        ORDER BY created_at DESC
-                        LIMIT $2
-                        """,
-                        user_id, limit
-                    )
-
-                    if conversations:
-                        context = {
-                            "user_id": user_id,
-                            "conversation_count": len(conversations),
-                            "messages": [dict(c) for c in conversations],
-                            "retrieved_at": datetime.utcnow().isoformat(),
-                        }
-                        
-                        # Cache in Redis
-                        if self.redis:
-                            await self.redis.setex(
-                                f"context:{user_id}",
-                                CONVERSATION_CACHE_TTL,
-                                json.dumps(context)
-                            )
-                        logger.debug(f"✓ Context retrieved and cached for user: {user_id}")
-                        return context
-
-            logger.debug(f"✗ No conversation context found for user: {user_id}")
-            return None
-
-        except Exception as e:
-            logger.error(f"✗ Error retrieving conversation context: {e}")
-            return None
-
-    async def get_user_profile(self, user_id: str) -> Optional[dict]:
-        """Get user profile from Redis or PostgreSQL"""
-        try:
-            # Try Redis first
-            cached = await self.redis.get(f"user:{user_id}")
-            if cached:
-                logger.debug(f"✓ User profile found in Redis")
-                return json.loads(cached)
-
-            # Fallback to PostgreSQL
-            if ASYNCPG_AVAILABLE and self.db_pool:
-                async with self.db_pool.acquire() as conn:
-                    user = await conn.fetchrow(
-                        "SELECT id, username, email, created_at FROM users WHERE id = $1",
-                        user_id
-                    )
-                    
-                    if user:
-                        user_dict = dict(user)
-                        # Cache in Redis
-                        await self.redis.setex(
-                            f"user:{user_id}",
-                            3600,  # 1 hour
-                            json.dumps(user_dict)
-                        )
-                        logger.debug(f"✓ User profile found and cached")
-                        return user_dict
-
-            return None
-
-        except Exception as e:
-            logger.error(f"✗ Error retrieving user profile: {e}")
-            return None
+    async def get_conversation_history(self, session_id: str) -> List[Dict[str, Any]]:
+        """Retrieves conversation history from the state."""
+        state = await self.get_conversation_state(session_id)
+        return state.history if state else []
 
 
 # Global state manager instance
 state_manager = StateManager()
+

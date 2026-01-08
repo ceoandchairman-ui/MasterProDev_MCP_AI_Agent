@@ -1,5 +1,4 @@
 """Gmail MCP Server - Google Gmail Integration"""
-
 import sys
 import os
 import base64
@@ -20,6 +19,8 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
+
+
 
 
 class GmailSettings(BaseSettings):
@@ -44,6 +45,61 @@ class GmailMCPServer(BaseMCPServer):
         self._creds_path = os.path.join(os.path.dirname(__file__), "credentials.json")
         self._auth_flow = None
         self._auth_state = None
+        
+        # Register OAuth authorization endpoint
+        @self.app.get("/auth")
+        async def auth_endpoint():
+            """Start OAuth flow"""
+            from fastapi.responses import HTMLResponse
+            
+            if not os.path.exists(self._creds_path):
+                return HTMLResponse("""
+                <html>
+                    <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                        <h1>✗ Missing credentials.json</h1>
+                        <p>Gmail credentials file not found.</p>
+                    </body>
+                </html>
+                """)
+            
+            # Create Flow for web-based OAuth
+            flow = Flow.from_client_secrets_file(
+                self._creds_path,
+                scopes=self._scopes,
+                redirect_uri="http://localhost:8002/callback"
+            )
+            
+            # Generate authorization URL
+            auth_url, state = flow.authorization_url(
+                prompt="consent",
+                access_type="offline"
+            )
+            
+            # Store flow for callback handler
+            self._auth_flow = flow
+            self._auth_state = state
+            
+            return HTMLResponse(f"""
+            <html>
+                <head>
+                    <title>Gmail Authorization</title>
+                </head>
+                <body style="text-align: center; padding: 50px; font-family: Arial;">
+                    <h1>Gmail Authorization</h1>
+                    <p>Click the button below to authorize Gmail access</p>
+                    <a href="{auth_url}" style="
+                        display: inline-block;
+                        padding: 15px 30px;
+                        background-color: #4285f4;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 5px;
+                        font-size: 16px;
+                        margin-top: 20px;
+                    ">Authorize with Google</a>
+                </body>
+            </html>
+            """)
         
         # Register OAuth callback endpoint
         @self.app.get("/callback")
