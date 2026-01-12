@@ -93,3 +93,16 @@ CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
 
 CREATE TRIGGER update_conversations_updated_at BEFORE UPDATE ON conversations
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Seed default/test user (for development/testing)
+INSERT INTO users (id, email, password_hash, full_name, user_type, role, status)
+VALUES (
+    '00000000-0000-0000-0000-000000000123'::UUID,
+    'guest@masterprodev.local',
+    'hashed_placeholder',
+    'Guest User',
+    'customer',
+    'employee',
+    'active'
+)
+ON CONFLICT (id) DO NOTHING;

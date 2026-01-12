@@ -4,8 +4,8 @@ especially for resuming tasks after interruptions like OAuth flows.
 """
 import json
 from typing import Dict, Any
-from mcp_host.state import get_conversation_state, update_conversation_state
-from mcp_host.mcp_tools import execute_tool_by_name
+from .state import state_manager
+from .mcp_tools import execute_tool_by_name
 
 async def handle_pending_action(session_id: str) -> Dict[str, Any]:
     """
@@ -14,7 +14,7 @@ async def handle_pending_action(session_id: str) -> Dict[str, Any]:
     This is triggered after a user completes an external process like OAuth
     and confirms they are done. The agent can then resume its original task.
     """
-    state = await get_conversation_state(session_id)
+    state = await state_manager.get_conversation_state(session_id)
     if not state or not state.pending_action:
         return {
             "status": "no_pending_action",
@@ -32,7 +32,7 @@ async def handle_pending_action(session_id: str) -> Dict[str, Any]:
 
     # Clear the pending action from the state before executing
     state.pending_action = None
-    await update_conversation_state(session_id, state)
+    await state_manager.update_conversation_state(session_id, state)
 
     # Re-execute the original tool call
     result = await execute_tool_by_name(tool_name, params)
@@ -45,7 +45,7 @@ async def handle_pending_action(session_id: str) -> Dict[str, Any]:
             "params": params
         }
         state.pending_action = json.dumps(new_pending_action)
-        await update_conversation_state(session_id, state)
+        await state_manager.update_conversation_state(session_id, state)
         return {
             "status": "pending_auth",
             "message": "It seems I still don't have the right permissions. Please complete the authorization again.",

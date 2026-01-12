@@ -1,4 +1,5 @@
 """Gmail MCP Server - Google Gmail Integration"""
+
 import sys
 import os
 import base64
@@ -19,8 +20,6 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
-
-
 
 
 class GmailSettings(BaseSettings):

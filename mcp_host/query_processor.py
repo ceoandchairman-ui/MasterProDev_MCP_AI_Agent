@@ -7,8 +7,8 @@ import logging
 from typing import Dict, List, Any
 import os
 import json
-from agent_logic import handle_pending_action
-from state import state_manager, ConversationState
+from .agent_logic import handle_pending_action
+from .state import state_manager, ConversationState
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -83,16 +83,11 @@ class QueryProcessor:
             logging.error(f"Error loading alias config: {e}")
             self.alias_manager = AliasManager({})
 
-    def process_query(self, query: str, session_id: str) -> str:
+    async def process_query(self, query: str, session_id: str) -> str:
         """
         Processes a raw query through preprocessing steps.
-        Checks for pending actions first.
+        Does NOT check for pending actions - that's handled separately.
         """
-        # Check for pending actions
-        pending_action_result = await self.check_and_handle_pending_action(query, session_id)
-        if pending_action_result:
-            return pending_action_result
-
         # Step 1: Expand aliases (case-insensitive matching)
         processed_query = self.alias_manager.expand_aliases(query)
         
@@ -112,7 +107,7 @@ class QueryProcessor:
         logging.info(f"Original Query: '{query}' | Processed Query: '{processed_query}'")
         return processed_query
 
-    async def check_and_handle_pending_action(self, query: str, session_id: str) -> Optional[str]:
+    async def check_and_handle_pending_action(self, query: str, session_id: str):
         """Checks for and handles a pending action if the user confirms."""
         state = await state_manager.get_conversation_state(session_id)
         if state and state.pending_action:

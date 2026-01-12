@@ -232,7 +232,7 @@ def seed_documents_from_local():
                 
             def _try_inference_client(self, text, model):
                 from huggingface_hub import InferenceClient
-                client = InferenceClient(api_key=self.api_key)
+                client = InferenceClient(token=self.api_key)
                 result = client.feature_extraction(text, model=model)
                 return result
                 
@@ -245,18 +245,7 @@ def seed_documents_from_local():
                 return response.json()
                 
             def embed_query(self, text):
-                # 1. Try bge-m3 with InferenceClient
-                try:
-                    result = self._try_inference_client(text, self.primary_model)
-                    if result and len(result) > 0:
-                        if self.method != "InferenceClient-m3":
-                            logging.info(f"✓ Using InferenceClient with {self.primary_model}")
-                            self.method = "InferenceClient-m3"
-                        return result
-                except Exception as e:
-                    logging.warning(f"InferenceClient {self.primary_model} failed: {e}")
-                
-                # 2. Try bge-m3 with direct requests
+                # 1. Try bge-m3 with direct requests (new router.huggingface.co endpoint)
                 try:
                     result = self._try_requests(text, self.primary_model)
                     if result and len(result) > 0:
@@ -267,7 +256,7 @@ def seed_documents_from_local():
                 except Exception as e:
                     logging.warning(f"Direct requests {self.primary_model} failed: {e}")
                 
-                # 3. Fallback to bge-small-en-v1.5 with requests
+                # 2. Fallback to bge-small-en-v1.5 with direct requests
                 try:
                     result = self._try_requests(text, self.fallback_model)
                     if result and len(result) > 0:

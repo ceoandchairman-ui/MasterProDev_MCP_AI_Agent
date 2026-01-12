@@ -10,7 +10,7 @@ from langchain.tools import BaseTool
 from dateutil import parser as date_parser
 
 from mcp_host.llm_provider import LLMProvider
-from mcp_host.state import state_manager
+from mcp_host.state import state_manager, ConversationState
 from mcp_host.mcp_tools import get_all_mcp_tools
 from mcp_host.rag_service import rag_service
 from mcp_host.prompt_service import prompt_library
@@ -142,13 +142,16 @@ class MCPAgent:
         start_time = datetime.utcnow()
 
         # First, check for and handle any pending actions for this session
-        processed_query = await self.query_processor.process_query(message, session_id)
+        # check_and_handle_pending_action will return the result directly if a pending action exists
+        pending_result = await self.query_processor.check_and_handle_pending_action(message, session_id)
+        if pending_result is not None and isinstance(pending_result, dict):
+            # A pending action was successfully resumed
+            pending_result["execution_time"] = (datetime.utcnow() - start_time).total_seconds()
+            pending_result["llm_provider"] = self.llm_manager.get_active_provider_info() if self.initialized else None
+            return pending_result
         
-        # If process_query returns a result, it means a pending action was handled
-        if processed_query != message.lower(): # A bit of a hack, but if it's different, it's a result
-            if "tool_output" in processed_query: # Another hack to see if it was a tool call
-                 # This is a result from a pending action
-                return json.loads(processed_query)
+        # If no pending action was handled, process the query normally
+        processed_query = await self.query_processor.process_query(message, session_id)
 
         # Format and trim history to fit token budget
         history_text = self._format_history(conversation_history)
@@ -243,13 +246,14 @@ class MCPAgent:
                 else:
                     output_text = self._stringify_tool_output(run.get("output"))
                 
-                # If the output is a dict with 'status': 'pending_auth', it's an auth URL
+                # If the output is a dict with 'status': 'pending_auth', handle authorization flow
                 if isinstance(run.get("output"), dict) and run["output"].get("status") == "pending_auth":
                     return {
-                        "response": run["output"]["response"],
+                        "response": "Please authorize the required service to continue. Check the logs for the authorization URL.",
                         "tool_calls": [],
                         "execution_time": execution_time,
                         "success": True,
+                        "pending_auth": True,
                         "llm_provider": self.llm_manager.get_active_provider_info(),
                     }
 
@@ -334,7 +338,8 @@ class MCPAgent:
         # Calendar intent keywords
         calendar_keywords = ['schedule', 'meeting', 'calendar', 'event', 'appointment', 'book',
                             'conference', 'call', 'check my', "what's my", 'when am i', 'cancel',
-                            'delete', 'reschedule', 'move the', 'time slot']
+                            'delete', 'reschedule', 'move the', 'time slot', 'remove event', 'drop meeting',
+                            'unscheduled', 'no longer need', 'cancel that', 'remove that']
         
         # Email intent keywords
         email_keywords = ['email', 'send', 'mail', 'message', 'compose', 'inbox', 'check my',
@@ -381,6 +386,16 @@ class MCPAgent:
         plan = self._parse_plan_output(planner_output)
         plan["raw"] = planner_output
         plan["message_complexity"] = message_complexity  # Track for debugging
+        
+        # INTENT-BASED VALIDATION: Ensure selected tools match detected intent
+        plan = self._validate_plan_by_intent(
+            plan, 
+            has_knowledge_intent, 
+            has_calendar_intent, 
+            has_email_intent,
+            message
+        )
+        
         return plan
 
     def _validate_plan_schema(self, parsed: Dict[str, Any]) -> bool:
@@ -451,9 +466,140 @@ class MCPAgent:
             logger.warning(f"⚠ Planner parsing failed: {exc}")
             return {"actions": [], "final_response": ""}
 
+    def _validate_plan_by_intent(
+        self, 
+        plan: Dict[str, Any], 
+        has_knowledge_intent: bool, 
+        has_calendar_intent: bool, 
+        has_email_intent: bool,
+        message: str
+    ) -> Dict[str, Any]:
+        """
+        Validate that selected tools match the detected intent.
+        Prevent calendar tools from being used for knowledge queries, etc.
+        """
+        actions = plan.get("actions", [])
+        if not actions:
+            return plan  # No tools, nothing to validate
+        
+        # Tool categories
+        knowledge_tools = ["search_knowledge_base"]
+        calendar_tools = ["get_calendar_events", "create_calendar_event", "delete_calendar_event"]
+        email_tools = ["send_email", "get_emails", "read_email"]
+        
+        # Check each action
+        for action in actions:
+            tool_name = action.get("tool")
+            
+            # CRITICAL: Prevent mismatched tool usage
+            if tool_name in calendar_tools and has_knowledge_intent and not has_calendar_intent:
+                logger.error(f"❌ TOOL MISMATCH: Message detected as knowledge query but '{tool_name}' (calendar tool) was selected")
+                logger.error(f"   Message: '{message}'")
+                logger.error(f"   Intents: knowledge={has_knowledge_intent}, calendar={has_calendar_intent}, email={has_email_intent}")
+                return {"actions": [{"tool": "search_knowledge_base", "arguments": {"query": message}}], "final_response": None}
+            
+            if tool_name in email_tools and has_knowledge_intent and not has_email_intent:
+                logger.error(f"❌ TOOL MISMATCH: Message detected as knowledge query but '{tool_name}' (email tool) was selected")
+                return {"actions": [{"tool": "search_knowledge_base", "arguments": {"query": message}}], "final_response": None}
+            
+            if tool_name in knowledge_tools and has_calendar_intent and not has_knowledge_intent:
+                logger.error(f"❌ TOOL MISMATCH: Message detected as calendar query but '{tool_name}' (knowledge tool) was selected")
+                return {"actions": [{"tool": "get_calendar_events", "arguments": {"days": 7}}], "final_response": None}
+        
+        # CRITICAL: Validate delete operations have proper workflow
+        for i, action in enumerate(actions):
+            if action.get("tool") == "delete_calendar_event":
+                event_id = action.get("arguments", {}).get("event_id")
+                
+                # Check if event_id is missing or placeholder
+                if not event_id or event_id == "[REQUIRES_ID_FROM_ABOVE]":
+                    logger.error("❌ CALENDAR DELETE VALIDATION: delete_calendar_event missing valid event_id")
+                    logger.error("   Deletion requires: 1) get_calendar_events to fetch events, 2) delete_calendar_event with event_id")
+                    
+                    # Check if a preceding get_calendar_events exists
+                    has_preceding_get = any(
+                        act.get("tool") == "get_calendar_events" 
+                        for act in actions[:i]
+                    )
+                    
+                    if not has_preceding_get:
+                        logger.info("📋 Enforcing two-step deletion workflow: inserting get_calendar_events")
+                        # Force the proper workflow
+                        return {
+                            "actions": [
+                                {"tool": "get_calendar_events", "arguments": {"days": 30, "days_back": 90}},
+                                action
+                            ],
+                            "final_response": None
+                        }
+        
+        return plan
+
+    async def _identify_event_from_description(
+        self, 
+        description: str, 
+        calendar_events: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        """
+        FIX 4: Use LLM to match user's event description to actual calendar event.
+        
+        Args:
+            description: User's event description (e.g., "that January 24 meeting")
+            calendar_events: List of calendar events from get_calendar_events
+        
+        Returns:
+            Event ID if match found, None otherwise
+        """
+        if not calendar_events:
+            logger.warning("⚠ No calendar events available for matching")
+            return None
+        
+        # Build event summaries for LLM matching
+        event_summaries = []
+        for event in calendar_events:
+            summary = {
+                "id": event.get("id"),
+                "title": event.get("summary", "Untitled"),
+                "start": event.get("start", {}).get("dateTime", event.get("start", {}).get("date")),
+                "description": event.get("description", "")
+            }
+            event_summaries.append(summary)
+        
+        # Use LLM to match description to event
+        matching_prompt = f"""Given the user's event description: "{description}"
+        
+Available calendar events:
+{json.dumps(event_summaries, indent=2)}
+
+Which event ID best matches the user's description? 
+Return ONLY the event ID (e.g., "abc123") or "NONE" if no match found.
+Consider date, time, title, and any details mentioned."""
+        
+        try:
+            match_result = await self.llm_manager.generate(
+                prompt=matching_prompt,
+                max_tokens=50,
+                temperature=0.3  # Low temperature for deterministic matching
+            )
+            
+            matched_id = match_result.strip().upper() if match_result else "NONE"
+            
+            if matched_id != "NONE":
+                logger.info(f"✓ Event matched: {matched_id} for description '{description}'")
+                return matched_id
+            else:
+                logger.warning(f"⚠ No event matched for description: {description}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"✗ Event matching failed: {e}")
+            return None
+
     async def _execute_plan(self, actions: List[Dict[str, Any]], session_id: str) -> List[Dict[str, Any]]:
         """Execute each planned tool step sequentially."""
         results: List[Dict[str, Any]] = []
+        calendar_events_cache = None  # Cache calendar events for event identification
+        
         for step, action in enumerate(actions[: self.MAX_TOOL_STEPS], start=1):
             tool_name = action.get("tool")
             arguments = action.get("arguments") or {}
@@ -462,6 +608,15 @@ class MCPAgent:
                 "tool": tool_name,
                 "arguments": arguments,
             }
+
+            # FIX 5: Pre-execution validation for delete operations
+            if tool_name == "delete_calendar_event":
+                event_id = arguments.get("event_id")
+                if not event_id or event_id == "[REQUIRES_ID_FROM_ABOVE]":
+                    logger.error("❌ Cannot execute delete: event_id not provided or is placeholder")
+                    record["error"] = "Missing event_id - cannot delete without valid event identifier"
+                    results.append(record)
+                    continue
 
             tool = self.tool_map.get(tool_name)
             if not tool:
@@ -694,12 +849,13 @@ class MCPAgent:
         return prompt
 
     def _format_history(self, conversation_history: Optional[List[Dict[str, str]]]) -> str:
-        """Collapse recent turns to a readable block."""
+        """Collapse recent turns to a readable block. Handles both old and new history formats."""
         if not conversation_history:
             return ""
         trimmed = conversation_history[-3:]
         return "\n".join(
-            f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in trimmed
+            # Try new format first ("user"/"assistant"), fall back to old format ("role"/"content")
+            f"{msg.get('role') or 'user'}: {msg.get('content') or msg.get('assistant', '')}" for msg in trimmed
         )
 
     def _stringify_tool_output(self, payload: Any) -> str:
@@ -785,12 +941,20 @@ class MCPAgent:
                         dt = dt.replace(tzinfo=timezone.utc)
                     return dt
                 
-                # Try parsing directly (handles "8:00 am", "3:30 pm", etc.)
-                dt = date_parser.parse(candidate_str, fuzzy=True, dayfirst=False)
+                # CRITICAL: Normalize AM/PM to uppercase before parsing
+                # This handles common mistakes like "10:00Am" or "10:00aM"
+                candidate_normalized = candidate_str.upper()
+                
+                # Try parsing with proper dateutil settings (NOT fuzzy mode - it causes errors)
+                # fuzzy=False ensures we don't accidentally parse wrong times
+                dt = date_parser.parse(candidate_normalized, fuzzy=False, dayfirst=False)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
+                logger.info(f"✓ Parsed datetime: '{candidate_str}' → {dt.isoformat()}")
                 return dt
-            except Exception:
+            except Exception as e:
+                logger.debug(f"⚠ Failed to parse '{candidate}': {e}")
+                continue
                 continue
         return None
 

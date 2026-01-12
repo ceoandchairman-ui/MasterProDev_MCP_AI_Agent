@@ -22,29 +22,34 @@ class CalendarGetEventsInput(BaseModel):
         default=7,
         description="Number of days ahead to fetch events (1-30)"
     )
+    days_back: int = Field(
+        default=365,
+        description="Number of days in the past to fetch (for finding old/past appointments). Default 365 = 1 year back"
+    )
 
 
 class CalendarGetEventsTool(BaseTool):
     """Tool to get upcoming calendar events"""
     
     name: str = "get_calendar_events"
-    description: str = """Get upcoming calendar events for the next N days.
+    description: str = """Get calendar events - both upcoming and past appointments.
     Use this when user asks about their schedule, meetings, or appointments.
-    Examples: 'What's on my calendar?', 'Do I have meetings tomorrow?'"""
+    Can fetch future events (next N days) AND past events (last N days).
+    Examples: 'What's on my calendar?', 'Show me my appointments from the last 3 months', 'Did I have a meeting last week?'"""
     args_schema: Type[BaseModel] = CalendarGetEventsInput
     
-    def _run(self, days: int = 7) -> str:
+    def _run(self, days: int = 7, days_back: int = 365) -> str:
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
-    async def _arun(self, days: int = 7) -> Dict[str, Any]:
-        """Get calendar events asynchronously"""
+    async def _arun(self, days: int = 7, days_back: int = 365) -> Dict[str, Any]:
+        """Get calendar events asynchronously (both future and past)"""
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
                     f"{settings.CALENDAR_SERVER_URL}/call",
                     params={"tool_name": "get_events"},
-                    json={"days": days}
+                    json={"days": days, "days_back": days_back}
                 )
                 response.raise_for_status()
                 result = response.json()
@@ -115,8 +120,11 @@ class CalendarDeleteEventTool(BaseTool):
     
     name: str = "delete_calendar_event"
     description: str = """Delete a calendar event by ID.
-    Use this when user wants to cancel or remove a meeting/appointment.
-    Examples: 'Cancel my 2pm meeting', 'Delete tomorrow's appointment'"""
+    CRITICAL: This tool requires an event_id parameter.
+    WORKFLOW: First call get_calendar_events to find the event ID, then use this tool to delete it.
+    This is a two-step process: (1) Fetch events with get_calendar_events, (2) Delete with event_id from results.
+    Use when user wants to cancel/remove meetings: 'Cancel my 2pm meeting', 'Delete that appointment'.
+    Example: User says 'delete that appointment' -> First get_calendar_events(days_back=90) -> Then delete_calendar_event(event_id='abc123')"""
     args_schema: Type[BaseModel] = CalendarDeleteEventInput
     
     def _run(self, event_id: str) -> str:
@@ -169,11 +177,11 @@ class KnowledgeSearchTool(BaseTool):
             # Apply query processing (spelling correction, alias expansion)
             from mcp_host.query_processor import QueryProcessor
             processor = QueryProcessor()
-            processed_query = processor.process_query(query)
+            # Note: process_query is async and requires session_id, but we don't have it here
+            # So we'll skip query processing in the tool and rely on preprocessing at the agent level
+            processed_query = query
             
             logger.info(f"🔍 Searching knowledge base for: '{query}'")
-            if processed_query != query:
-                logger.info(f"   → Processed query: '{processed_query}'")
             
             results = rag_service.search(query=processed_query)
             
@@ -353,3 +361,45 @@ def get_all_mcp_tools() -> list[BaseTool]:
         GmailSendEmailTool(),
         GmailReadEmailTool(),
     ]
+
+
+async def execute_tool_by_name(tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Execute a tool by name with the given parameters.
+    
+    This function looks up a tool from the registry and executes it asynchronously.
+    Used for resuming pending actions after authentication interruptions.
+    
+    Args:
+        tool_name: Name of the tool to execute (e.g., "create_calendar_event")
+        params: Dictionary of parameters to pass to the tool
+    
+    Returns:
+        Result dictionary from the tool execution
+    """
+    # Get all available tools
+    tools = get_all_mcp_tools()
+    
+    # Find the tool with matching name
+    matching_tool = None
+    for tool in tools:
+        if tool.name == tool_name:
+            matching_tool = tool
+            break
+    
+    if not matching_tool:
+        return {
+            "status": "error",
+            "message": f"Tool '{tool_name}' not found. Available tools: {[t.name for t in tools]}"
+        }
+    
+    try:
+        # Execute the tool asynchronously with the provided parameters
+        result = await matching_tool.arun(**params)
+        return result
+    except Exception as e:
+        logger.error(f"Error executing tool {tool_name}: {e}")
+        return {
+            "status": "error",
+            "message": f"Error executing {tool_name}: {str(e)}"
+        }

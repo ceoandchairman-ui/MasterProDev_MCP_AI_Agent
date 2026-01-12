@@ -360,12 +360,22 @@ class CalendarMCPServer(BaseMCPServer):
             return {"status": "error", "error": str(exc)}
 
     async def _delete_event(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Delete event"""
+        """Delete event - FIX 7: Enhanced validation and error handling"""
         event_id = params.get("event_id")
+        
+        # Enhanced validation
         if not event_id:
             return {
                 "status": "error",
-                "error": "Missing event_id"
+                "error": "event_id is required to delete an event",
+                "suggestion": "First call get_calendar_events to find the event_id, then delete_calendar_event with that ID"
+            }
+        
+        if event_id == "[REQUIRES_ID_FROM_ABOVE]":
+            return {
+                "status": "error",
+                "error": "Invalid placeholder event_id",
+                "suggestion": "The event_id must be obtained from get_calendar_events results first"
             }
 
         try:
@@ -385,6 +395,12 @@ class CalendarMCPServer(BaseMCPServer):
                 "message": f"Event {event_id} deleted successfully"
             }
         except HttpError as error:
+            if error.resp.status == 404:
+                return {
+                    "status": "error",
+                    "error": f"Event not found: {event_id}",
+                    "suggestion": "The event may have already been deleted or the ID is incorrect"
+                }
             return {"status": "error", "error": f"Google Calendar API error: {error}"}
         except Exception as exc:
             return {"status": "error", "error": str(exc)}
