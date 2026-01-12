@@ -15,7 +15,7 @@ class GmailSettings(BaseSettings):
     # Google OAuth - MUST be set via environment variables for security
     GOOGLE_CLIENT_ID: Optional[str] = os.getenv("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: Optional[str] = os.getenv("GOOGLE_CLIENT_SECRET")
-    GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8002/callback")
+    GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/integrations/google/callback")
     
     # API Keys
     GMAIL_API_KEY: Optional[str] = os.getenv("GMAIL_API_KEY")
