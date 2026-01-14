@@ -24,10 +24,11 @@ from google.auth.transport.requests import Request
 
 class GmailSettings(BaseSettings):
     # ...existing fields...
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-        extra = "ignore"
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": True,
+        "extra": "ignore"
+    }
 
 
 class GmailMCPServer(BaseMCPServer):

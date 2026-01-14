@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
-import os
 
 
 class Settings(BaseSettings):
@@ -45,6 +44,11 @@ class Settings(BaseSettings):
     HUGGINGFACE_MODEL: Optional[str] = None
     ACTIVE_LLM_PROVIDER: Optional[str] = None
 
+    # Google OAuth
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_OAUTH_REDIRECT_URI: Optional[str] = None
+
     # Weaviate
     WEAVIATE_HOST: str = "weaviate"
     WEAVIATE_PORT: int = 8080
@@ -54,10 +58,11 @@ class Settings(BaseSettings):
     KNOWLEDGE_BASE_PATH: str = "knowledge_base"
     EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-        extra = "ignore"  # Ignore extra fields from .env
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": True,
+        "extra": "ignore"  # Ignore extra fields from .env
+    }
 
 
 # Global settings instance

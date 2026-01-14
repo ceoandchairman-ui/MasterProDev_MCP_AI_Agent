@@ -45,7 +45,7 @@ services:
     container_name: mcpagent-mcp-host
     env_file:
       - ../.env
-    
+    restart: unless-stopped
     ports:
       - "8000:8000"
     depends_on:
@@ -53,6 +53,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       - mcpagent-network
 
@@ -62,11 +65,15 @@ services:
       context: ..
       dockerfile: mcp_servers/calendar_server/Dockerfile
     container_name: mcpagent-calendar
+    restart: unless-stopped
     ports:
       - "8001:8001"
     environment:
       PORT: 8001
       DEBUG: "true"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       - mcpagent-network
 
@@ -76,11 +83,15 @@ services:
       context: ..
       dockerfile: mcp_servers/gmail_server/Dockerfile
     container_name: mcpagent-gmail
+    restart: unless-stopped
     ports:
       - "8002:8002"
     environment:
       PORT: 8002
       DEBUG: "true"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       - mcpagent-network
 
@@ -98,9 +109,34 @@ services:
       ENABLE_MODULES: "text2vec-huggingface"
       HUGGINGFACE_APIKEY: ${HUGGINGFACE_API_KEY}
       PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
-      CLUSTER_HOSTNAME: "node1"
+    networks:
+      - mcpagent-network
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: mcpagent-prometheus
+    ports:
+      - "9090:9090"
     volumes:
-      - weaviate_data:/var/lib/weaviate
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    networks:
+      - mcpagent-network
+
+  # Grafana Visualization
+  grafana:
+    image: grafana/grafana-oss:11.0.0
+    container_name: mcpagent-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=mcpagent_dev_password
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+      - grafana_data:/var/lib/grafana
     networks:
       - mcpagent-network
 
@@ -112,10 +148,14 @@ services:
     container_name: mcpagent-seeder
     env_file:
       - ../.env
+    restart: on-failure
     volumes:
       - ../Company_Documents:/app/Company_Documents
     depends_on:
       - weaviate
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       - mcpagent-network
 
@@ -123,6 +163,7 @@ volumes:
   postgres_data:
   redis_data:
   weaviate_data:
+  grafana_data:
 
 networks:
   mcpagent-network:

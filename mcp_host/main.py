@@ -21,6 +21,7 @@ from .auth import hash_password, verify_password, create_access_token, decode_to
 from .state import state_manager
 from .agent import mcp_agent
 from .rag_service import rag_service
+from prometheus_fastapi_instrumentator import Instrumentator
 
 # Configure logging
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -54,6 +55,9 @@ app = FastAPI(
     description="AI Agent with MCP servers for Calendar and Gmail",
     lifespan=lifespan
 )
+
+# Instrument the app
+Instrumentator().instrument(app).expose(app)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

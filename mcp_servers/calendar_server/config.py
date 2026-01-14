@@ -19,10 +19,11 @@ class CalendarSettings(BaseSettings):
     # API Keys
     CALENDAR_API_KEY: Optional[str] = None
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-        extra = "ignore"
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": True,
+        "extra": "ignore"
+    }
 
 
 calendar_settings = CalendarSettings()

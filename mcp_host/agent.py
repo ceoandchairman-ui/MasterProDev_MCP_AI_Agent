@@ -17,6 +17,7 @@ from mcp_host.prompt_service import prompt_library
 from mcp_host.multi_turn_processor import multi_turn_processor, initialize_multi_turn_processor
 from mcp_host.query_processor import QueryProcessor
 from mcp_host.intent_router import IntentRouter, Intent
+from mcp_host.evaluator import evaluator  # Task evaluation metrics
 
 logger = logging.getLogger(__name__)
 
@@ -272,6 +273,15 @@ class MCPAgent:
                 "success": True,
                 "llm_provider": self.llm_manager.get_active_provider_info(),
             }
+
+            # ===== EVALUATION: Log task results =====
+            await self._evaluate_task(
+                session_id=session_id,
+                user_message=message,
+                tool_runs=tool_runs,
+                final_response=final_response,
+                elapsed_time=execution_time
+            )
 
             logger.info(f"✓ Unified flow completed in {execution_time:.2f}s")
             return response
@@ -710,6 +720,111 @@ Consider date, time, title, and any details mentioned."""
             temperature=0.1
         )
 
+    async def _evaluate_task(
+        self,
+        session_id: str,
+        user_message: str,
+        tool_runs: List[Dict[str, Any]],
+        final_response: str,
+        elapsed_time: float = 0.0
+    ) -> None:
+        """
+        Evaluate task completion and log metrics.
+        Determines task category and calls appropriate evaluator method.
+        """
+        import uuid
+        task_id = f"{session_id}_{uuid.uuid4().hex[:8]}"
+        
+        # Extract tool names from tool_runs
+        tool_names = [run.get("tool") for run in tool_runs]
+        tool_outputs = {run.get("tool"): run.get("output") for run in tool_runs}
+        
+        # Determine task category based on tools used
+        msg_lower = user_message.lower()
+        task_category = "unknown"
+        task_success = True  # Default to True; specific evaluators may override
+        
+        # Calendar tasks
+        if any(t in tool_names for t in ["get_calendar_events", "create_calendar_event", "delete_calendar_event"]):
+            task_category = "calendar"
+            if "delete" in msg_lower or "remove" in msg_lower or "cancel" in msg_lower:
+                evaluator.evaluate_delete_calendar_event(tool_names, tool_outputs, task_id)
+            elif "create" in msg_lower or "schedule" in msg_lower or "book" in msg_lower:
+                evaluator.evaluate_create_calendar_event(tool_names, tool_outputs, task_id)
+            else:
+                evaluator.evaluate_get_calendar_events(tool_names, tool_outputs, task_id)
+        
+        # Knowledge base tasks
+        elif "search_knowledge_base" in tool_names:
+            task_category = "knowledge"
+            evaluator.evaluate_knowledge_search(tool_names, tool_outputs, final_response, task_id)
+        
+        # Email tasks
+        elif "send_email" in tool_names:
+            task_category = "email"
+            evaluator.evaluate_send_email(tool_names, tool_outputs, task_id)
+        elif "get_emails" in tool_names:
+            task_category = "email"
+            evaluator.evaluate_get_emails(tool_names, tool_outputs, task_id)
+        
+        # Conversation (no tools)
+        else:
+            if tool_names:  # Tools were used but we didn't categorize
+                logger.debug(f"Unknown tool combination: {tool_names}")
+            else:
+                task_category = "conversation"
+                evaluator.evaluate_conversation(final_response, task_id)
+        
+        # ====================================================================
+        # NEW: Evaluate Tool Usage, Trajectory, and Cost
+        # ====================================================================
+        
+        # Tool Usage Accuracy
+        await evaluator.evaluate_tool_usage(tool_runs, task_id, task_category)
+        
+        # Task Trajectory (completion rate and efficiency)
+        await evaluator.evaluate_trajectory(tool_runs, task_id, task_success)
+        
+        # Cost Tracking (LLM tokens)
+        # Extract token counts from LLM manager if available
+        prompt_tokens = getattr(self, '_last_prompt_tokens', 0)
+        completion_tokens = getattr(self, '_last_completion_tokens', 0)
+        total_tokens = prompt_tokens + completion_tokens
+        
+        await evaluator.evaluate_cost(task_id, prompt_tokens, completion_tokens, total_tokens)
+        
+        # ====================================================================
+        # NEW: Evaluate Reliability & Performance Metrics
+        # ====================================================================
+        
+        # State Consistency (does agent maintain context?)
+        conversation_history = getattr(self, f'_session_history_{session_id}', [])
+        await evaluator.evaluate_state_consistency(
+            session_id=session_id,
+            user_message=user_message,
+            final_response=final_response,
+            conversation_history=conversation_history,
+            task_id=task_id
+        )
+        
+        # Robustness (can it handle edge cases?)
+        await evaluator.evaluate_robustness(user_message, final_response, task_id)
+        
+        # Adversarial Safety (can it resist malicious inputs?)
+        await evaluator.evaluate_adversarial(user_message, final_response, task_id)
+        
+        # Verification Behavior (does it double-check?)
+        await evaluator.evaluate_verifier(user_message, tool_runs, final_response, task_id)
+        
+        # Latency (how fast?)
+        await evaluator.evaluate_latency(task_id, elapsed_time)
+        
+        # End-to-End Completion (multi-step workflows)
+        await evaluator.evaluate_end_to_end(user_message, tool_runs, final_response, task_id)
+        
+        # Log aggregated metrics every 10 tasks
+        if len(evaluator.results) % 10 == 0:
+            evaluator.print_report()
 
     def _score_prompt_match(self, message: str, intent_type: str) -> float:
         """
