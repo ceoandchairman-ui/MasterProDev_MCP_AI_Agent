@@ -43,8 +43,6 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.mcp_host
     container_name: mcpagent-mcp-host
-    env_file:
-      - ../.env
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -146,8 +144,6 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.seeder
     container_name: mcpagent-seeder
-    env_file:
-      - ../.env
     restart: on-failure
     volumes:
       - ../Company_Documents:/app/Company_Documents
