@@ -41,7 +41,6 @@ yarn.lock
 
 # Docker
 Dockerfile*
-docker-compose*.yml
 .docker
 
 # Documentation
