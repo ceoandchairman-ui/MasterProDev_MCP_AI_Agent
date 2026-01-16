@@ -31,8 +31,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY mcp_host/ /mcp_host/
-COPY prompts.yaml /
-COPY aliases.yaml /
+COPY mcp_host/prompts.yaml /
+COPY mcp_host/aliases.yaml /
 
 # ============================================================================
 # STAGE 2: Build CALENDAR SERVICE DEPENDENCIES
