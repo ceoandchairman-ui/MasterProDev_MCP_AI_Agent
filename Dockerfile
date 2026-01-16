@@ -1,16 +1,19 @@
-FROM python:3.11-slim
+FROM docker:24-dind
+
+# Install Python and dependencies
+RUN apk add --no-cache python3 py3-pip docker-compose
 
 WORKDIR /app
 
-# Copy requirements and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy entire project
+COPY . .
 
-# Copy source code
-COPY mcp_host/ mcp_host/
+# Copy and make entrypoint executable
+COPY docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-# Expose port
-EXPOSE 8000
+# Expose ports
+EXPOSE 8000 5432 6379 8080
 
-# Start the FastAPI application
-CMD ["uvicorn", "mcp_host.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use entrypoint script
+ENTRYPOINT ["/entrypoint.sh"]
