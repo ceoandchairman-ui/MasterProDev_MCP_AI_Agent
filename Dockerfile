@@ -1,16 +1,16 @@
-# Use Docker-in-Docker base image
-FROM docker:24-dind
-
-# Install docker-compose
-RUN apk add --no-cache docker-compose python3
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy entire project
-COPY . .
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose ports
-EXPOSE 8000 5432 6379 8080
+# Copy source code
+COPY mcp_host/ mcp_host/
 
-# Start dockerd and run docker-compose
-CMD ["sh", "-c", "dockerd-entrypoint.sh & sleep 2 && docker-compose up"]
+# Expose port
+EXPOSE 8000
+
+# Start the FastAPI application
+CMD ["uvicorn", "mcp_host.main:app", "--host", "0.0.0.0", "--port", "8000"]
