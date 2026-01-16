@@ -3,11 +3,15 @@ set -e
 
 echo "🐳 Initializing Docker-in-Docker..."
 
-# Wait for dockerd to be fully ready
+# Start dockerd in background
+dockerd-entrypoint.sh &
+DOCKERD_PID=$!
+
+# Wait for docker socket to be ready
 MAX_ATTEMPTS=30
 ATTEMPT=0
 while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-  if dockerd-entrypoint.sh &>/dev/null || [ -S /var/run/docker.sock ]; then
+  if [ -S /var/run/docker.sock ]; then
     echo "✓ Docker daemon ready"
     break
   fi
