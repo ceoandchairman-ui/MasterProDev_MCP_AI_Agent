@@ -192,27 +192,36 @@ async def health_check():
 
 @app.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
-async def login(request: LoginRequest, _request: Request = Depends(lambda: None)):
+async def login(request: Request, login_req: LoginRequest):
     """User login - returns JWT token
     
     Requires email and password authentication.
-    Password is verified against ADMIN_PASSWORD environment variable.
+    Email must match ADMIN_EMAIL, password verified against ADMIN_PASSWORD.
     Rate limited: 5 attempts per minute per IP address.
     """
-    # Verify password
-    if request.password != settings.ADMIN_PASSWORD:
-        logger.warning(f"✗ Failed login attempt for: {request.email} (incorrect password)")
+    # Verify email
+    if login_req.email != settings.ADMIN_EMAIL:
+        logger.warning(f"✗ Failed login attempt: invalid email {login_req.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    user_id = request.email or "00000000-0000-0000-0000-000000000123"
+    # Verify password
+    if login_req.password != settings.ADMIN_PASSWORD:
+        logger.warning(f"✗ Failed login attempt for: {login_req.email} (incorrect password)")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    user_id = login_req.email or "00000000-0000-0000-0000-000000000123"
     
     # Create tokens
     access_token = create_access_token(
-        data={"sub": user_id, "email": request.email},
+        data={"sub": user_id, "email": login_req.email},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     refresh_token = create_access_token(
@@ -222,7 +231,7 @@ async def login(request: LoginRequest, _request: Request = Depends(lambda: None)
     # Create session
     await state_manager.create_session(user_id, access_token, "employee")
     
-    logger.info(f"✓ User logged in: {request.email}")
+    logger.info(f"✓ User logged in: {login_req.email}")
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,

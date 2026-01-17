@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ADMIN_EMAIL: str = "ceo_and_chairman@masterprodev.com"
+    ADMIN_PASSWORD: str = "Happy@123"  # Change in production via environment variable
 
     # MCP Servers
     CALENDAR_SERVER_URL: str = "http://calendar-server:8001"
