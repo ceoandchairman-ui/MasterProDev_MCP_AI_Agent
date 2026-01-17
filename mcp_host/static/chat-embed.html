@@ -437,16 +437,31 @@
         // Auto-open chat in embed mode
         MCPChat.state.isOpen = true;
 
-        // Add logout button
-        const header = document.getElementById('chat-header');
-        const logoutBtn = document.createElement('button');
-        logoutBtn.innerHTML = '🚪 Logout';
-        logoutBtn.style.cssText = 'position:absolute;right:20px;top:20px;padding:8px 16px;background:rgba(255,255,255,0.2);border:none;border-radius:8px;color:white;cursor:pointer;font-size:14px';
-        logoutBtn.onclick = () => {
-            localStorage.removeItem('mpd_auth_token');
-            window.location.href = '/';
-        };
-        header.appendChild(logoutBtn);
+        // Add logout button only for authenticated users
+        const authToken = localStorage.getItem('mpd_auth_token');
+        if (authToken) {
+            const header = document.getElementById('chat-header');
+            const logoutBtn = document.createElement('button');
+            logoutBtn.innerHTML = '🚪 Logout';
+            logoutBtn.style.cssText = 'position:absolute;right:20px;top:20px;padding:8px 16px;background:rgba(255,255,255,0.2);border:none;border-radius:8px;color:white;cursor:pointer;font-size:14px';
+            logoutBtn.onclick = async () => {
+                // Call logout API
+                try {
+                    await fetch('/logout', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`
+                        }
+                    });
+                } catch (e) {
+                    console.log('Logout API call failed:', e);
+                }
+                // Clear local token and redirect
+                localStorage.removeItem('mpd_auth_token');
+                window.location.href = '/';
+            };
+            header.appendChild(logoutBtn);
+        }
 
         // Attach embed-specific event listeners
         const sendButton = document.getElementById('send-button');
