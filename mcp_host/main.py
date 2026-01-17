@@ -285,6 +285,23 @@ async def login(request: Request, login_req: LoginRequest):
     )
 
 
+@app.post("/chat-login", response_model=TokenResponse)
+@limiter.limit("5/minute")
+async def chat_login(request: Request, login_req: LoginRequest):
+    """Chat login - separate from admin login
+    
+    Rejects all login attempts. Users should use 'Continue as Guest' instead.
+    This endpoint exists to prevent admin credentials from being used in chat.
+    """
+    # Reject all login attempts for chat
+    logger.warning(f"Chat login attempt rejected for: {login_req.email}")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="User accounts not available. Please continue as Guest.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 @app.post("/logout")
 async def logout(authorization: Optional[str] = Header(None)):
     """Logout - invalidate session"""
