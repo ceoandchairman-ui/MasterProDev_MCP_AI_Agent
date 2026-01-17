@@ -60,8 +60,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy installed packages from all builders
+# Copy installed packages from ALL builders (critical: must merge all dependencies)
 COPY --from=mcp-host-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=calendar-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=gmail-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=mcp-host-builder /usr/local/bin /usr/local/bin
 
 # Copy service code
