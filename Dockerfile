@@ -1,28 +1,20 @@
 # ============================================================================
-# COMPREHENSIVE MERGED DOCKERFILE - All Services in One Build
+# MERGED DOCKERFILE - All Services in Single Container (No Docker-in-Docker)
 # ============================================================================
-# Builds and orchestrates all 9 services (mcp-host, calendar, gmail, etc.)
-# Individual Dockerfiles preserved for future strategy flexibility
+# Multi-stage build: Each service built separately, all run as Python processes
+# Individual Dockerfiles preserved for future flexibility
 # ============================================================================
 
 FROM python:3.11-slim as base
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    make \
-    libpq-dev \
-    postgresql-client \
-    redis-tools \
-    curl \
-    ca-certificates \
+    gcc g++ make libpq-dev postgresql-client redis-tools curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # ============================================================================
-# STAGE 1: Build ROOT DEPENDENCIES (mcp_host)
+# STAGE 1: mcp_host builder
 # ============================================================================
 
 FROM base as mcp-host-builder
@@ -31,84 +23,96 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY mcp_host/ /mcp_host/
-COPY prompts.yaml /
-COPY mcp_host/aliases.yaml /mcp_host/
+COPY prompts.yaml /prompts.yaml
+COPY mcp_host/aliases.yaml /aliases.yaml
 
 # ============================================================================
-# STAGE 2: Build CALENDAR SERVICE DEPENDENCIES
+# STAGE 2: calendar_server builder
 # ============================================================================
 
 FROM base as calendar-builder
 
-COPY mcp_servers/calendar_server/requirements.txt /calendar_requirements.txt
-RUN pip install --no-cache-dir -r /calendar_requirements.txt
+COPY mcp_servers/calendar_server/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY mcp_servers/calendar_server/ /calendar_server/
 
 # ============================================================================
-# STAGE 3: Build GMAIL SERVICE DEPENDENCIES
+# STAGE 3: gmail_server builder
 # ============================================================================
 
 FROM base as gmail-builder
 
-COPY mcp_servers/gmail_server/requirements.txt /gmail_requirements.txt
-RUN pip install --no-cache-dir -r /gmail_requirements.txt
+COPY mcp_servers/gmail_server/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY mcp_servers/gmail_server/ /gmail_server/
 
 # ============================================================================
-# FINAL STAGE: Combined Runtime Environment
+# FINAL STAGE: Python Runtime (No Docker-in-Docker)
 # ============================================================================
 
-FROM docker:24-dind
+FROM python:3.11-slim
 
-# Install all runtime dependencies
-RUN apk add --no-cache \
-    python3 \
-    py3-pip \
-    docker-compose \
-    postgresql-client \
-    redis \
-    curl \
-    ca-certificates \
-    bash
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ make libpq-dev postgresql-client redis-tools curl ca-certificates bash supervisor \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy Python packages and source code from build stages
+# Copy installed packages from all builders
 COPY --from=mcp-host-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=mcp-host-builder /usr/local/bin /usr/local/bin
+
+# Copy service code
+COPY --from=mcp-host-builder /mcp_host /app/mcp_host
+COPY --from=mcp-host-builder /prompts.yaml /app/prompts.yaml
+COPY --from=mcp-host-builder /aliases.yaml /app/mcp_host/aliases.yaml
 COPY --from=calendar-builder /calendar_server /app/mcp_servers/calendar_server
 COPY --from=gmail-builder /gmail_server /app/mcp_servers/gmail_server
 
-# Copy entire project structure
+# Copy entire project
 COPY . /app/
 
-# Verify critical files exist
-RUN test -f /app/docker-compose.yml || (echo "❌ docker-compose.yml not found" && exit 1)
-RUN test -d /app/mcp_host || (echo "❌ mcp_host directory not found" && exit 1)
-RUN test -d /app/mcp_servers/calendar_server || (echo "❌ calendar_server not found" && exit 1)
-RUN test -d /app/mcp_servers/gmail_server || (echo "❌ gmail_server not found" && exit 1)
+# Create startup script for all services
+RUN cat > /app/start-services.sh << 'EOF'
+#!/bin/bash
+set -e
 
-# Make entrypoint executable
-RUN chmod +x /app/docker-entrypoint.sh
+echo "🚀 Starting AI Agent MCP Services..."
 
-# Create directories for data persistence
-RUN mkdir -p /app/postgres_data /app/redis_data /app/logs
+# Start mcp_host (main FastAPI app)
+echo "📱 Starting mcp_host..."
+cd /app && python -m uvicorn mcp_host.main:app --host 0.0.0.0 --port 8000 &
+MCP_HOST_PID=$!
 
-# Expose all service ports
-EXPOSE 8000 5432 6379 8080 8001 8002 9090 3000
+# Start calendar_server
+echo "📅 Starting calendar_server..."
+cd /app/mcp_servers/calendar_server && python main.py &
+CALENDAR_PID=$!
 
-# Health check for main service
+# Start gmail_server
+echo "📧 Starting gmail_server..."
+cd /app/mcp_servers/gmail_server && python main.py &
+GMAIL_PID=$!
+
+echo "✓ All services started"
+echo "  - mcp_host (PID: $MCP_HOST_PID)"
+echo "  - calendar_server (PID: $CALENDAR_PID)"
+echo "  - gmail_server (PID: $GMAIL_PID)"
+
+# Keep container running
+wait $MCP_HOST_PID
+EOF
+
+RUN chmod +x /app/start-services.sh
+
+# Expose service ports
+EXPOSE 8000 8001 8002
+
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/docs || exit 1
 
-# Use entrypoint script for proper initialization
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
-
-# ============================================================================
-# DOCKERFILE METADATA
-# ============================================================================
-LABEL version="1.0"
-LABEL description="Merged Docker image: mcp-host, calendar_server, gmail_server + full stack"
-LABEL maintainer="AI Agent MCP"
+# Start all services
+CMD ["/app/start-services.sh"]
