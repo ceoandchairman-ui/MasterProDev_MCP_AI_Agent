@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.openapi.utils import get_openapi
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from pydantic_settings import BaseSettings
@@ -62,6 +64,10 @@ app = FastAPI(
     redoc_url="/redoc" if settings.ENV == "development" else None,
     openapi_url="/openapi.json" if settings.ENV == "development" else None
 )
+
+# Initialize rate limiter for login endpoint
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
 
 # Instrument the app
 Instrumentator().instrument(app).expose(app)
@@ -185,13 +191,23 @@ async def health_check():
 
 
 @app.post("/login", response_model=TokenResponse)
-async def login(request: LoginRequest):
+@limiter.limit("5/minute")
+async def login(request: LoginRequest, _request: Request = Depends(lambda: None)):
     """User login - returns JWT token
     
-    For development: accepts any email
-    For production: use environment variable AUTH_PASSWORD for additional security
+    Requires email and password authentication.
+    Password is verified against ADMIN_PASSWORD environment variable.
+    Rate limited: 5 attempts per minute per IP address.
     """
-    # Simple: just accept the email and generate token
+    # Verify password
+    if request.password != settings.ADMIN_PASSWORD:
+        logger.warning(f"✗ Failed login attempt for: {request.email} (incorrect password)")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     user_id = request.email or "00000000-0000-0000-0000-000000000123"
     
     # Create tokens
