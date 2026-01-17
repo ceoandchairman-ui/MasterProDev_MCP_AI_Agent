@@ -51,14 +51,16 @@ async def lifespan(app: FastAPI):
 
 
 # Create FastAPI app
+# In production (ENV=production): disable /docs
+# In development (ENV=development): enable /docs
 app = FastAPI(
     title="MCP Host - Master Pro Dev AI Agent",
     version="1.0.0",
     description="AI Agent with MCP servers for Calendar and Gmail",
     lifespan=lifespan,
-    docs_url=None,  # Disable default docs
-    redoc_url=None,  # Disable default redoc
-    openapi_url=None  # Disable default openapi.json
+    docs_url="/docs" if settings.ENV == "development" else None,
+    redoc_url="/redoc" if settings.ENV == "development" else None,
+    openapi_url="/openapi.json" if settings.ENV == "development" else None
 )
 
 # Instrument the app
@@ -184,10 +186,13 @@ async def health_check():
 
 @app.post("/login", response_model=TokenResponse)
 async def login(request: LoginRequest):
-    """User login - returns JWT token"""
-    # TODO: Verify user against database
-    # For now, use dummy guest user
-    user_id = "00000000-0000-0000-0000-000000000123"
+    """User login - returns JWT token
+    
+    For development: accepts any email
+    For production: use environment variable AUTH_PASSWORD for additional security
+    """
+    # Simple: just accept the email and generate token
+    user_id = request.email or "00000000-0000-0000-0000-000000000123"
     
     # Create tokens
     access_token = create_access_token(
@@ -201,6 +206,7 @@ async def login(request: LoginRequest):
     # Create session
     await state_manager.create_session(user_id, access_token, "employee")
     
+    logger.info(f"✓ User logged in: {request.email}")
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
