@@ -140,34 +140,81 @@ async def openapi_schema(authorization: Optional[str] = Header(None)):
     return app.openapi_schema
 
 
+# Login page for docs access
+@app.get("/login-docs", include_in_schema=False)
+async def login_page():
+    """Login page to access API documentation"""
+    return FileResponse(str(STATIC_DIR / "login-docs.html"))
+
+
 # Custom docs UI with auth
 @app.get("/docs", include_in_schema=False)
-async def swagger_ui(authorization: Optional[str] = Header(None)):
+async def swagger_ui(
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None)
+):
     """Swagger UI (requires valid auth token)"""
-    # Require authentication
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing authorization header. Use /login to get a token."
-        )
+    # Try to get token from query parameter or header
+    auth_token = None
     
-    token = get_token_from_header(authorization)
-    payload = decode_token(token)
+    if token:
+        # Token from URL query parameter
+        auth_token = token
+    elif authorization:
+        # Token from Authorization header
+        auth_token = get_token_from_header(authorization)
+    else:
+        # No token provided - redirect to login page
+        return FileResponse(str(STATIC_DIR / "login-docs.html"))
+    
+    # Validate token
+    payload = decode_token(auth_token)
     
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token. Use /login to get a new token."
+            detail="Invalid or expired token. Please login again.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
     logger.info(f"📋 Swagger docs accessed by user {payload.get('sub')}")
     
-    # Return Swagger UI HTML
+    # Return Swagger UI HTML with token in header
     from fastapi.openapi.docs import get_swagger_ui_html
-    return get_swagger_ui_html(
-        openapi_url="/openapi.json",
-        title="MCP Host API Documentation"
-    )
+    from fastapi.responses import HTMLResponse
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>MCP Host API Documentation</title>
+        <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />
+    </head>
+    <body>
+        <div id="swagger-ui"></div>
+        <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+        <script>
+            window.onload = function() {{
+                window.ui = SwaggerUIBundle({{
+                    url: "/openapi.json",
+                    dom_id: '#swagger-ui',
+                    presets: [
+                        SwaggerUIBundle.presets.apis,
+                        SwaggerUIStandalonePreset
+                    ],
+                    layout: "StandaloneLayout",
+                    requestInterceptor: (req) => {{
+                        req.headers['Authorization'] = 'Bearer {auth_token}';
+                        return req;
+                    }}
+                }});
+            }};
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
 
 
 # Mount static files
