@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from pydantic_settings import BaseSettings
 import logging
 import uuid
+import httpx
 from typing import Optional
 from pathlib import Path
 
@@ -227,25 +228,25 @@ async def get_profile(authorization: Optional[str] = Header(None)):
 @app.get("/integrations/google/calendar/auth")
 async def calendar_auth_proxy():
     """Proxy calendar OAuth - redirects to Google with correct callback URI"""
-    import httpx
     try:
         callback_uri = f"{settings.PUBLIC_DOMAIN}/integrations/google/calendar/callback"
-        async with httpx.AsyncClient() as client:
-            # Call calendar-server's /auth with our public callback URI
+        logger.info(f"📅 Calendar OAuth: callback_uri={callback_uri}, calendar_server={settings.CALENDAR_SERVER_URL}")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 f"{settings.CALENDAR_SERVER_URL}/auth",
                 params={"redirect_uri": callback_uri}
             )
+        logger.info(f"📅 Calendar server responded with status {response.status_code}")
         return FileResponse(content=response.content, media_type="text/html")
     except Exception as e:
-        logger.error(f"Calendar auth proxy error: {e}")
+        logger.error(f"❌ Calendar auth proxy error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Calendar auth failed: {str(e)}")
 
 
 @app.get("/integrations/google/calendar/callback")
 async def calendar_callback_proxy(code: str = None, state: str = None, error: str = None):
     """Proxy calendar OAuth callback - passes code to calendar-server"""
-    import httpx
     if error:
         return FileResponse(
             content=f"""
@@ -260,15 +261,16 @@ async def calendar_callback_proxy(code: str = None, state: str = None, error: st
         )
     
     try:
-        async with httpx.AsyncClient() as client:
-            # Pass code to calendar-server's callback
+        logger.info(f"📅 Calendar callback: code={code[:10] if code else 'None'}...")
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 f"{settings.CALENDAR_SERVER_URL}/callback",
                 params={"code": code, "state": state}
             )
+        logger.info(f"📅 Calendar callback processed, status={response.status_code}")
         return FileResponse(content=response.content, media_type="text/html")
     except Exception as e:
-        logger.error(f"Calendar callback proxy error: {e}")
+        logger.error(f"❌ Calendar callback proxy error: {e}", exc_info=True)
         return FileResponse(
             content=f"""
             <html>
@@ -285,25 +287,25 @@ async def calendar_callback_proxy(code: str = None, state: str = None, error: st
 @app.get("/integrations/google/gmail/auth")
 async def gmail_auth_proxy():
     """Proxy Gmail OAuth - redirects to Google with correct callback URI"""
-    import httpx
     try:
         callback_uri = f"{settings.PUBLIC_DOMAIN}/integrations/google/gmail/callback"
-        async with httpx.AsyncClient() as client:
-            # Call gmail-server's /auth with our public callback URI
+        logger.info(f"📧 Gmail OAuth: callback_uri={callback_uri}, gmail_server={settings.GMAIL_SERVER_URL}")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 f"{settings.GMAIL_SERVER_URL}/auth",
                 params={"redirect_uri": callback_uri}
             )
+        logger.info(f"📧 Gmail server responded with status {response.status_code}")
         return FileResponse(content=response.content, media_type="text/html")
     except Exception as e:
-        logger.error(f"Gmail auth proxy error: {e}")
+        logger.error(f"❌ Gmail auth proxy error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Gmail auth failed: {str(e)}")
 
 
 @app.get("/integrations/google/gmail/callback")
 async def gmail_callback_proxy(code: str = None, state: str = None, error: str = None):
     """Proxy Gmail OAuth callback - passes code to gmail-server"""
-    import httpx
     if error:
         return FileResponse(
             content=f"""
@@ -318,14 +320,16 @@ async def gmail_callback_proxy(code: str = None, state: str = None, error: str =
         )
     
     try:
-        async with httpx.AsyncClient() as client:
-            # Pass code to gmail-server's callback
+        logger.info(f"📧 Gmail callback: code={code[:10] if code else 'None'}...")
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 f"{settings.GMAIL_SERVER_URL}/callback",
                 params={"code": code, "state": state}
             )
+        logger.info(f"📧 Gmail callback processed, status={response.status_code}")
         return FileResponse(content=response.content, media_type="text/html")
     except Exception as e:
+        logger.error(f"❌ Gmail callback proxy error: {e}", exc_info=True)
         logger.error(f"Gmail callback proxy error: {e}")
         return FileResponse(
             content=f"""
