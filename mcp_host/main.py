@@ -55,7 +55,10 @@ app = FastAPI(
     title="MCP Host - Master Pro Dev AI Agent",
     version="1.0.0",
     description="AI Agent with MCP servers for Calendar and Gmail",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url=None,  # Disable default docs
+    redoc_url=None,  # Disable default redoc
+    openapi_url=None  # Disable default openapi.json
 )
 
 # Instrument the app
@@ -95,8 +98,28 @@ def get_token_from_header(authorization: Optional[str] = None) -> str:
 # Secure OpenAPI/Docs (Require Authentication)
 # ============================================================================
 
-def get_openapi_schema():
-    """Generate OpenAPI schema (only callable by authenticated users)"""
+@app.get("/openapi.json", include_in_schema=False)
+async def openapi_schema(authorization: Optional[str] = Header(None)):
+    """Get OpenAPI schema (requires valid auth token)"""
+    # Require authentication
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization header. Use /login to get a token."
+        )
+    
+    token = get_token_from_header(authorization)
+    payload = decode_token(token)
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token. Use /login to get a new token."
+        )
+    
+    logger.info(f"📋 OpenAPI schema accessed by user {payload.get('sub')}")
+    
+    # Generate and return OpenAPI schema
     if app.openapi_schema:
         return app.openapi_schema
     
@@ -110,40 +133,33 @@ def get_openapi_schema():
     return app.openapi_schema
 
 
-# Override docs endpoints to require authentication
-@app.get("/openapi.json", include_in_schema=False)
-async def openapi_schema(authorization: Optional[str] = Header(None)):
-    """Get OpenAPI schema (requires valid auth token)"""
-    token = get_token_from_header(authorization)
-    payload = decode_token(token)
-    
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token. Use /login to get a token."
-        )
-    
-    logger.info(f"📋 OpenAPI schema accessed by user {payload.get('sub')}")
-    return get_openapi_schema()
-
-
 # Custom docs UI with auth
 @app.get("/docs", include_in_schema=False)
 async def swagger_ui(authorization: Optional[str] = Header(None)):
     """Swagger UI (requires valid auth token)"""
+    # Require authentication
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization header. Use /login to get a token."
+        )
+    
     token = get_token_from_header(authorization)
     payload = decode_token(token)
     
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token. Use /login to get a token."
+            detail="Invalid or expired token. Use /login to get a new token."
         )
     
     logger.info(f"📋 Swagger docs accessed by user {payload.get('sub')}")
-    return FileResponse(
-        path=Path(__file__).parent.parent / "static" / "swagger-ui.html",
-        media_type="text/html"
+    
+    # Return Swagger UI HTML
+    from fastapi.openapi.docs import get_swagger_ui_html
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="MCP Host API Documentation"
     )
 
 
