@@ -159,6 +159,126 @@ async def get_profile(authorization: Optional[str] = Header(None)):
     )
 
 
+# ============================================================================
+# OAuth Proxy Endpoints (Routes calendar/gmail OAuth through mcp_host)
+# ============================================================================
+
+@app.get("/integrations/google/calendar/auth")
+async def calendar_auth_proxy():
+    """Proxy calendar OAuth - redirects to Google with correct callback URI"""
+    import httpx
+    try:
+        callback_uri = f"{settings.PUBLIC_DOMAIN}/integrations/google/calendar/callback"
+        async with httpx.AsyncClient() as client:
+            # Call calendar-server's /auth with our public callback URI
+            response = await client.get(
+                f"{settings.CALENDAR_SERVER_URL}/auth",
+                params={"redirect_uri": callback_uri}
+            )
+        return FileResponse(content=response.content, media_type="text/html")
+    except Exception as e:
+        logger.error(f"Calendar auth proxy error: {e}")
+        raise HTTPException(status_code=500, detail=f"Calendar auth failed: {str(e)}")
+
+
+@app.get("/integrations/google/calendar/callback")
+async def calendar_callback_proxy(code: str = None, state: str = None, error: str = None):
+    """Proxy calendar OAuth callback - passes code to calendar-server"""
+    import httpx
+    if error:
+        return FileResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Denied</h1>
+                    <p>Error: {error}</p>
+                </body>
+            </html>
+            """.encode(),
+            media_type="text/html"
+        )
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            # Pass code to calendar-server's callback
+            response = await client.get(
+                f"{settings.CALENDAR_SERVER_URL}/callback",
+                params={"code": code, "state": state}
+            )
+        return FileResponse(content=response.content, media_type="text/html")
+    except Exception as e:
+        logger.error(f"Calendar callback proxy error: {e}")
+        return FileResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Failed</h1>
+                    <p>Error: {str(e)}</p>
+                </body>
+            </html>
+            """.encode(),
+            media_type="text/html"
+        )
+
+
+@app.get("/integrations/google/gmail/auth")
+async def gmail_auth_proxy():
+    """Proxy Gmail OAuth - redirects to Google with correct callback URI"""
+    import httpx
+    try:
+        callback_uri = f"{settings.PUBLIC_DOMAIN}/integrations/google/gmail/callback"
+        async with httpx.AsyncClient() as client:
+            # Call gmail-server's /auth with our public callback URI
+            response = await client.get(
+                f"{settings.GMAIL_SERVER_URL}/auth",
+                params={"redirect_uri": callback_uri}
+            )
+        return FileResponse(content=response.content, media_type="text/html")
+    except Exception as e:
+        logger.error(f"Gmail auth proxy error: {e}")
+        raise HTTPException(status_code=500, detail=f"Gmail auth failed: {str(e)}")
+
+
+@app.get("/integrations/google/gmail/callback")
+async def gmail_callback_proxy(code: str = None, state: str = None, error: str = None):
+    """Proxy Gmail OAuth callback - passes code to gmail-server"""
+    import httpx
+    if error:
+        return FileResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Denied</h1>
+                    <p>Error: {error}</p>
+                </body>
+            </html>
+            """.encode(),
+            media_type="text/html"
+        )
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            # Pass code to gmail-server's callback
+            response = await client.get(
+                f"{settings.GMAIL_SERVER_URL}/callback",
+                params={"code": code, "state": state}
+            )
+        return FileResponse(content=response.content, media_type="text/html")
+    except Exception as e:
+        logger.error(f"Gmail callback proxy error: {e}")
+        return FileResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Failed</h1>
+                    <p>Error: {str(e)}</p>
+                </body>
+            </html>
+            """.encode(),
+            media_type="text/html"
+        )
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)):
     """Chat endpoint - processes messages through LangChain agent"""

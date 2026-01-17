@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     PORT: int = 8000
     ALLOWED_ORIGINS: list = ["*"]
     SECRET_KEY: str = "your-secret-key-change-in-production"
+    PUBLIC_DOMAIN: str = "http://localhost:8000"  # Set to your Railway domain in production
 
     # Database
     DATABASE_URL: str = "postgresql://mcpagent:mcpagent_dev_password@postgres:5432/mcpagent"

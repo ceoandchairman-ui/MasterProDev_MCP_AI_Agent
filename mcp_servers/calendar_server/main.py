@@ -91,13 +91,19 @@ class CalendarMCPServer(BaseMCPServer):
         
         # Register OAuth login endpoint
         @self.app.get("/auth")
-        async def start_auth():
-            """Start OAuth flow and return authorization URL"""
+        async def start_auth(redirect_uri: str = None):
+            """Start OAuth flow and return authorization URL
+            Args:
+                redirect_uri: OAuth callback URI (defaults to http://localhost:8001/callback for local dev)
+            """
             try:
+                # Use provided redirect_uri or default to localhost for development
+                oauth_redirect = redirect_uri or "http://localhost:8001/callback"
+                
                 flow = Flow.from_client_secrets_file(
                     self._creds_path,
                     scopes=self._scopes,
-                    redirect_uri="http://localhost:8001/callback"
+                    redirect_uri=oauth_redirect
                 )
                 
                 auth_url, state = flow.authorization_url(prompt='consent')

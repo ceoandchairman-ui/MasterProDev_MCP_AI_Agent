@@ -39,8 +39,11 @@ class GmailMCPServer(BaseMCPServer):
         
         # Register OAuth authorization endpoint
         @self.app.get("/auth")
-        async def auth_endpoint():
-            """Start OAuth flow"""
+        async def auth_endpoint(redirect_uri: str = None):
+            """Start OAuth flow
+            Args:
+                redirect_uri: OAuth callback URI (defaults to http://localhost:8002/callback for local dev)
+            """
             from fastapi.responses import HTMLResponse
             
             if not os.path.exists(self._creds_path):
@@ -53,11 +56,14 @@ class GmailMCPServer(BaseMCPServer):
                 </html>
                 """)
             
+            # Use provided redirect_uri or default to localhost for development
+            oauth_redirect = redirect_uri or "http://localhost:8002/callback"
+            
             # Create Flow for web-based OAuth
             flow = Flow.from_client_secrets_file(
                 self._creds_path,
                 scopes=self._scopes,
-                redirect_uri="http://localhost:8002/callback"
+                redirect_uri=oauth_redirect
             )
             
             # Generate authorization URL
