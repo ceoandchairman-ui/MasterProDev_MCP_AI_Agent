@@ -439,22 +439,38 @@ async def gmail_callback_proxy(code: str = None, state: str = None, error: str =
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)):
-    """Chat endpoint - processes messages through LangChain agent"""
-    token = get_token_from_header(authorization)
-    session = await state_manager.get_session(token)
+    """Chat endpoint - PUBLIC - guests allowed, authentication optional for features"""
     
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired session"
-        )
-    
-    session_id = session["session_id"]
-    user_id = session["user_id"]
-    conversation_id = request.conversation_id or str(uuid.uuid4())
-    
-    # Get conversation history for context
-    conversation_history = await state_manager.get_conversation_history(session_id)
+    # Check if user is authenticated (optional)
+    if authorization:
+        try:
+            token = get_token_from_header(authorization)
+            session = await state_manager.get_session(token)
+            
+            if session:
+                # Authenticated user - has history, can save conversations
+                session_id = session["session_id"]
+                user_id = session["user_id"]
+                conversation_id = request.conversation_id or str(uuid.uuid4())
+                conversation_history = await state_manager.get_conversation_history(session_id)
+            else:
+                # Invalid session - fall back to guest mode
+                session_id = str(uuid.uuid4())
+                user_id = "guest"
+                conversation_id = request.conversation_id or str(uuid.uuid4())
+                conversation_history = []
+        except HTTPException:
+            # Token validation failed - use guest mode
+            session_id = str(uuid.uuid4())
+            user_id = "guest"
+            conversation_id = request.conversation_id or str(uuid.uuid4())
+            conversation_history = []
+    else:
+        # No token provided - guest mode
+        session_id = str(uuid.uuid4())
+        user_id = "guest"
+        conversation_id = request.conversation_id or str(uuid.uuid4())
+        conversation_history = []
     
     # Process message through LangChain agent
     agent_result = await mcp_agent.process_message(
@@ -472,10 +488,11 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
     
     response_text = agent_result.get("response", "I couldn't process that request.")
     
-    # Save conversation turn
-    await state_manager.save_conversation_turn(
-        session_id, user_id, conversation_id, request.message, response_text
-    )
+    # Save conversation only for authenticated users
+    if user_id != "guest":
+        await state_manager.save_conversation_turn(
+            session_id, user_id, conversation_id, request.message, response_text
+        )
     
     return ChatResponse(
         response=response_text,
@@ -500,9 +517,9 @@ async def get_conversations(authorization: Optional[str] = Header(None)):
 
 
 @app.get("/")
-async def root():
-    """Redirect to login page"""
-    login_path = STATIC_DIR / "login.html"
+async dServe public chat page for guests"""
+    chat_path = STATIC_DIR / "chat-embed.html"
+    return FileResponse(chat "login.html"
     return FileResponse(login_path)
 
 
