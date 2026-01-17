@@ -53,16 +53,15 @@ async def lifespan(app: FastAPI):
 
 
 # Create FastAPI app
-# In production (ENV=production): disable /docs
-# In development (ENV=development): enable /docs
+# Disable default docs - we use custom auth-protected endpoints below
 app = FastAPI(
     title="MCP Host - Master Pro Dev AI Agent",
     version="1.0.0",
     description="AI Agent with MCP servers for Calendar and Gmail",
     lifespan=lifespan,
-    docs_url="/docs" if settings.ENV == "development" else None,
-    redoc_url="/redoc" if settings.ENV == "development" else None,
-    openapi_url="/openapi.json" if settings.ENV == "development" else None
+    docs_url=None,  # Disabled - using custom /docs with auth
+    redoc_url=None,  # Disabled
+    openapi_url=None  # Disabled - using custom /openapi.json with auth
 )
 
 # Initialize rate limiter for login endpoint
