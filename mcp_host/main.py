@@ -1,9 +1,10 @@
 """FastAPI server for MCP Host"""
 
-from fastapi import FastAPI, HTTPException, Depends, status, Header
+from fastapi import FastAPI, HTTPException, Depends, status, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.openapi.utils import get_openapi
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from pydantic_settings import BaseSettings
@@ -59,9 +60,6 @@ app = FastAPI(
 # Instrument the app
 Instrumentator().instrument(app).expose(app)
 
-# Mount static files
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -72,7 +70,10 @@ app.add_middleware(
 )
 
 
-# Helper functions
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
 def get_token_from_header(authorization: Optional[str] = None) -> str:
     """Extract token from authorization header"""
     if not authorization:
@@ -87,6 +88,66 @@ def get_token_from_header(authorization: Optional[str] = None) -> str:
             detail="Invalid authorization header"
         )
     return parts[1]
+
+
+# ============================================================================
+# Secure OpenAPI/Docs (Require Authentication)
+# ============================================================================
+
+def get_openapi_schema():
+    """Generate OpenAPI schema (only callable by authenticated users)"""
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title="MCP Host - Master Pro Dev AI Agent",
+        version="1.0.0",
+        description="AI Agent with MCP servers for Calendar and Gmail",
+        routes=app.routes,
+    )
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+# Override docs endpoints to require authentication
+@app.get("/openapi.json", include_in_schema=False)
+async def openapi_schema(authorization: Optional[str] = Header(None)):
+    """Get OpenAPI schema (requires valid auth token)"""
+    token = get_token_from_header(authorization)
+    payload = decode_token(token)
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token. Use /login to get a token."
+        )
+    
+    logger.info(f"📋 OpenAPI schema accessed by user {payload.get('sub')}")
+    return get_openapi_schema()
+
+
+# Custom docs UI with auth
+@app.get("/docs", include_in_schema=False)
+async def swagger_ui(authorization: Optional[str] = Header(None)):
+    """Swagger UI (requires valid auth token)"""
+    token = get_token_from_header(authorization)
+    payload = decode_token(token)
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token. Use /login to get a token."
+        )
+    
+    logger.info(f"📋 Swagger docs accessed by user {payload.get('sub')}")
+    return FileResponse(
+        path=Path(__file__).parent.parent / "static" / "swagger-ui.html",
+        media_type="text/html"
+    )
+
+
+# Mount static files
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 # Routes
