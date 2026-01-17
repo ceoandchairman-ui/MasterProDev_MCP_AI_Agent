@@ -366,9 +366,217 @@
             white-space: pre-wrap;
             word-wrap: break-word;
         }
+
+        /* Login Modal Styles */
+        .auth-modal {
+            display: flex;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .auth-modal.hidden {
+            display: none;
+        }
+
+        .auth-container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .auth-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .auth-header h2 {
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 24px;
+        }
+
+        .auth-header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .auth-form {
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            color: #333;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #00C896;
+        }
+
+        .auth-button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 12px;
+        }
+
+        .auth-button.primary {
+            background: linear-gradient(135deg, #00C896 0%, #6B5CE7 100%);
+            color: white;
+        }
+
+        .auth-button.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 200, 150, 0.3);
+        }
+
+        .auth-button.secondary {
+            background: #f5f5f5;
+            color: #333;
+            border: 2px solid #e0e0e0;
+        }
+
+        .auth-button.secondary:hover {
+            background: #efefef;
+        }
+
+        .auth-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .auth-divider {
+            text-align: center;
+            margin: 20px 0;
+            position: relative;
+        }
+
+        .auth-divider::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: #e0e0e0;
+        }
+
+        .auth-divider span {
+            background: white;
+            padding: 0 10px;
+            color: #999;
+            font-size: 13px;
+            position: relative;
+        }
+
+        .auth-error {
+            background: #fee;
+            color: #d00;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            border-left: 4px solid #d00;
+        }
+
+        .auth-error.hidden {
+            display: none;
+        }
+
+        .user-info {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: white;
+            font-size: 14px;
+        }
+
+        .user-info.hidden {
+            display: none;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
     </style>
 </head>
 <body>
+    <!-- Auth Modal -->
+    <div id="auth-modal" class="auth-modal">
+        <div class="auth-container">
+            <div class="auth-header">
+                <h2>Master Pro Dev</h2>
+                <p>Sign in or continue as guest</p>
+            </div>
+
+            <div id="auth-error" class="auth-error hidden"></div>
+
+            <div class="auth-form">
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="email" id="login-email" placeholder="your@email.com">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="login-password" placeholder="Enter your password">
+                </div>
+                <button class="auth-button primary" id="login-btn" onclick="handleLogin()">Sign In</button>
+            </div>
+
+            <div class="auth-divider">
+                <span>or</span>
+            </div>
+
+            <button class="auth-button secondary" onclick="handleGuestLogin()">Continue as Guest</button>
+        </div>
+    </div>
+
     <div id="chat-embed-container">
         <div id="chat-header">
             <div id="chat-logo">
@@ -382,6 +590,10 @@
             <div id="chat-info">
                 <h1>Master Pro Dev</h1>
                 <p><span id="status-indicator"></span>AI Assistant Online</p>
+            </div>
+            <div id="user-info" class="user-info hidden">
+                <span id="user-display">Guest</span>
+                <button class="logout-btn" onclick="handleLogout()">🚪 Logout</button>
             </div>
         </div>
 
@@ -422,151 +634,241 @@
 
     <script src="/static/chat-widget.js?v=3"></script>
     <script>
-        // Check authentication
-        const token = localStorage.getItem('mpd_auth_token');
-        if (!token) {
-            window.location.href = '/';
+        // Authentication Management
+        function showAuthModal() {
+            document.getElementById('auth-modal').classList.remove('hidden');
         }
 
-        // Initialize chat with embed configuration
-        MCPChat.init({
-            apiUrl: window.location.origin,
-            welcomeMessage: 'Your intelligent AI assistant is ready to help!'
-        });
-
-        // Auto-open chat in embed mode
-        MCPChat.state.isOpen = true;
-
-        // Add logout button only for authenticated users
-        const authToken = localStorage.getItem('mpd_auth_token');
-        if (authToken) {
-            const header = document.getElementById('chat-header');
-            const logoutBtn = document.createElement('button');
-            logoutBtn.innerHTML = '🚪 Logout';
-            logoutBtn.style.cssText = 'position:absolute;right:20px;top:20px;padding:8px 16px;background:rgba(255,255,255,0.2);border:none;border-radius:8px;color:white;cursor:pointer;font-size:14px';
-            logoutBtn.onclick = async () => {
-                // Call logout API
-                try {
-                    await fetch('/logout', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${authToken}`
-                        }
-                    });
-                } catch (e) {
-                    console.log('Logout API call failed:', e);
-                }
-                // Clear local token and redirect
-                localStorage.removeItem('mpd_auth_token');
-                window.location.href = '/';
-            };
-            header.appendChild(logoutBtn);
+        function hideAuthModal() {
+            document.getElementById('auth-modal').classList.add('hidden');
         }
 
-        // Attach embed-specific event listeners
-        const sendButton = document.getElementById('send-button');
-        const chatInput = document.getElementById('chat-input');
-        const messagesContainer = document.getElementById('chat-messages');
-        const typingIndicator = document.getElementById('typing-indicator');
+        function showAuthError(message) {
+            const errorDiv = document.getElementById('auth-error');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+            setTimeout(() => {
+                errorDiv.classList.add('hidden');
+            }, 5000);
+        }
 
-        async function sendEmbedMessage() {
-            const message = chatInput.value.trim();
-            if (!message || MCPChat.state.isTyping) return;
+        async function handleLogin() {
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value;
 
-            // Add user message
-            addEmbedMessage(message, 'user');
-            chatInput.value = '';
-            chatInput.style.height = 'auto';
+            if (!email || !password) {
+                showAuthError('Please enter email and password');
+                return;
+            }
 
-            // Show typing
-            MCPChat.state.isTyping = true;
-            typingIndicator.classList.add('show');
+            const loginBtn = document.getElementById('login-btn');
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Signing in...';
 
             try {
-                // Authenticate if needed
-                if (!MCPChat.state.isAuthenticated) {
-                    await MCPChat.authenticate();
-                }
-
-                // Send to API
-                const response = await fetch(`${MCPChat.config.apiUrl}/chat`, {
+                const response = await fetch('/login', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${MCPChat.state.authToken}`
-                    },
-                    body: JSON.stringify({
-                        message: message,
-                        conversation_id: MCPChat.state.conversationId
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
                 });
 
-                if (!response.ok) {
-                    if (response.status === 401) {
-                        MCPChat.state.isAuthenticated = false;
-                        await MCPChat.authenticate();
-                        return sendEmbedMessage();
-                    }
-                    throw new Error(`HTTP ${response.status}`);
-                }
-
                 const data = await response.json();
-                
-                if (data.conversation_id) {
-                    MCPChat.state.conversationId = data.conversation_id;
+
+                if (!response.ok) {
+                    showAuthError(data.detail || 'Login failed');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Sign In';
+                    return;
                 }
 
-                // Hide typing and show response
-                typingIndicator.classList.remove('show');
-                MCPChat.state.isTyping = false;
-                addEmbedMessage(data.response, 'bot');
+                // Store token and user info
+                localStorage.setItem('mpd_auth_token', data.access_token);
+                localStorage.setItem('mpd_user_email', email);
+                localStorage.setItem('mpd_is_guest', 'false');
+
+                // Update UI and hide modal
+                updateUserInfo(email);
+                hideAuthModal();
+                initializeChat();
 
             } catch (error) {
-                console.error('Chat error:', error);
-                typingIndicator.classList.remove('show');
-                MCPChat.state.isTyping = false;
-                addEmbedMessage('Sorry, I encountered an error. Please try again.', 'bot', true);
+                console.error('Login error:', error);
+                showAuthError('Connection error. Please try again.');
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Sign In';
             }
         }
 
-        function addEmbedMessage(text, sender, isError = false) {
-            const welcome = messagesContainer.querySelector('.welcome-banner');
-            if (welcome && sender === 'user') {
-                welcome.remove();
-            }
+        function handleGuestLogin() {
+            // Generate a guest session
+            const guestId = 'guest_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('mpd_auth_token', guestId);
+            localStorage.setItem('mpd_user_email', 'Guest');
+            localStorage.setItem('mpd_is_guest', 'true');
 
-            const messageHTML = `
-                <div class="message ${sender}">
-                    <div class="message-avatar">${sender === 'bot' ? '🤖' : '👤'}</div>
-                    <div class="message-content ${isError ? 'error-message' : ''}">
-                        <div class="message-text">${escapeHtml(text)}</div>
-                        <div class="message-time">${new Date().toLocaleTimeString()}</div>
+            updateUserInfo('Guest');
+            hideAuthModal();
+            initializeChat();
+        }
+
+        function updateUserInfo(userEmail) {
+            const userInfo = document.getElementById('user-info');
+            const userDisplay = document.getElementById('user-display');
+            userDisplay.textContent = userEmail;
+            userInfo.classList.remove('hidden');
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('mpd_auth_token');
+            localStorage.removeItem('mpd_user_email');
+            localStorage.removeItem('mpd_is_guest');
+            
+            // Clear chat
+            const messagesContainer = document.getElementById('chat-messages');
+            messagesContainer.innerHTML = `
+                <div class="welcome-banner">
+                    <div class="welcome-icon">
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                        </svg>
                     </div>
+                    <h2>Welcome to Master Pro Dev!</h2>
+                    <p>Your intelligent AI assistant is ready to help you with calendar management, email handling, and much more. Start a conversation below!</p>
                 </div>
             `;
 
-            messagesContainer.insertAdjacentHTML('beforeend', messageHTML);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            MCPChat.state.conversationId = null;
+            document.getElementById('user-info').classList.add('hidden');
+            showAuthModal();
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        function initializeChat() {
+            // Check authentication
+            const token = localStorage.getItem('mpd_auth_token');
+            const isGuest = localStorage.getItem('mpd_is_guest') === 'true';
 
-        sendButton.addEventListener('click', sendEmbedMessage);
-
-        chatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendEmbedMessage();
+            if (!token) {
+                showAuthModal();
+                return;
             }
-        });
 
-        chatInput.addEventListener('input', () => {
-            chatInput.style.height = 'auto';
-            chatInput.style.height = Math.min(chatInput.scrollHeight, 150) + 'px';
+            // Initialize chat with embed configuration
+            MCPChat.init({
+                apiUrl: window.location.origin,
+                welcomeMessage: 'Your intelligent AI assistant is ready to help!'
+            });
+
+            // Auto-open chat in embed mode
+            MCPChat.state.isOpen = true;
+
+            // Attach embed-specific event listeners
+            const sendButton = document.getElementById('send-button');
+            const chatInput = document.getElementById('chat-input');
+            const messagesContainer = document.getElementById('chat-messages');
+            const typingIndicator = document.getElementById('typing-indicator');
+
+            async function sendEmbedMessage() {
+                const message = chatInput.value.trim();
+                if (!message || MCPChat.state.isTyping) return;
+
+                // Add user message
+                addEmbedMessage(message, 'user');
+                chatInput.value = '';
+                chatInput.style.height = 'auto';
+
+                // Show typing
+                MCPChat.state.isTyping = true;
+                typingIndicator.classList.add('show');
+
+                try {
+                    // Send to API
+                    const response = await fetch(`${MCPChat.config.apiUrl}/chat`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            message: message,
+                            conversation_id: MCPChat.state.conversationId
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    
+                    if (data.conversation_id) {
+                        MCPChat.state.conversationId = data.conversation_id;
+                    }
+
+                    // Hide typing and show response
+                    typingIndicator.classList.remove('show');
+                    MCPChat.state.isTyping = false;
+                    addEmbedMessage(data.response, 'bot');
+
+                } catch (error) {
+                    console.error('Chat error:', error);
+                    typingIndicator.classList.remove('show');
+                    MCPChat.state.isTyping = false;
+                    addEmbedMessage('Sorry, I encountered an error. Please try again.', 'bot', true);
+                }
+            }
+
+            function addEmbedMessage(text, sender, isError = false) {
+                const welcome = messagesContainer.querySelector('.welcome-banner');
+                if (welcome && sender === 'user') {
+                    welcome.remove();
+                }
+
+                const messageHTML = `
+                    <div class="message ${sender}">
+                        <div class="message-avatar">${sender === 'bot' ? '🤖' : '👤'}</div>
+                        <div class="message-content ${isError ? 'error-message' : ''}">
+                            <div class="message-text">${escapeHtml(text)}</div>
+                            <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                        </div>
+                    </div>
+                `;
+
+                messagesContainer.insertAdjacentHTML('beforeend', messageHTML);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            sendButton.addEventListener('click', sendEmbedMessage);
+
+            chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendEmbedMessage();
+                }
+            });
+
+            chatInput.addEventListener('input', () => {
+                chatInput.style.height = 'auto';
+                chatInput.style.height = Math.min(chatInput.scrollHeight, 150) + 'px';
+            });
+        }
+
+        // On page load
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem('mpd_auth_token');
+            const userEmail = localStorage.getItem('mpd_user_email');
+
+            if (token && userEmail) {
+                updateUserInfo(userEmail);
+                initializeChat();
+            } else {
+                showAuthModal();
+            }
         });
     </script>
 </body>
