@@ -74,45 +74,16 @@ COPY --from=gmail-builder /gmail_server /app/mcp_servers/gmail_server
 # Copy entire project
 COPY . /app/
 
-# Create startup script for all services
-RUN cat > /app/start-services.sh << 'EOF'
-#!/bin/bash
-set -e
+# Copy and make executable the entrypoint script (has monitoring/restart logic)
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
-echo "🚀 Starting AI Agent MCP Services..."
-
-# Start mcp_host (main FastAPI app)
-echo "📱 Starting mcp_host..."
-cd /app && python -m uvicorn mcp_host.main:app --host 0.0.0.0 --port 8000 &
-MCP_HOST_PID=$!
-
-# Start calendar_server
-echo "📅 Starting calendar_server..."
-cd /app/mcp_servers/calendar_server && python main.py &
-CALENDAR_PID=$!
-
-# Start gmail_server
-echo "📧 Starting gmail_server..."
-cd /app/mcp_servers/gmail_server && python main.py &
-GMAIL_PID=$!
-
-echo "✓ All services started"
-echo "  - mcp_host (PID: $MCP_HOST_PID)"
-echo "  - calendar_server (PID: $CALENDAR_PID)"
-echo "  - gmail_server (PID: $GMAIL_PID)"
-
-# Keep container running
-wait $MCP_HOST_PID
-EOF
-
-RUN chmod +x /app/start-services.sh
-
-# Expose service ports
-EXPOSE 8000 8001 8002
+# Expose service ports (mcp-host, calendar, gmail, weaviate)
+EXPOSE 8000 8001 8002 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/docs || exit 1
 
 # Start all services
-CMD ["/app/start-services.sh"]
+CMD ["/app/docker-entrypoint.sh"]
