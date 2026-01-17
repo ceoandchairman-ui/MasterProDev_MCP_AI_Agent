@@ -27,16 +27,11 @@ class GmailSettings(BaseSettings):
 
     def __init__(self, **data):
         super().__init__(**data)
-        # Validate required OAuth credentials
-        if not self.GOOGLE_CLIENT_ID:
-            raise ValueError(
-                "GOOGLE_CLIENT_ID environment variable is required. "
-                "Set it in .env file or as an environment variable."
-            )
-        if not self.GOOGLE_CLIENT_SECRET:
-            raise ValueError(
-                "GOOGLE_CLIENT_SECRET environment variable is required. "
-                "Set it in .env file or as an environment variable."
+        # Warn if OAuth credentials not set (don't crash, just warn)
+        if not self.GOOGLE_CLIENT_ID or not self.GOOGLE_CLIENT_SECRET:
+            print(
+                "⚠️  WARNING: Google OAuth credentials not fully configured. "
+                "Gmail features will be limited until GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set."
             )
 
 

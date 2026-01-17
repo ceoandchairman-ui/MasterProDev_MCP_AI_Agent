@@ -10,9 +10,9 @@ from email.mime.text import MIMEText
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mcp_servers.base_server import BaseMCPServer
+from mcp_servers.gmail_server.config import gmail_settings
 from typing import Any, Dict, List
 from datetime import datetime
-from pydantic_settings import BaseSettings
 
 # Google Gmail API imports
 from google.oauth2.credentials import Credentials
@@ -20,15 +20,6 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
-
-
-class GmailSettings(BaseSettings):
-    # ...existing fields...
-    model_config = {
-        "env_file": ".env",
-        "case_sensitive": True,
-        "extra": "ignore"
-    }
 
 
 class GmailMCPServer(BaseMCPServer):
