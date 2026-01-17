@@ -517,10 +517,10 @@ async def get_conversations(authorization: Optional[str] = Header(None)):
 
 
 @app.get("/")
-async dServe public chat page for guests"""
+async def root():
+    """Serve public chat page for guests"""
     chat_path = STATIC_DIR / "chat-embed.html"
-    return FileResponse(chat "login.html"
-    return FileResponse(login_path)
+    return FileResponse(chat_path)
 
 
 @app.get("/chat")
