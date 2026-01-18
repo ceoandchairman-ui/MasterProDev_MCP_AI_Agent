@@ -17,7 +17,28 @@ if [ -z "$HUGGINGFACE_API_KEY" ]; then
   echo "⚠️  WARNING: HUGGINGFACE_API_KEY not set - LLM calls will fail"
 fi
 
-echo " Starting mcp_host on port 8000 (with uvicorn)..."
+# Wait for Weaviate to be available (separate Railway service)
+if [ -n "$WEAVIATE_HOST" ]; then
+  echo "⏳ Waiting for Weaviate at $WEAVIATE_HOST..."
+  for i in {1..60}; do
+    if curl -s "http://$WEAVIATE_HOST:8080/v1/.well-known/ready" > /dev/null 2>&1; then
+      echo "   ✓ Weaviate is ready"
+      break
+    fi
+    sleep 2
+  done
+  
+  # Run seeder to populate Weaviate
+  if [ -d "/app/Company_Documents" ] && [ "$(ls -A /app/Company_Documents)" ]; then
+    echo "📚 Running seeder to populate Weaviate..."
+    python seed.py 2>&1 | tee /app/logs/seeder.log
+    echo "   ✓ Seeding complete"
+  else
+    echo "⚠️  No Company_Documents found - skipping seeding"
+  fi
+fi
+
+echo "📱 Starting mcp_host on port 8000 (with uvicorn)..."
 python -m uvicorn mcp_host.main:app --host 0.0.0.0 --port 8000 2>&1 | tee -a /app/logs/mcp_host.log &
 MCPHOST_PID=$!
 echo "   PID: $MCPHOST_PID"

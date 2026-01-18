@@ -90,6 +90,9 @@ COPY --from=seeder-builder /seed.py /app/seed.py
 # Copy entire project
 COPY . /app/
 
+# Copy Company_Documents for seeding
+COPY Company_Documents /app/Company_Documents
+
 # Copy and make executable the entrypoint script (has monitoring/restart logic)
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
