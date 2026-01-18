@@ -49,6 +49,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY mcp_servers/gmail_server/ /gmail_server/
 
 # ============================================================================
+# STAGE 4: Seeder builder
+# ============================================================================
+
+FROM base as seeder-builder
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY seed.py /seed.py
+COPY mcp_host/ /mcp_host/
+
+# ============================================================================
 # FINAL STAGE: Python Runtime (No Docker-in-Docker)
 # ============================================================================
 
@@ -64,6 +76,7 @@ WORKDIR /app
 COPY --from=mcp-host-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=calendar-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=gmail-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=seeder-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=mcp-host-builder /usr/local/bin /usr/local/bin
 
 # Copy service code
@@ -72,6 +85,7 @@ COPY --from=mcp-host-builder /prompts.yaml /app/prompts.yaml
 COPY --from=mcp-host-builder /aliases.yaml /app/mcp_host/aliases.yaml
 COPY --from=calendar-builder /calendar_server /app/mcp_servers/calendar_server
 COPY --from=gmail-builder /gmail_server /app/mcp_servers/gmail_server
+COPY --from=seeder-builder /seed.py /app/seed.py
 
 # Copy entire project
 COPY . /app/
@@ -80,8 +94,8 @@ COPY . /app/
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
-# Expose service ports (mcp-host, calendar, gmail, weaviate)
-EXPOSE 8000 8001 8002 8080
+# Expose service ports (mcp-host, calendar, gmail)
+EXPOSE 8000 8001 8002
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
