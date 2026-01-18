@@ -274,14 +274,18 @@ class MCPAgent:
                 "llm_provider": self.llm_manager.get_active_provider_info(),
             }
 
-            # ===== EVALUATION: Log task results =====
-            await self._evaluate_task(
-                session_id=session_id,
-                user_message=message,
-                tool_runs=tool_runs,
-                final_response=final_response,
-                elapsed_time=execution_time
-            )
+            # ===== EVALUATION: Log task results (non-blocking) =====
+            try:
+                await self._evaluate_task(
+                    session_id=session_id,
+                    user_message=message,
+                    tool_runs=tool_runs,
+                    final_response=final_response,
+                    elapsed_time=execution_time
+                )
+            except Exception as eval_error:
+                logger.warning(f"⚠️ Evaluation failed (non-critical): {eval_error}")
+                # Continue - evaluator is for monitoring only, not core chat logic
 
             logger.info(f"✓ Unified flow completed in {execution_time:.2f}s")
             return response
