@@ -38,9 +38,9 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = "ceo_and_chairman@masterprodev.com"
     ADMIN_PASSWORD: str = "Happy@123"  # Change in production via environment variable
 
-    # MCP Servers
-    CALENDAR_SERVER_URL: str = "http://calendar-server:8001"
-    GMAIL_SERVER_URL: str = "http://gmail-server:8002"
+    # MCP Servers (localhost since all services in same container)
+    CALENDAR_SERVER_URL: str = "http://localhost:8001"
+    GMAIL_SERVER_URL: str = "http://localhost:8002"
 
     # HuggingFace LLM
     HUGGINGFACE_API_KEY: Optional[str] = None
