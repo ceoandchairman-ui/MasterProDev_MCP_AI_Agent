@@ -3,7 +3,7 @@
 from fastapi import FastAPI, HTTPException, Depends, status, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.openapi.utils import get_openapi
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -348,7 +348,7 @@ async def calendar_auth_proxy():
                 params={"redirect_uri": callback_uri}
             )
         logger.info(f"📅 Calendar server responded with status {response.status_code}")
-        return FileResponse(content=response.content, media_type="text/html")
+        return HTMLResponse(content=response.text)
     except Exception as e:
         logger.error(f"❌ Calendar auth proxy error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Calendar auth failed: {str(e)}")
@@ -358,7 +358,7 @@ async def calendar_auth_proxy():
 async def calendar_callback_proxy(code: str = None, state: str = None, error: str = None):
     """Proxy calendar OAuth callback - passes code to calendar-server"""
     if error:
-        return FileResponse(
+        return HTMLResponse(
             content=f"""
             <html>
                 <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
@@ -366,8 +366,7 @@ async def calendar_callback_proxy(code: str = None, state: str = None, error: st
                     <p>Error: {error}</p>
                 </body>
             </html>
-            """.encode(),
-            media_type="text/html"
+            """
         )
     
     try:
@@ -378,10 +377,10 @@ async def calendar_callback_proxy(code: str = None, state: str = None, error: st
                 params={"code": code, "state": state}
             )
         logger.info(f"📅 Calendar callback processed, status={response.status_code}")
-        return FileResponse(content=response.content, media_type="text/html")
+        return HTMLResponse(content=response.text)
     except Exception as e:
         logger.error(f"❌ Calendar callback proxy error: {e}", exc_info=True)
-        return FileResponse(
+        return HTMLResponse(
             content=f"""
             <html>
                 <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
@@ -389,8 +388,7 @@ async def calendar_callback_proxy(code: str = None, state: str = None, error: st
                     <p>Error: {str(e)}</p>
                 </body>
             </html>
-            """.encode(),
-            media_type="text/html"
+            """
         )
 
 
@@ -407,7 +405,7 @@ async def gmail_auth_proxy():
                 params={"redirect_uri": callback_uri}
             )
         logger.info(f"📧 Gmail server responded with status {response.status_code}")
-        return FileResponse(content=response.content, media_type="text/html")
+        return HTMLResponse(content=response.text)
     except Exception as e:
         logger.error(f"❌ Gmail auth proxy error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Gmail auth failed: {str(e)}")
@@ -417,7 +415,7 @@ async def gmail_auth_proxy():
 async def gmail_callback_proxy(code: str = None, state: str = None, error: str = None):
     """Proxy Gmail OAuth callback - passes code to gmail-server"""
     if error:
-        return FileResponse(
+        return HTMLResponse(
             content=f"""
             <html>
                 <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
@@ -425,8 +423,7 @@ async def gmail_callback_proxy(code: str = None, state: str = None, error: str =
                     <p>Error: {error}</p>
                 </body>
             </html>
-            """.encode(),
-            media_type="text/html"
+            """
         )
     
     try:
@@ -437,11 +434,11 @@ async def gmail_callback_proxy(code: str = None, state: str = None, error: str =
                 params={"code": code, "state": state}
             )
         logger.info(f"📧 Gmail callback processed, status={response.status_code}")
-        return FileResponse(content=response.content, media_type="text/html")
+        return HTMLResponse(content=response.text)
     except Exception as e:
         logger.error(f"❌ Gmail callback proxy error: {e}", exc_info=True)
         logger.error(f"Gmail callback proxy error: {e}")
-        return FileResponse(
+        return HTMLResponse(
             content=f"""
             <html>
                 <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
@@ -449,8 +446,7 @@ async def gmail_callback_proxy(code: str = None, state: str = None, error: str =
                     <p>Error: {str(e)}</p>
                 </body>
             </html>
-            """.encode(),
-            media_type="text/html"
+            """
         )
 
 
