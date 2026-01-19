@@ -90,10 +90,6 @@ COPY --from=seeder-builder /seed.py /app/seed.py
 # Copy entire project
 COPY . /app/
 
-# Copy credentials.json files (not in git, must copy explicitly)
-COPY mcp_servers/calendar_server/credentials.json /app/mcp_servers/calendar_server/credentials.json
-COPY mcp_servers/gmail_server/credentials.json /app/mcp_servers/gmail_server/credentials.json
-
 # Copy Company_Documents for seeding
 COPY Company_Documents /app/Company_Documents
 

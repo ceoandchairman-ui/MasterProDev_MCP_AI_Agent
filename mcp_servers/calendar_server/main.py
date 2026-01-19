@@ -35,6 +35,17 @@ class CalendarMCPServer(BaseMCPServer):
         self._auth_flow = None  # Store flow for callback
         self._auth_state = None  # Store state for callback
         
+        # Build client config from environment variables
+        self._client_config = {
+            "web": {
+                "client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
+                "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET", ""),
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+            }
+        }
+        
         # Register OAuth callback endpoint
         @self.app.get("/callback")
         async def oauth_callback(code: str = None, state: str = None, error: str = None):
@@ -100,8 +111,19 @@ class CalendarMCPServer(BaseMCPServer):
                 # Use provided redirect_uri or default to localhost for development
                 oauth_redirect = redirect_uri or "http://localhost:8001/callback"
                 
-                flow = Flow.from_client_secrets_file(
-                    self._creds_path,
+                # Check if credentials are configured
+                if not self._client_config["web"]["client_id"] or not self._client_config["web"]["client_secret"]:
+                    return HTMLResponse("""
+                    <html>
+                        <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                            <h1>✗ Missing OAuth Credentials</h1>
+                            <p>GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in environment variables.</p>
+                        </body>
+                    </html>
+                    """)
+                
+                flow = Flow.from_client_config(
+                    self._client_config,
                     scopes=self._scopes,
                     redirect_uri=oauth_redirect
                 )

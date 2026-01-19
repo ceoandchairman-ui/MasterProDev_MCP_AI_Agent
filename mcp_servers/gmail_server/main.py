@@ -37,6 +37,17 @@ class GmailMCPServer(BaseMCPServer):
         self._auth_flow = None
         self._auth_state = None
         
+        # Build client config from environment variables
+        self._client_config = {
+            "web": {
+                "client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
+                "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET", ""),
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+            }
+        }
+        
         # Register OAuth authorization endpoint
         @self.app.get("/auth")
         async def auth_endpoint(redirect_uri: str = None):
@@ -46,12 +57,13 @@ class GmailMCPServer(BaseMCPServer):
             """
             from fastapi.responses import HTMLResponse
             
-            if not os.path.exists(self._creds_path):
+            # Check if credentials are configured
+            if not self._client_config["web"]["client_id"] or not self._client_config["web"]["client_secret"]:
                 return HTMLResponse("""
                 <html>
                     <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
-                        <h1>✗ Missing credentials.json</h1>
-                        <p>Gmail credentials file not found.</p>
+                        <h1>✗ Missing OAuth Credentials</h1>
+                        <p>GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in environment variables.</p>
                     </body>
                 </html>
                 """)
@@ -60,8 +72,8 @@ class GmailMCPServer(BaseMCPServer):
             oauth_redirect = redirect_uri or "http://localhost:8002/callback"
             
             # Create Flow for web-based OAuth
-            flow = Flow.from_client_secrets_file(
-                self._creds_path,
+            flow = Flow.from_client_config(
+                self._client_config,
                 scopes=self._scopes,
                 redirect_uri=oauth_redirect
             )
