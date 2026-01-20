@@ -25,6 +25,7 @@ from .auth import hash_password, verify_password, create_access_token, decode_to
 from .state import state_manager
 from .agent import mcp_agent
 from .rag_service import rag_service
+from .evaluator import evaluator  # Import evaluator for metrics endpoint
 from prometheus_fastapi_instrumentator import Instrumentator
 
 # Configure logging
@@ -328,6 +329,82 @@ async def get_profile(authorization: Optional[str] = Header(None)):
         name="User",
         user_type="employee",
         role="employee"
+    )
+
+
+@app.get("/metrics")
+async def get_evaluation_metrics(authorization: Optional[str] = Header(None)):
+    """Get agent evaluation metrics and task completion report
+    
+    Returns comprehensive evaluation data including:
+    - Task completion rates by category (Calendar, Knowledge, Email, Conversation)
+    - Overall success rate and production readiness
+    - Individual task results
+    """
+    token = get_token_from_header(authorization)
+    payload = decode_token(token)
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+    
+    # Get evaluation metrics
+    metrics = evaluator.get_metrics()
+    
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "overall_success_rate": round(metrics.overall_success_rate, 2),
+            "total_tasks": metrics.total_tasks,
+            "total_passed": metrics.total_passed,
+            "production_ready": metrics.production_ready,
+            "production_gate_threshold": 85.0
+        },
+        "categories": {
+            "calendar": {
+                "success_rate": round(metrics.calendar_success_rate, 2),
+                "total": metrics.calendar_total,
+                "passed": metrics.calendar_passed,
+                "threshold": 90.0,
+                "meets_threshold": metrics.calendar_success_rate >= 90.0 if metrics.calendar_total > 0 else None
+            },
+            "knowledge": {
+                "success_rate": round(metrics.knowledge_success_rate, 2),
+                "total": metrics.knowledge_total,
+                "passed": metrics.knowledge_passed,
+                "threshold": 85.0,
+                "meets_threshold": metrics.knowledge_success_rate >= 85.0 if metrics.knowledge_total > 0 else None
+            },
+            "email": {
+                "success_rate": round(metrics.email_success_rate, 2),
+                "total": metrics.email_total,
+                "passed": metrics.email_passed,
+                "threshold": 80.0,
+                "meets_threshold": metrics.email_success_rate >= 80.0 if metrics.email_total > 0 else None
+            },
+            "conversation": {
+                "success_rate": round(metrics.conversation_success_rate, 2),
+                "total": metrics.conversation_total,
+                "passed": metrics.conversation_passed,
+                "threshold": 95.0,
+                "meets_threshold": metrics.conversation_success_rate >= 95.0 if metrics.conversation_total > 0 else None
+            }
+        },
+        "recent_tasks": [
+            {
+                "task_id": task.task_id,
+                "category": task.category,
+                "task_type": task.task_type,
+                "user_request": task.user_request,
+                "tools_used": task.tool_calls,
+                "success": task.success,
+                "reason": task.reason,
+                "timestamp": task.timestamp
+            }
+            for task in evaluator.results[-20:]  # Last 20 tasks
+        ]
     )
 
 
