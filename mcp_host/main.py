@@ -1,9 +1,9 @@
 """FastAPI server for MCP Host"""
 
-from fastapi import FastAPI, HTTPException, Depends, status, Header, Request
+from fastapi import FastAPI, HTTPException, Depends, status, Header, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
 from fastapi.openapi.utils import get_openapi
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -26,6 +26,7 @@ from .state import state_manager
 from .agent import mcp_agent
 from .rag_service import rag_service
 from .evaluator import evaluator  # Import evaluator for metrics endpoint
+from .voice_service import voice_service  # Voice processing (STT/TTS)
 from prometheus_fastapi_instrumentator import Instrumentator
 
 # Configure logging
@@ -332,7 +333,102 @@ async def get_profile(authorization: Optional[str] = Header(None)):
     )
 
 
-@app.get("/metrics")
+@app.post("/voice")
+async def voice_chat(
+    audio: UploadFile = File(...),
+    authorization: Optional[str] = Header(None)
+):
+    """Voice chat endpoint - accepts audio, returns audio response
+    
+    Workflow:
+    1. Receive audio file (webm/mp3/wav)
+    2. Convert speech to text (STT via Whisper)
+    3. Process through agent (same as text chat)
+    4. Convert response to speech (TTS via OpenAI)
+    5. Return audio file
+    """
+    try:
+        # Get session (same as /chat endpoint)
+        if authorization:
+            try:
+                token = get_token_from_header(authorization)
+                session = await state_manager.get_session(token)
+                if session:
+                    session_id = session["session_id"]
+                    user_id = session["user_id"]
+                    conversation_id = session.get("conversation_id")
+                    conversation_history = await state_manager.get_conversation_history(session_id)
+                else:
+                    session_id = str(uuid.uuid4())
+                    user_id = "guest"
+                    conversation_id = str(uuid.uuid4())
+                    conversation_history = []
+            except:
+                session_id = str(uuid.uuid4())
+                user_id = "guest"
+                conversation_id = str(uuid.uuid4())
+                conversation_history = []
+        else:
+            # No token - guest mode
+            session_id = str(uuid.uuid4())
+            user_id = "guest"
+            conversation_id = str(uuid.uuid4())
+            conversation_history = []
+        
+        # Step 1: STT - Convert audio to text
+        audio_bytes = await audio.read()
+        filename = audio.filename or "audio.webm"
+        
+        logger.info(f"🎤 Voice input received: {len(audio_bytes)} bytes, format: {filename}")
+        user_message = await voice_service.speech_to_text(audio_bytes, filename)
+        logger.info(f"📝 Transcribed: {user_message}")
+        
+        # Step 2: Process through agent
+        agent_result = await mcp_agent.process_message(
+            message=user_message,
+            session_id=session_id,
+            conversation_history=conversation_history
+        )
+        
+        response_text = agent_result.get("response", "I couldn't process that.")
+        logger.info(f"💬 Agent response: {response_text[:100]}...")
+        
+        # Step 3: TTS - Convert text to speech
+        audio_response = await voice_service.text_to_speech(response_text)
+        logger.info(f"🔊 Generated audio response: {len(audio_response)} bytes")
+        
+        # Step 4: Save conversation (if authenticated)
+        if user_id != "guest":
+            await state_manager.save_conversation_turn(
+                session_id, user_id, conversation_id, user_message, response_text
+            )
+        
+        # Return audio
+        return Response(
+            content=audio_response,
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": "attachment; filename=response.mp3",
+                "X-Transcription": user_message,  # Send back what was heard
+                "X-Response-Text": response_text[:200]  # First 200 chars of response
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Voice chat error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Voice processing failed: {str(e)}"
+        )
+
+
+@app.get("/voice-chat")
+async def voice_chat_page():
+    """Serve voice chat UI with avatar"""
+    return FileResponse(str(STATIC_DIR / "voice-chat.html"))
+
+
+@app.get("/evaluation")
 async def get_evaluation_metrics(authorization: Optional[str] = Header(None)):
     """Get agent evaluation metrics and task completion report
     
