@@ -405,7 +405,8 @@ async def get_evaluation_metrics(authorization: Optional[str] = Header(None)):
             }
             for task in evaluator.results[-20:]  # Last 20 tasks
         ]
-    )
+    }
+
 
 
 # ============================================================================
