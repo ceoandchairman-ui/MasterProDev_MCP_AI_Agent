@@ -26,7 +26,19 @@
         <div id="chat-window" class="chat-window">
             <!-- Chat Header -->
             <div class="chat-header">
+                <!-- Mode Toggle -->
+                <div class="mode-toggle">
+                    <button id="text-mode-btn" class="mode-btn active" title="Text Mode">💬</button>
+                    <button id="voice-mode-btn" class="mode-btn" title="Voice Mode">🎙️</button>
+                </div>
+                
                 <div class="header-content">
+                    <!-- Animated Avatar -->
+                    <div id="avatar-container" class="avatar-container">
+                        <div id="avatar" class="avatar">🤖</div>
+                        <div id="avatar-state" class="avatar-state">😊</div>
+                    </div>
+                    
                     <div class="logo-container">
                         <svg class="logo-svg" viewBox="0 0 300 200" xmlns="http://www.w3.org/2000/svg">
                             <!-- Arrow Path -->
@@ -90,6 +102,15 @@
 
             <!-- Chat Input -->
             <div class="chat-input-container">
+                <!-- Voice Recording Mode -->
+                <div id="voice-mode-container" class="voice-mode-container" style="display: none;">
+                    <button id="record-button" class="record-button" title="Click to start recording">🎤</button>
+                    <p id="voice-status" class="voice-status">Click the microphone to start speaking</p>
+                    <div id="voice-transcription" class="voice-transcription" style="display: none;"></div>
+                </div>
+                
+                <!-- Text Input Mode -->
+                <div id="text-mode-container" class="text-mode-container">
                 <div class="input-wrapper">
                     <input type="file" id="file-input" class="file-input" accept="audio/*,video/*,image/*,.pdf,.docx,.doc,.txt" style="display: none;">
                     <button id="attach-button" class="attach-button" aria-label="Attach file" title="Upload file">
@@ -114,6 +135,8 @@
                     <span id="file-name"></span>
                     <button id="remove-file" class="remove-file-button">×</button>
                 </div>
+                </div>
+                
                 <div class="powered-by">
                     Powered by <span class="brand-text">Master<span class="pro">Pro</span><span class="dev">Dev</span></span>
                 </div>

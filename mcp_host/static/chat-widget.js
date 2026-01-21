@@ -28,7 +28,11 @@
       authToken: null,
       conversationId: null,
       messages: [],
-      isTyping: false
+      isTyping: false,
+      selectedFile: null,
+      voiceMode: false,
+      mediaRecorder: null,
+      audioChunks: []
     },
 
     init: function(customConfig = {}) {
@@ -187,6 +191,23 @@
       if (removeFileButton) {
         removeFileButton.addEventListener('click', () => this.removeFile());
       }
+      
+      // Voice mode handlers
+      const textModeBtn = document.getElementById('text-mode-btn');
+      const voiceModeBtn = document.getElementById('voice-mode-btn');
+      const recordButton = document.getElementById('record-button');
+      
+      if (textModeBtn) {
+        textModeBtn.addEventListener('click', () => this.switchMode('text'));
+      }
+      
+      if (voiceModeBtn) {
+        voiceModeBtn.addEventListener('click', () => this.switchMode('voice'));
+      }
+      
+      if (recordButton) {
+        recordButton.addEventListener('click', () => this.toggleRecording());
+      }
     },
     
     handleFileSelect: function(event) {
@@ -220,6 +241,139 @@
       if (filePreview) filePreview.style.display = 'none';
       
       this.state.selectedFile = null;
+    },
+    
+    switchMode: function(mode) {
+      const textModeBtn = document.getElementById('text-mode-btn');
+      const voiceModeBtn = document.getElementById('voice-mode-btn');
+      const textContainer = document.getElementById('text-mode-container');
+      const voiceContainer = document.getElementById('voice-mode-container');
+      
+      if (mode === 'voice') {
+        this.state.voiceMode = true;
+        textModeBtn.classList.remove('active');
+        voiceModeBtn.classList.add('active');
+        textContainer.style.display = 'none';
+        voiceContainer.style.display = 'block';
+      } else {
+        this.state.voiceMode = false;
+        voiceModeBtn.classList.remove('active');
+        textModeBtn.classList.add('active');
+        voiceContainer.style.display = 'none';
+        textContainer.style.display = 'block';
+      }
+    },
+    
+    setVoiceStatus: function(text, emoji = '😊') {
+      const status = document.getElementById('voice-status');
+      const avatarState = document.getElementById('avatar-state');
+      
+      if (status) status.textContent = text;
+      if (avatarState) avatarState.textContent = emoji;
+    },
+    
+    toggleRecording: async function() {
+      const recordButton = document.getElementById('record-button');
+      
+      if (!this.state.mediaRecorder || this.state.mediaRecorder.state === 'inactive') {
+        try {
+          // Request microphone access
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            } 
+          });
+          
+          this.state.mediaRecorder = new MediaRecorder(stream, {
+            mimeType: 'audio/webm;codecs=opus'
+          });
+          this.state.audioChunks = [];
+          
+          this.state.mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              this.state.audioChunks.push(event.data);
+            }
+          };
+          
+          this.state.mediaRecorder.onstop = async () => {
+            await this.processVoiceRecording();
+          };
+          
+          // Start recording
+          this.state.mediaRecorder.start();
+          recordButton.classList.add('recording');
+          this.setVoiceStatus('Recording... (click to stop)', '🎤');
+          
+        } catch (error) {
+          console.error('Microphone access error:', error);
+          alert('Microphone access denied. Please allow microphone access.');
+        }
+        
+      } else if (this.state.mediaRecorder.state === 'recording') {
+        // Stop recording
+        this.state.mediaRecorder.stop();
+        this.state.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        recordButton.classList.remove('recording');
+        this.setVoiceStatus('Processing...', '⌛');
+      }
+    },
+    
+    processVoiceRecording: async function() {
+      try {
+        const audioBlob = new Blob(this.state.audioChunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+        
+        this.setVoiceStatus('Processing your voice...', '🤔');
+        
+        const response = await fetch(`${this.config.apiUrl}/voice`, {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
+        
+        // Get transcription from headers
+        const heard = response.headers.get('X-Transcription');
+        const transcription = document.getElementById('voice-transcription');
+        
+        if (heard && transcription) {
+          transcription.textContent = `You said: "${heard}"`;
+          transcription.style.display = 'block';
+        }
+        
+        // Play response audio
+        const audioResponseBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioResponseBlob);
+        const audio = new Audio(audioUrl);
+        
+        this.setVoiceStatus('Speaking...', '🗣️');
+        audio.play();
+        
+        audio.onended = () => {
+          this.setVoiceStatus('Click the microphone to speak', '😊');
+          URL.revokeObjectURL(audioUrl);
+          if (transcription) {
+            setTimeout(() => {
+              transcription.style.display = 'none';
+            }, 3000);
+          }
+        };
+        
+        audio.onerror = () => {
+          this.setVoiceStatus('Click the microphone to speak', '😊');
+          alert('Could not play audio response');
+        };
+        
+      } catch (error) {
+        console.error('Voice chat error:', error);
+        this.setVoiceStatus('Click the microphone to speak', '😊');
+        alert(error.message || 'Voice processing failed');
+      }
     },
 
     toggleChat: function() {
