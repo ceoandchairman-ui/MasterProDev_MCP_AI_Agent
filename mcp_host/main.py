@@ -425,8 +425,8 @@ async def voice_chat(
 
 @app.get("/voice-chat")
 async def voice_chat_page():
-    """Serve voice chat UI with avatar"""
-    return FileResponse(str(STATIC_DIR / "voice-chat.html"))
+    """Serve voice chat UI with avatar (now unified in chat-widget)"""
+    return FileResponse(str(STATIC_DIR / "chat-widget.html"))
 
 
 @app.get("/evaluation")
@@ -744,21 +744,21 @@ async def get_conversations(authorization: Optional[str] = Header(None)):
 @app.get("/")
 async def root():
     """Serve public chat page for guests"""
-    chat_path = STATIC_DIR / "chat-embed.html"
+    chat_path = STATIC_DIR / "chat-widget.html"
     return FileResponse(chat_path)
 
 
 @app.get("/chat")
 async def chat_page():
     """Serve authenticated chat page"""
-    embed_path = STATIC_DIR / "chat-embed.html"
+    embed_path = STATIC_DIR / "chat-widget.html"
     return FileResponse(embed_path)
 
 
 @app.get("/chat-embed")
 async def chat_embed():
-    """Serve chat embed page (legacy)"""
-    embed_path = STATIC_DIR / "chat-embed.html"
+    """Serve chat embed page (legacy - redirects to unified widget)"""
+    embed_path = STATIC_DIR / "chat-widget.html"
     return FileResponse(embed_path)
 
 
