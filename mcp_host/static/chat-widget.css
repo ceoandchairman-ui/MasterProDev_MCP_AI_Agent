@@ -563,3 +563,73 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* File Upload Styles */
+.attach-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  transition: all 0.2s ease;
+  border-radius: 8px;
+}
+
+.attach-button:hover {
+  background: #f3f4f6;
+  color: var(--mpd-primary);
+}
+
+.attach-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.file-preview {
+  padding: 8px 12px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  margin: 8px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  color: #374151;
+}
+
+.file-preview #file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 8px;
+}
+
+.remove-file-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  color: #6b7280;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.remove-file-button:hover {
+  color: #ef4444;
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.chat-input {
+  flex: 1;
+  resize: none;
+}

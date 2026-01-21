@@ -1,6 +1,6 @@
 """FastAPI server for MCP Host"""
 
-from fastapi import FastAPI, HTTPException, Depends, status, Header, Request, File, UploadFile
+from fastapi import FastAPI, HTTPException, Depends, status, Header, Request, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
@@ -13,6 +13,7 @@ from pydantic_settings import BaseSettings
 import logging
 import uuid
 import httpx
+import os
 from typing import Optional
 from pathlib import Path
 
@@ -625,8 +626,45 @@ async def gmail_callback_proxy(code: str = None, state: str = None, error: str =
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)):
-    """Chat endpoint - PUBLIC - guests allowed, authentication optional for features"""
+async def chat(
+    message: str = Form(...),
+    conversation_id: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    authorization: Optional[str] = Header(None)
+):
+    """Chat endpoint - PUBLIC - guests allowed, authentication optional
+    
+    Supports text messages and file uploads:
+    - Audio files: Transcribed to text
+    - Video files: Audio extracted and transcribed
+    - Images: Analyzed with vision model
+    - PDFs/Word: Text extracted
+    """
+    
+    # Process file if uploaded
+    file_content = None
+    if file:
+        try:
+            file_data = await file.read()
+            logger.info(f"📎 File uploaded: {file.filename} ({len(file_data)} bytes)")
+            
+            # Import file processor
+            from .file_processor import file_processor, initialize_file_processor
+            if not file_processor:
+                from .voice_service import voice_service
+                from openai import OpenAI
+                openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                initialize_file_processor(openai_client, voice_service)
+            
+            extracted_text, file_type = await file_processor.process_file(file_data, file.filename)
+            file_content = f"\n\n{extracted_text}"
+            logger.info(f"✓ File processed ({file_type}): {len(extracted_text)} chars extracted")
+        except Exception as e:
+            logger.error(f"❌ File processing error: {e}")
+            file_content = f"\n\n[File upload failed: {str(e)}]"
+    
+    # Combine message with file content
+    full_message = message + (file_content or "")
     
     # Check if user is authenticated (optional)
     if authorization:
@@ -638,30 +676,30 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 # Authenticated user - has history, can save conversations
                 session_id = session["session_id"]
                 user_id = session["user_id"]
-                conversation_id = request.conversation_id or str(uuid.uuid4())
+                conv_id = conversation_id or str(uuid.uuid4())
                 conversation_history = await state_manager.get_conversation_history(session_id)
             else:
                 # Invalid session - fall back to guest mode
                 session_id = str(uuid.uuid4())
                 user_id = "guest"
-                conversation_id = request.conversation_id or str(uuid.uuid4())
+                conv_id = conversation_id or str(uuid.uuid4())
                 conversation_history = []
         except HTTPException:
             # Token validation failed - use guest mode
             session_id = str(uuid.uuid4())
             user_id = "guest"
-            conversation_id = request.conversation_id or str(uuid.uuid4())
+            conv_id = conversation_id or str(uuid.uuid4())
             conversation_history = []
     else:
         # No token provided - guest mode
         session_id = str(uuid.uuid4())
         user_id = "guest"
-        conversation_id = request.conversation_id or str(uuid.uuid4())
+        conv_id = conversation_id or str(uuid.uuid4())
         conversation_history = []
     
     # Process message through LangChain agent
     agent_result = await mcp_agent.process_message(
-        message=request.message,
+        message=full_message,
         session_id=session_id,
         conversation_history=conversation_history
     )
@@ -678,12 +716,12 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
     # Save conversation only for authenticated users
     if user_id != "guest":
         await state_manager.save_conversation_turn(
-            session_id, user_id, conversation_id, request.message, response_text
+            session_id, user_id, conv_id, full_message, response_text
         )
     
     return ChatResponse(
         response=response_text,
-        conversation_id=conversation_id
+        conversation_id=conv_id
     )
 
 

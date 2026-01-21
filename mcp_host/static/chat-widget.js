@@ -149,6 +149,11 @@
       const chatSend = document.getElementById('mpd-chat-send');
       const chatInput = document.getElementById('mpd-chat-input');
       const quickActions = document.querySelectorAll('.mpd-quick-action');
+      
+      // File upload elements
+      const attachButton = document.getElementById('attach-button');
+      const fileInput = document.getElementById('file-input');
+      const removeFileButton = document.getElementById('remove-file');
 
       chatButton.addEventListener('click', () => this.toggleChat());
       chatClose.addEventListener('click', () => this.toggleChat());
@@ -169,6 +174,52 @@
           this.handleQuickAction(action);
         });
       });
+      
+      // File upload handlers
+      if (attachButton) {
+        attachButton.addEventListener('click', () => fileInput.click());
+      }
+      
+      if (fileInput) {
+        fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+      }
+      
+      if (removeFileButton) {
+        removeFileButton.addEventListener('click', () => this.removeFile());
+      }
+    },
+    
+    handleFileSelect: function(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      // Check file size (max 25MB)
+      if (file.size > 25 * 1024 * 1024) {
+        alert('File too large. Maximum size is 25MB.');
+        return;
+      }
+      
+      // Store file reference
+      this.state.selectedFile = file;
+      
+      // Show file preview
+      const filePreview = document.getElementById('file-preview');
+      const fileName = document.getElementById('file-name');
+      
+      if (filePreview && fileName) {
+        fileName.textContent = `📎 ${file.name}`;
+        filePreview.style.display = 'flex';
+      }
+    },
+    
+    removeFile: function() {
+      const fileInput = document.getElementById('file-input');
+      const filePreview = document.getElementById('file-preview');
+      
+      if (fileInput) fileInput.value = '';
+      if (filePreview) filePreview.style.display = 'none';
+      
+      this.state.selectedFile = null;
     },
 
     toggleChat: function() {
@@ -192,11 +243,13 @@
     sendMessage: async function() {
       const input = document.getElementById('mpd-chat-input');
       const message = input.value.trim();
+      const file = this.state.selectedFile;
       
-      if (!message || this.state.isTyping) return;
+      if ((!message && !file) || this.state.isTyping) return;
 
       // Add user message to UI
-      this.addMessage(message, 'user');
+      const displayMessage = file ? `${message}\n📎 ${file.name}` : message;
+      this.addMessage(displayMessage, 'user');
       input.value = '';
       input.style.height = 'auto';
 
@@ -209,17 +262,23 @@
           await this.authenticate();
         }
 
+        // Prepare form data
+        const formData = new FormData();
+        formData.append('message', message || 'Please analyze this file');
+        if (this.state.conversationId) {
+          formData.append('conversation_id', this.state.conversationId);
+        }
+        if (file) {
+          formData.append('file', file);
+        }
+
         // Send message to API
         const response = await fetch(`${this.config.apiUrl}/chat`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
             'Authorization': `Bearer ${this.state.authToken}`
           },
-          body: JSON.stringify({
-            message: message,
-            conversation_id: this.state.conversationId
-          })
+          body: formData
         });
 
         if (!response.ok) {
@@ -242,11 +301,15 @@
         // Add bot response
         this.showTyping(false);
         this.addMessage(data.response, 'bot');
+        
+        // Clear file selection
+        this.removeFile();
 
       } catch (error) {
         console.error('Chat error:', error);
         this.showTyping(false);
         this.addMessage('Sorry, I encountered an error. Please try again.', 'bot', true);
+        this.removeFile();
       }
     },
 
