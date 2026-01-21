@@ -128,17 +128,45 @@
 
             <!-- Input Area -->
             <div id="mpd-chat-input-container">
-              <textarea 
-                id="mpd-chat-input" 
-                placeholder="Type your message..."
-                rows="1"
-                maxlength="1000"
-              ></textarea>
-              <button id="mpd-chat-send" aria-label="Send message">
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                </svg>
-              </button>
+              <!-- File Preview -->
+              <div id="mpd-file-preview" class="mpd-file-preview">
+                <span id="mpd-file-name">📎 file.pdf</span>
+                <button id="mpd-remove-file" aria-label="Remove file">×</button>
+              </div>
+              
+              <!-- Input Row -->
+              <div class="mpd-input-row">
+                <!-- Hidden File Input -->
+                <input type="file" id="mpd-file-input" accept="audio/*,video/*,image/*,.pdf,.docx,.doc,.txt" style="display: none;">
+                
+                <!-- Action Buttons -->
+                <button id="mpd-attach-btn" class="mpd-action-btn" aria-label="Attach file" title="Attach file">
+                  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+                    <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z" fill="currentColor"/>
+                  </svg>
+                </button>
+                
+                <button id="mpd-voice-btn" class="mpd-action-btn" aria-label="Voice message" title="Record voice">
+                  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" fill="currentColor"/>
+                  </svg>
+                </button>
+                
+                <!-- Text Input -->
+                <textarea 
+                  id="mpd-chat-input" 
+                  placeholder="Type your message..."
+                  rows="1"
+                  maxlength="1000"
+                ></textarea>
+                
+                <!-- Send Button -->
+                <button id="mpd-chat-send" aria-label="Send message">
+                  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -155,9 +183,12 @@
       const quickActions = document.querySelectorAll('.mpd-quick-action');
       
       // File upload elements
-      const attachButton = document.getElementById('attach-button');
-      const fileInput = document.getElementById('file-input');
-      const removeFileButton = document.getElementById('remove-file');
+      const attachButton = document.getElementById('mpd-attach-btn');
+      const fileInput = document.getElementById('mpd-file-input');
+      const removeFileButton = document.getElementById('mpd-remove-file');
+      
+      // Voice button
+      const voiceButton = document.getElementById('mpd-voice-btn');
 
       chatButton.addEventListener('click', () => this.toggleChat());
       chatClose.addEventListener('click', () => this.toggleChat());
@@ -192,21 +223,9 @@
         removeFileButton.addEventListener('click', () => this.removeFile());
       }
       
-      // Voice mode handlers
-      const textModeBtn = document.getElementById('text-mode-btn');
-      const voiceModeBtn = document.getElementById('voice-mode-btn');
-      const recordButton = document.getElementById('record-button');
-      
-      if (textModeBtn) {
-        textModeBtn.addEventListener('click', () => this.switchMode('text'));
-      }
-      
-      if (voiceModeBtn) {
-        voiceModeBtn.addEventListener('click', () => this.switchMode('voice'));
-      }
-      
-      if (recordButton) {
-        recordButton.addEventListener('click', () => this.toggleRecording());
+      // Voice recording handler
+      if (voiceButton) {
+        voiceButton.addEventListener('click', () => this.toggleRecording());
       }
     },
     
@@ -224,21 +243,21 @@
       this.state.selectedFile = file;
       
       // Show file preview
-      const filePreview = document.getElementById('file-preview');
-      const fileName = document.getElementById('file-name');
+      const filePreview = document.getElementById('mpd-file-preview');
+      const fileName = document.getElementById('mpd-file-name');
       
       if (filePreview && fileName) {
         fileName.textContent = `📎 ${file.name}`;
-        filePreview.style.display = 'flex';
+        filePreview.classList.add('show');
       }
     },
     
     removeFile: function() {
-      const fileInput = document.getElementById('file-input');
-      const filePreview = document.getElementById('file-preview');
+      const fileInput = document.getElementById('mpd-file-input');
+      const filePreview = document.getElementById('mpd-file-preview');
       
       if (fileInput) fileInput.value = '';
-      if (filePreview) filePreview.style.display = 'none';
+      if (filePreview) filePreview.classList.remove('show');
       
       this.state.selectedFile = null;
     },
@@ -273,7 +292,7 @@
     },
     
     toggleRecording: async function() {
-      const recordButton = document.getElementById('record-button');
+      const recordButton = document.getElementById('mpd-voice-btn');
       
       if (!this.state.mediaRecorder || this.state.mediaRecorder.state === 'inactive') {
         try {
