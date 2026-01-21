@@ -1,0 +1,151 @@
+{
+  "dashboard": {
+    "title": "AI Agent Task Evaluation Dashboard",
+    "tags": ["ai-agent", "evaluation", "mcp"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Overall Success Rate",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "agent_overall_success_rate",
+            "legendFormat": "Success Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": 0 },
+                { "color": "yellow", "value": 70 },
+                { "color": "green", "value": 85 }
+              ]
+            },
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+      },
+      {
+        "id": 2,
+        "title": "Production Ready Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "agent_production_ready",
+            "legendFormat": "Ready"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              { "type": "value", "value": "0", "text": "NOT READY" },
+              { "type": "value", "value": "1", "text": "PRODUCTION READY" }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": 0 },
+                { "color": "green", "value": 1 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+      },
+      {
+        "id": 3,
+        "title": "Success Rate by Category",
+        "type": "bargauge",
+        "targets": [
+          {
+            "expr": "agent_calendar_success_rate",
+            "legendFormat": "Calendar (≥90%)"
+          },
+          {
+            "expr": "agent_knowledge_success_rate",
+            "legendFormat": "Knowledge (≥85%)"
+          },
+          {
+            "expr": "agent_email_success_rate",
+            "legendFormat": "Email (≥80%)"
+          },
+          {
+            "expr": "agent_conversation_success_rate",
+            "legendFormat": "Conversation (≥95%)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": 0 },
+                { "color": "yellow", "value": 70 },
+                { "color": "green", "value": 85 }
+              ]
+            },
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 }
+      },
+      {
+        "id": 4,
+        "title": "Task Completion Over Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(agent_tasks_total{status=\"success\"}[5m])",
+            "legendFormat": "Successful Tasks/min"
+          },
+          {
+            "expr": "rate(agent_tasks_total{status=\"failure\"}[5m])",
+            "legendFormat": "Failed Tasks/min"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 }
+      },
+      {
+        "id": 5,
+        "title": "Task Distribution by Category",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum by (category) (agent_tasks_total)",
+            "legendFormat": "{{category}}"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 }
+      },
+      {
+        "id": 6,
+        "title": "Task Processing Duration (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(agent_task_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(agent_task_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile (median)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        },
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 }
+      }
+    ]
+  }
+}

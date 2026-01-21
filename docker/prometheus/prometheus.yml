@@ -1,13 +1,10 @@
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: 'mcp-host'
+  - job_name: 'mcp-agent'
+    metrics_path: '/metrics'
     static_configs:
-      - targets: ['mcp-host:8000']
-  - job_name: 'calendar-server'
-    static_configs:
-      - targets: ['calendar-server:8001']
-  - job_name: 'gmail-server'
-    static_configs:
-      - targets: ['gmail-server:8002']
+      - targets: ['masterprodevmcpaiagent-production.up.railway.app:443']
+    scheme: https

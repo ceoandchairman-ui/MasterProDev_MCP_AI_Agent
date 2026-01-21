@@ -320,9 +320,9 @@ class StateManager:
                 logger.error(f"✗ Error saving conversation turn to PostgreSQL: {e}")
 
     async def get_conversation_history(self, session_id: str) -> List[Dict[str, Any]]:
-        """Retrieves conversation history from the state."""
+        """Retrieves conversation history from the state (last 50 messages)."""
         state = await self.get_conversation_state(session_id)
-        return state.history if state else []
+        return state.history[-50:] if state else []
 
 
 # Global state manager instance

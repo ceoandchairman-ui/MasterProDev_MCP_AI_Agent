@@ -13,14 +13,72 @@ Metrics:
 - EmailTaskSuccessRate (threshold: ≥80%)
 - ConversationSuccessRate (threshold: ≥95%)
 - Overall TaskSuccessRate (PRODUCTION GATE: ≥85%)
+
+Prometheus Metrics Exported:
+- agent_tasks_total{category, status} - Counter of total tasks
+- agent_task_success_rate{category} - Gauge of success rate per category
+- agent_overall_success_rate - Gauge of overall success rate
+- agent_production_ready - Gauge (1 if ready, 0 if not)
 """
 
 import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from dataclasses import dataclass, field
+from prometheus_client import Counter, Gauge, Histogram
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# PROMETHEUS METRICS DEFINITIONS
+# ============================================================================
+
+# Task counters by category and status
+task_counter = Counter(
+    'agent_tasks_total',
+    'Total number of tasks processed by category',
+    ['category', 'status']  # labels: category=calendar/knowledge/email/conversation, status=success/failure
+)
+
+# Success rate gauges per category
+calendar_success_gauge = Gauge(
+    'agent_calendar_success_rate',
+    'Calendar task success rate (0-100)'
+)
+
+knowledge_success_gauge = Gauge(
+    'agent_knowledge_success_rate',
+    'Knowledge base task success rate (0-100)'
+)
+
+email_success_gauge = Gauge(
+    'agent_email_success_rate',
+    'Email task success rate (0-100)'
+)
+
+conversation_success_gauge = Gauge(
+    'agent_conversation_success_rate',
+    'Conversation task success rate (0-100)'
+)
+
+overall_success_gauge = Gauge(
+    'agent_overall_success_rate',
+    'Overall task success rate (0-100)'
+)
+
+production_ready_gauge = Gauge(
+    'agent_production_ready',
+    'Production readiness status (1=ready, 0=not ready)'
+)
+
+# Task processing time histogram
+task_duration_histogram = Histogram(
+    'agent_task_duration_seconds',
+    'Task processing duration in seconds',
+    ['category']
+)
+
 
 
 @dataclass
@@ -133,6 +191,11 @@ class TaskEvaluator:
             reason=reason
         )
         self.results.append(result)
+        
+        # Update Prometheus metrics
+        task_counter.labels(category="calendar", status="success" if success else "failure").inc()
+        self._update_gauges()
+        
         return result
     
     def evaluate_create_calendar_event(
@@ -1727,6 +1790,20 @@ CAN IT BE INFERRED?"""
             logger.info("📋 CATEGORY STATUS: " + " | ".join(categories_status) + "\n")
         
         return metrics
+    
+    def _update_gauges(self):
+        """Update Prometheus gauge metrics with current success rates"""
+        metrics = self.get_metrics()
+        
+        # Update category-specific gauges
+        calendar_success_gauge.set(metrics.calendar_success_rate)
+        knowledge_success_gauge.set(metrics.knowledge_success_rate)
+        email_success_gauge.set(metrics.email_success_rate)
+        conversation_success_gauge.set(metrics.conversation_success_rate)
+        
+        # Update overall gauges
+        overall_success_gauge.set(metrics.overall_success_rate)
+        production_ready_gauge.set(1 if metrics.production_ready else 0)
 
 
 # Singleton instance
