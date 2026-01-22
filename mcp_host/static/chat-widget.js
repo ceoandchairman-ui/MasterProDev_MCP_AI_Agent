@@ -430,11 +430,6 @@
       this.showTyping(true);
 
       try {
-        // Check authentication
-        if (!this.state.isAuthenticated) {
-          await this.authenticate();
-        }
-
         // Prepare form data
         const formData = new FormData();
         formData.append('message', message || 'Please analyze this file');
@@ -448,19 +443,13 @@
         // Send message to API
         const response = await fetch(`${this.config.apiUrl}/chat`, {
           method: 'POST',
-          headers: {
+          headers: this.state.authToken ? {
             'Authorization': `Bearer ${this.state.authToken}`
-          },
+          } : {},
           body: formData
         });
 
         if (!response.ok) {
-          if (response.status === 401) {
-            // Token expired, re-authenticate
-            this.state.isAuthenticated = false;
-            await this.authenticate();
-            return this.sendMessage(); // Retry
-          }
           throw new Error(`HTTP ${response.status}`);
         }
 

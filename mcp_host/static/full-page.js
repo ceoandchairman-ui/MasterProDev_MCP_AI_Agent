@@ -451,8 +451,6 @@ async function sendVoiceMessage() {
     formData.append('audio', audioBlob, 'recording.webm');
 
     try {
-        if (!isAuthenticated) await authenticate();
-
         typingIndicator.classList.add('active');
         scrollToBottom();
 
@@ -463,12 +461,6 @@ async function sendVoiceMessage() {
         });
 
         if (!response.ok) {
-            if (response.status === 401) {
-                isAuthenticated = false;
-                localStorage.removeItem('mcp_auth_token');
-                await authenticate();
-                return sendVoiceMessage();
-            }
             throw new Error('Voice request failed');
         }
 
@@ -551,8 +543,6 @@ async function sendMessage() {
     if (selectedFile) formData.append('file', selectedFile);
 
     try {
-        if (!isAuthenticated) await authenticate();
-
         const response = await fetch(`${API_URL}/chat`, {
             method: 'POST',
             headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
@@ -560,12 +550,6 @@ async function sendMessage() {
         });
 
         if (!response.ok) {
-            if (response.status === 401) {
-                isAuthenticated = false;
-                localStorage.removeItem('mcp_auth_token');
-                await authenticate();
-                return sendMessage();
-            }
             throw new Error('Chat request failed');
         }
 
