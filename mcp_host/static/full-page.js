@@ -49,12 +49,12 @@ const headerLogout = document.getElementById('header-logout');
 
 // Initialize
 async function init() {
-    checkAuthAndRedirect();
+    checkAuth();
     attachEventListeners();
 }
 
-// Check if user is authenticated, redirect to login if not
-function checkAuthAndRedirect() {
+// Check if user is authenticated (but don't require it - guests allowed)
+function checkAuth() {
     const savedToken = localStorage.getItem('mcp_auth_token');
     const savedEmail = localStorage.getItem('mcp_user_email');
     
@@ -62,24 +62,27 @@ function checkAuthAndRedirect() {
         authToken = savedToken;
         isAuthenticated = true;
         userEmail = savedEmail || 'User';
-        updateUserUI();
     } else {
-        // Redirect to login page
-        window.location.href = '/login';
+        // Guest mode - no token needed, chat is public
+        isAuthenticated = false;
+        userEmail = 'Guest';
     }
+    updateUserUI();
 }
 
 // Update user info in header
 function updateUserUI() {
-    if (isAuthenticated && userEmail) {
-        // Show user info
+    if (isAuthenticated && userEmail && userEmail !== 'Guest') {
+        // Logged in user - show logout
         const displayName = userEmail.includes('guest_') ? '👤 Guest' : `👤 ${userEmail.split('@')[0]}`;
         userInfo.textContent = displayName;
         userInfo.style.display = 'inline';
         headerLogout.style.display = 'inline';
         headerLogin.style.display = 'none';
     } else {
-        userInfo.style.display = 'none';
+        // Guest mode - show login option
+        userInfo.textContent = '👤 Guest';
+        userInfo.style.display = 'inline';
         headerLogout.style.display = 'none';
         headerLogin.style.display = 'inline';
     }
@@ -92,35 +95,7 @@ function logout() {
     authToken = null;
     isAuthenticated = false;
     userEmail = null;
-    window.location.href = '/login';
-}
-
-// Re-authenticate if token expired
-async function reauthenticate() {
-    try {
-        const response = await fetch(`${API_URL}/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                email: 'guest_' + Date.now() + '@example.com',
-                password: 'guest'
-            })
-        });
-
-        if (!response.ok) throw new Error('Authentication failed');
-
-        const data = await response.json();
-        authToken = data.access_token;
-        isAuthenticated = true;
-        userEmail = 'Guest';
-        localStorage.setItem('mcp_auth_token', authToken);
-        localStorage.setItem('mcp_user_email', userEmail);
-        updateUserUI();
-    } catch (error) {
-        console.error('Auth error:', error);
-        logout();
-    }
-    }
+    window.location.href = '/';  // Stay on chat as guest after logout
 }
 
 // ==================== 3D Avatar Setup ====================

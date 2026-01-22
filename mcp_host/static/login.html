@@ -164,7 +164,7 @@
         </div>
 
         <h1>Master Pro Dev</h1>
-        <p class="subtitle">AI Assistant Login</p>
+        <p class="subtitle">Admin Login (Guests can skip)</p>
 
         <div class="error-message" id="error-message"></div>
 
@@ -248,8 +248,8 @@
 
         guestLogin.addEventListener('click', async (e) => {
             e.preventDefault();
-            const guestEmail = 'guest_' + Date.now() + '@example.com';
-            await login(guestEmail, 'guest');
+            // Guests can use chat without login - just redirect
+            window.location.href = '/chat';
         });
 
         // Check if already logged in
