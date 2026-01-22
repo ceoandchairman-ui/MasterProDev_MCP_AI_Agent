@@ -223,14 +223,14 @@ def seed_documents_from_local():
         logging.info(f"Initializing embeddings with model {settings.EMBEDDING_MODEL}...")
         
         class MultiFallbackEmbeddings:
-            """Embeddings with multiple fallback models"""
+            """Embeddings with multiple fallback models - ALL 384-dim for consistency"""
+            # IMPORTANT: All models must have the SAME vector dimensions (384)
+            # to avoid Weaviate index errors when falling back between models
             FALLBACK_MODELS = [
-                "BAAI/bge-m3",
-                "BAAI/bge-small-en-v1.5",
-                "sentence-transformers/all-MiniLM-L6-v2",
-                "sentence-transformers/all-mpnet-base-v2",
-                "thenlper/gte-small",
-                "intfloat/e5-small-v2",
+                "BAAI/bge-small-en-v1.5",           # 384 dims - fast & reliable
+                "sentence-transformers/all-MiniLM-L6-v2",  # 384 dims
+                "thenlper/gte-small",               # 384 dims  
+                "intfloat/e5-small-v2",             # 384 dims
             ]
             
             def __init__(self, api_key, model_name):
