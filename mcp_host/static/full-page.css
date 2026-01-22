@@ -138,11 +138,12 @@ body {
     align-items: center;
     gap: 4px;
     border: none;
+    font-family: inherit;
 }
 
 .login-btn {
     background: white;
-    color: var(--secondary);
+    color: #6B5CE7;
 }
 
 .login-btn:hover {
@@ -150,13 +151,19 @@ body {
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 
-.logout-btn {
-    background: rgba(255, 255, 255, 0.15);
+button.logout-btn {
+    background: rgba(255, 255, 255, 0.2);
     color: white;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
 }
 
-.logout-btn:hover {
+button.logout-btn:hover {
     background: #ef4444;
     border-color: #ef4444;
 }
