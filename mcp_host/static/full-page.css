@@ -123,6 +123,40 @@ body {
     display: flex;
 }
 
+/* 3D Avatar Container */
+.avatar-3d-container {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+    position: relative;
+    min-height: 300px;
+}
+
+.avatar-3d-container.active {
+    display: flex;
+    flex: 1;
+}
+
+#avatar-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.avatar-3d-status {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+}
+
 .avatar {
     width: 120px;
     height: 120px;

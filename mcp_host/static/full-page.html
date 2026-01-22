@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MasterProDev AI Agent</title>
     <link rel="stylesheet" href="/static/full-page.css">
+    <!-- Three.js for 3D Avatar -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
 </head>
 <body>
     <div class="chat-container">
@@ -25,6 +34,7 @@
                 <div class="mode-toggle">
                     <button class="mode-btn active" data-mode="text" title="Text Chat">💬 Text</button>
                     <button class="mode-btn" data-mode="voice" title="Voice Chat">🎙️ Voice</button>
+                    <button class="mode-btn" data-mode="avatar" title="3D Avatar">🧑 Avatar</button>
                 </div>
                 <a href="/widget" class="widget-link" title="Widget View">
                     <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
@@ -35,12 +45,18 @@
             </div>
         </div>
 
-        <!-- Avatar Container (for voice mode) -->
+        <!-- Simple Avatar Container (for voice mode) -->
         <div class="avatar-container" id="avatar-container">
             <div class="avatar" id="avatar">
                 <span class="avatar-emoji">🤖</span>
             </div>
             <div class="avatar-status" id="avatar-status">Ready to listen</div>
+        </div>
+
+        <!-- 3D Avatar Container (for avatar mode) -->
+        <div class="avatar-3d-container" id="avatar-3d-container">
+            <canvas id="avatar-canvas"></canvas>
+            <div class="avatar-3d-status" id="avatar-3d-status">Loading 3D Avatar...</div>
         </div>
 
         <!-- Messages Area -->
@@ -111,6 +127,8 @@
         </div>
     </div>
 
-    <script src="/static/full-page.js"></script>
+    <script type="module" src="/static/full-page.js"></script>
+</body>
+</html>
 </body>
 </html>
