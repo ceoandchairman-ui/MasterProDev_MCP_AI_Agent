@@ -32,20 +32,23 @@ class VoiceService:
         
         # Hugging Face model endpoints (free inference models)
         # STT: Using facebook's wav2vec2 (more stable than whisper on HF)
-        self.hf_stt_model = os.environ.get("HF_STT_MODEL", "facebook/wav2vec2-large-960h-lv60-self")
+        self.hf_stt_model = os.environ.get("HF_STT_MODEL", "facebook/wav2vec2-base-960h")
         # TTS: Using facebook's MMS (Massively Multilingual Speech)
         self.hf_tts_model = os.environ.get("HF_TTS_MODEL", "facebook/mms-tts-eng")
-        self.hf_api_base = "https://api-inference.huggingface.co/models"
+        
+        # Use router.huggingface.co for better reliability
+        self.hf_api_base = "https://router.huggingface.co/hf-inference/models"
         
         # Alternative models if primary fails
         self.hf_stt_alternatives = [
-            "facebook/wav2vec2-base-960h",
+            "facebook/wav2vec2-large-960h-lv60-self",
             "jonatasgrosman/wav2vec2-large-xlsr-53-english",
             "openai/whisper-tiny",
         ]
         self.hf_tts_alternatives = [
             "espnet/kan-bayashi_ljspeech_vits",
             "facebook/fastspeech2-en-ljspeech",
+            "suno/bark-small",
         ]
     
     async def speech_to_text(self, audio_data: bytes, filename: str = "audio.webm") -> str:
@@ -91,13 +94,24 @@ class VoiceService:
                     headers = {"Authorization": f"Bearer {self.hf_token}"}
                     url = f"{self.hf_api_base}/{model}"
                     
-                    async with httpx.AsyncClient(timeout=30.0) as client:
+                    async with httpx.AsyncClient(timeout=60.0) as client:
                         response = await client.post(url, headers=headers, content=audio_data)
+                        
+                        # Check for model loading (503)
+                        if response.status_code == 503:
+                            logger.warning(f"⚠️ Model {model} is loading, trying next...")
+                            continue
+                            
                         response.raise_for_status()
                         result = response.json()
                         
                         transcript = result.get("text", "")
-                        logger.info(f"🎤 STT (HuggingFace/{model}): '{transcript[:50]}...'")
+                        if transcript:
+                            logger.info(f"🎤 STT (HuggingFace/{model}): '{transcript[:50]}...'")
+                            return transcript
+                        else:
+                            logger.warning(f"⚠️ Model {model} returned empty transcription")
+                            continue
                         return transcript
                     
                 except Exception as e:
@@ -151,22 +165,32 @@ class VoiceService:
             models_to_try = [self.hf_tts_model] + self.hf_tts_alternatives
             last_error = None
             
-            for model in models_to_try:
+            for tts_model in models_to_try:
                 try:
                     headers = {"Authorization": f"Bearer {self.hf_token}"}
-                    url = f"{self.hf_api_base}/{model}"
-                    payload = {"inputs": text[:1000]}  # HF has smaller limits
+                    url = f"{self.hf_api_base}/{tts_model}"
+                    payload = {"inputs": text[:500]}  # HF has smaller limits
                     
-                    async with httpx.AsyncClient(timeout=30.0) as client:
+                    async with httpx.AsyncClient(timeout=60.0) as client:
                         response = await client.post(url, headers=headers, json=payload)
+                        
+                        # Check for model loading (503)
+                        if response.status_code == 503:
+                            logger.warning(f"⚠️ TTS model {tts_model} is loading, trying next...")
+                            continue
+                            
                         response.raise_for_status()
                         
                         audio_bytes = response.content
-                        logger.info(f"🔊 TTS (HuggingFace/{model}): Generated {len(audio_bytes)} bytes")
-                        return audio_bytes
+                        if audio_bytes and len(audio_bytes) > 100:
+                            logger.info(f"🔊 TTS (HuggingFace/{tts_model}): Generated {len(audio_bytes)} bytes")
+                            return audio_bytes
+                        else:
+                            logger.warning(f"⚠️ TTS model {tts_model} returned empty/small audio")
+                            continue
                     
                 except Exception as e:
-                    logger.warning(f"⚠️ HF TTS model {model} failed: {e}")
+                    logger.warning(f"⚠️ HF TTS model {tts_model} failed: {e}")
                     last_error = e
                     continue
             
