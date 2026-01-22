@@ -222,56 +222,59 @@ def seed_documents_from_local():
         # Initialize embeddings with dual fallback: InferenceClient -> requests
         logging.info(f"Initializing embeddings with model {settings.EMBEDDING_MODEL}...")
         
-        class TripleFallbackEmbeddings:
+        class MultiFallbackEmbeddings:
+            """Embeddings with multiple fallback models"""
+            FALLBACK_MODELS = [
+                "BAAI/bge-m3",
+                "BAAI/bge-small-en-v1.5",
+                "sentence-transformers/all-MiniLM-L6-v2",
+                "sentence-transformers/all-mpnet-base-v2",
+                "thenlper/gte-small",
+                "intfloat/e5-small-v2",
+            ]
+            
             def __init__(self, api_key, model_name):
                 self.api_key = api_key
                 self.model_name = model_name
-                self.fallback_model = "BAAI/bge-small-en-v1.5"
-                self.primary_model = "BAAI/bge-m3"
-                self.method = None
-                
-            def _try_inference_client(self, text, model):
-                from huggingface_hub import InferenceClient
-                client = InferenceClient(token=self.api_key)
-                result = client.feature_extraction(text, model=model)
-                return result
+                self.working_model = None
                 
             def _try_requests(self, text, model):
                 import requests
                 url = f"https://router.huggingface.co/hf-inference/models/{model}/pipeline/feature-extraction"
                 headers = {"Authorization": f"Bearer {self.api_key}"}
-                response = requests.post(url, headers=headers, json={"inputs": text})
+                response = requests.post(url, headers=headers, json={"inputs": text}, timeout=30)
                 response.raise_for_status()
                 return response.json()
                 
             def embed_query(self, text):
-                # 1. Try bge-m3 with direct requests (new router.huggingface.co endpoint)
-                try:
-                    result = self._try_requests(text, self.primary_model)
-                    if result and len(result) > 0:
-                        if self.method != "requests-m3":
-                            logging.info(f"✓ Using direct requests with {self.primary_model}")
-                            self.method = "requests-m3"
-                        return result
-                except Exception as e:
-                    logging.warning(f"Direct requests {self.primary_model} failed: {e}")
+                # If we found a working model, try it first
+                if self.working_model:
+                    try:
+                        result = self._try_requests(text, self.working_model)
+                        if result and len(result) > 0:
+                            return result
+                    except Exception:
+                        self.working_model = None  # Reset and try all
                 
-                # 2. Fallback to bge-small-en-v1.5 with direct requests
-                try:
-                    result = self._try_requests(text, self.fallback_model)
-                    if result and len(result) > 0:
-                        if self.method != "requests-fallback":
-                            logging.info(f"✓ Using fallback {self.fallback_model}")
-                            self.method = "requests-fallback"
-                        return result
-                except Exception as e:
-                    logging.error(f"All methods failed: {e}")
-                    raise ValueError(f"All embedding methods failed")
+                # Try all models in order
+                for model in self.FALLBACK_MODELS:
+                    try:
+                        result = self._try_requests(text, model)
+                        if result and len(result) > 0:
+                            if self.working_model != model:
+                                logging.info(f"✓ Embedding model: {model}")
+                                self.working_model = model
+                            return result
+                    except Exception as e:
+                        logging.warning(f"⚠️ Embedding model {model} failed: {e}")
+                        continue
+                
+                raise ValueError(f"All {len(self.FALLBACK_MODELS)} embedding models failed")
                     
             def embed_documents(self, texts):
                 return [self.embed_query(t) for t in texts]
         
-        embeddings = TripleFallbackEmbeddings(
+        embeddings = MultiFallbackEmbeddings(
             api_key=settings.HUGGINGFACE_API_KEY,
             model_name=settings.EMBEDDING_MODEL
         )
