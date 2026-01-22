@@ -227,7 +227,8 @@
                 }
 
                 const data = await response.json();
-                localStorage.setItem('mpd_auth_token', data.access_token);
+                localStorage.setItem('mcp_auth_token', data.access_token);
+                localStorage.setItem('mcp_user_email', email);
                 
                 // Redirect to chat
                 window.location.href = '/chat';
@@ -252,7 +253,7 @@
         });
 
         // Check if already logged in
-        const token = localStorage.getItem('mpd_auth_token');
+        const token = localStorage.getItem('mcp_auth_token');
         if (token) {
             window.location.href = '/chat';
         }

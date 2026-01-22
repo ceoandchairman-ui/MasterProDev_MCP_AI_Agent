@@ -109,6 +109,52 @@ body {
     color: white;
 }
 
+/* User Menu */
+.user-menu {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.user-info {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 14px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+}
+
+.auth-btn {
+    padding: 6px 14px;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+}
+
+.login-btn {
+    background: white;
+    color: var(--secondary);
+    border: none;
+}
+
+.login-btn:hover {
+    transform: scale(1.05);
+}
+
+.logout-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.logout-btn:hover {
+    background: rgba(239, 68, 68, 0.8);
+    border-color: transparent;
+}
+
 /* Avatar Container (Voice Mode) */
 .avatar-container {
     display: none;

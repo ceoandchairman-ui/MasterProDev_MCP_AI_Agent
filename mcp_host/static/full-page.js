@@ -17,6 +17,7 @@ let selectedFile = null;
 let conversationId = null;
 let authToken = null;
 let isAuthenticated = false;
+let userEmail = null;
 
 // 3D Avatar State
 let scene, camera, renderer, avatar3D, mixer, clock;
@@ -42,23 +43,61 @@ const avatar3DContainer = document.getElementById('avatar-3d-container');
 const avatar3DStatus = document.getElementById('avatar-3d-status');
 const avatarCanvas = document.getElementById('avatar-canvas');
 const modeBtns = document.querySelectorAll('.mode-btn');
+const userInfo = document.getElementById('user-info');
+const headerLogin = document.getElementById('header-login');
+const headerLogout = document.getElementById('header-logout');
 
 // Initialize
 async function init() {
-    await authenticate();
+    checkAuthAndRedirect();
     attachEventListeners();
 }
 
-// Authentication
-async function authenticate() {
-    try {
-        const savedToken = localStorage.getItem('mcp_auth_token');
-        if (savedToken) {
-            authToken = savedToken;
-            isAuthenticated = true;
-            return;
-        }
+// Check if user is authenticated, redirect to login if not
+function checkAuthAndRedirect() {
+    const savedToken = localStorage.getItem('mcp_auth_token');
+    const savedEmail = localStorage.getItem('mcp_user_email');
+    
+    if (savedToken) {
+        authToken = savedToken;
+        isAuthenticated = true;
+        userEmail = savedEmail || 'User';
+        updateUserUI();
+    } else {
+        // Redirect to login page
+        window.location.href = '/login';
+    }
+}
 
+// Update user info in header
+function updateUserUI() {
+    if (isAuthenticated && userEmail) {
+        // Show user info
+        const displayName = userEmail.includes('guest_') ? '👤 Guest' : `👤 ${userEmail.split('@')[0]}`;
+        userInfo.textContent = displayName;
+        userInfo.style.display = 'inline';
+        headerLogout.style.display = 'inline';
+        headerLogin.style.display = 'none';
+    } else {
+        userInfo.style.display = 'none';
+        headerLogout.style.display = 'none';
+        headerLogin.style.display = 'inline';
+    }
+}
+
+// Logout function
+function logout() {
+    localStorage.removeItem('mcp_auth_token');
+    localStorage.removeItem('mcp_user_email');
+    authToken = null;
+    isAuthenticated = false;
+    userEmail = null;
+    window.location.href = '/login';
+}
+
+// Re-authenticate if token expired
+async function reauthenticate() {
+    try {
         const response = await fetch(`${API_URL}/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -73,10 +112,14 @@ async function authenticate() {
         const data = await response.json();
         authToken = data.access_token;
         isAuthenticated = true;
+        userEmail = 'Guest';
         localStorage.setItem('mcp_auth_token', authToken);
+        localStorage.setItem('mcp_user_email', userEmail);
+        updateUserUI();
     } catch (error) {
         console.error('Auth error:', error);
-        addMessage('Authentication failed. Please refresh the page.', 'bot');
+        logout();
+    }
     }
 }
 
@@ -314,6 +357,16 @@ function setupAudioAnalyser(audioElement) {
 // ==================== Event Listeners ====================
 
 function attachEventListeners() {
+    // Header auth buttons
+    if (headerLogout) {
+        headerLogout.addEventListener('click', logout);
+    }
+    if (headerLogin) {
+        headerLogin.addEventListener('click', () => {
+            window.location.href = '/login';
+        });
+    }
+
     // Mode toggle
     modeBtns.forEach(btn => {
         btn.addEventListener('click', () => {

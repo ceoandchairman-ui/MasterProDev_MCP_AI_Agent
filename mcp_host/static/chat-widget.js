@@ -489,7 +489,7 @@
     authenticate: async function() {
       try {
         // Check for saved token
-        const savedToken = localStorage.getItem('mpd_auth_token');
+        const savedToken = localStorage.getItem('mcp_auth_token');
         if (savedToken) {
           this.state.authToken = savedToken;
           this.state.isAuthenticated = true;
@@ -513,7 +513,7 @@
         this.state.isAuthenticated = true;
         
         // Save token
-        localStorage.setItem('mpd_auth_token', data.access_token);
+        localStorage.setItem('mcp_auth_token', data.access_token);
 
       } catch (error) {
         console.error('Authentication error:', error);
@@ -522,7 +522,7 @@
     },
 
     loadAuthToken: function() {
-      const savedToken = localStorage.getItem('mpd_auth_token');
+      const savedToken = localStorage.getItem('mcp_auth_token');
       if (savedToken) {
         this.state.authToken = savedToken;
         this.state.isAuthenticated = true;
