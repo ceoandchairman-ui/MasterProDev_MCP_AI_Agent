@@ -141,44 +141,78 @@ class FileProcessor:
             logger.error(f"Video processing failed: {e}")
             return f"[Video uploaded - processing failed: {str(e)}]"
     
+    # Vision models for image analysis (fallback order)
+    VISION_MODELS = [
+        "Salesforce/blip-image-captioning-large",
+        "Salesforce/blip-image-captioning-base",
+        "nlpconnect/vit-gpt2-image-captioning",
+        "microsoft/git-base-coco",
+    ]
+    
     async def _process_image(self, image_data: bytes, filename: str) -> str:
-        """Analyze image using vision model"""
-        if not self.openai_client:
-            return "[Image uploaded - OpenAI API not configured for vision analysis]"
+        """Analyze image using vision model with fallbacks"""
+        import base64
         
-        try:
-            import base64
-            
-            # Convert to base64
-            base64_image = base64.b64encode(image_data).decode('utf-8')
-            
-            # Use GPT-4 Vision
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4-vision-preview",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": "Describe this image in detail. What do you see?"},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
+        # Try OpenAI first if available
+        if self.openai_client:
+            try:
+                base64_image = base64.b64encode(image_data).decode('utf-8')
+                
+                response = self.openai_client.chat.completions.create(
+                    model="gpt-4-vision-preview",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "Describe this image in detail. What do you see?"},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{base64_image}"
+                                    }
                                 }
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=500
-            )
+                            ]
+                        }
+                    ],
+                    max_tokens=500
+                )
+                
+                description = response.choices[0].message.content
+                logger.info(f"🖼️ Image analyzed (OpenAI): {len(description)} chars")
+                return f"[Image analysis]\n{description}"
+                
+            except Exception as e:
+                logger.warning(f"⚠️ OpenAI vision failed: {e}, trying HuggingFace fallback...")
+        
+        # Fallback to HuggingFace vision models
+        hf_token = os.environ.get("HUGGINGFACE_API_KEY") or os.environ.get("HF_TOKEN")
+        if hf_token:
+            import httpx
             
-            description = response.choices[0].message.content
-            logger.info(f"🖼️ Image analyzed: {len(description)} chars")
-            return f"[Image analysis]\n{description}"
-            
-        except Exception as e:
-            logger.error(f"Image processing failed: {e}")
-            return f"[Image uploaded - analysis failed: {str(e)}]"
+            for model in self.VISION_MODELS:
+                try:
+                    url = f"https://api-inference.huggingface.co/models/{model}"
+                    headers = {"Authorization": f"Bearer {hf_token}"}
+                    
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.post(url, headers=headers, content=image_data)
+                        response.raise_for_status()
+                        result = response.json()
+                        
+                        # Extract caption from response
+                        if isinstance(result, list) and len(result) > 0:
+                            caption = result[0].get("generated_text", str(result))
+                        else:
+                            caption = str(result)
+                        
+                        logger.info(f"🖼️ Image analyzed (HF/{model}): {len(caption)} chars")
+                        return f"[Image analysis]\n{caption}"
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ Vision model {model} failed: {e}")
+                    continue
+        
+        return f"[Image uploaded - no vision API available. Set OPENAI_API_KEY or HUGGINGFACE_API_KEY]"
     
     def _process_pdf(self, pdf_data: bytes) -> str:
         """Extract text from PDF"""

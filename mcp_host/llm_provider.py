@@ -216,11 +216,22 @@ class BedrockProvider(LLMProvider):
 class HuggingFaceProvider(LLMProvider):
     """Hugging Face Inference API Provider using a factory for model-specific handlers."""
     
+    # Fallback models in order of preference (free inference models)
+    FALLBACK_MODELS = [
+        "moonshotai/Kimi-K2-Instruct",  # Primary
+        "meta-llama/Meta-Llama-3-8B-Instruct",
+        "mistralai/Mistral-7B-Instruct-v0.2",
+        "microsoft/Phi-3-mini-4k-instruct",
+        "google/gemma-2-9b-it",
+        "Qwen/Qwen2.5-7B-Instruct",
+    ]
+    
     def __init__(self, model_name: str = "moonshotai/Kimi-K2-Instruct"):
         super().__init__(model_name)
         self.api_key = None
         self.api_url = "https://router.huggingface.co/v1/chat/completions"
         self.handler = self._get_model_handler(model_name)
+        self.current_model_index = 0
     
     def _get_model_handler(self, model_name: str) -> HuggingFaceModelHandler:
         """Factory to select the appropriate model handler."""
@@ -250,28 +261,10 @@ class HuggingFaceProvider(LLMProvider):
             self.available = False
             return False
     
-    async def generate(
-        self,
-        prompt: str,
-        max_tokens: int = 1000,
-        temperature: float = 0.7,
-        system_prompt: Optional[str] = None
-    ) -> str:
-        """Generate text using Hugging Face chat completion API"""
-        if not self.available:
-            raise RuntimeError("Hugging Face provider not available")
-        
-        # Build messages for chat completion
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-        
-        # Use HTTP call to Hugging Face OpenAI-compatible endpoint
-        import httpx
-
+    async def _try_model(self, model_name: str, messages: List[Dict], max_tokens: int, temperature: float) -> str:
+        """Try a single model and return response or raise exception"""
         payload = {
-            "model": self.model_name,
+            "model": model_name,
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature
@@ -285,37 +278,60 @@ class HuggingFaceProvider(LLMProvider):
             response = await client.post(self.api_url, json=payload, headers=headers)
 
         if response.status_code >= 400:
-            raise RuntimeError(f"Hugging Face error: {response.status_code} - {response.text}")
+            raise RuntimeError(f"Model {model_name} error: {response.status_code}")
 
         data = response.json()
         if not data.get("choices"):
-            raise RuntimeError("Hugging Face response missing choices")
+            raise RuntimeError(f"Model {model_name} response missing choices")
 
-        # Extract the assistant's message
         return data["choices"][0]["message"]["content"]
     
-    async def generate_with_tools(
+    async def generate(
         self,
         prompt: str,
-        tools: List[Dict[str, Any]],
         max_tokens: int = 1000,
-        temperature: float = 0.7
-    ) -> Dict[str, Any]:
-        """Generate with tool calling using the model-specific handler."""
+        temperature: float = 0.7,
+        system_prompt: Optional[str] = None
+    ) -> str:
+        """Generate text using Hugging Face with automatic model fallback"""
         if not self.available:
             raise RuntimeError("Hugging Face provider not available")
         
-        messages = [{"role": "user", "content": prompt}]
+        # Build messages for chat completion
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
         
+        # Try primary model first, then fallbacks
+        models_to_try = [self.model_name] + [m for m in self.FALLBACK_MODELS if m != self.model_name]
+        last_error = None
+        
+        for model in models_to_try:
+            try:
+                result = await self._try_model(model, messages, max_tokens, temperature)
+                if model != self.model_name:
+                    logger.info(f"✓ LLM fallback succeeded with {model}")
+                return result
+            except Exception as e:
+                logger.warning(f"⚠️ LLM model {model} failed: {e}")
+                last_error = e
+                continue
+        
+        raise RuntimeError(f"All LLM models failed. Last error: {last_error}")
+    
+    async def _try_model_with_tools(self, model_name: str, messages: List[Dict], tools: List[Dict], max_tokens: int, temperature: float) -> Dict[str, Any]:
+        """Try a single model with tools and return response or raise exception"""
         payload = {
-            "model": self.model_name,
+            "model": model_name,
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
         
-        # Let the handler modify the payload for tools
-        self.handler.prepare_tool_payload(payload, tools)
+        # Get handler for this model
+        handler = self._get_model_handler(model_name)
+        handler.prepare_tool_payload(payload, tools)
         
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -326,14 +342,43 @@ class HuggingFaceProvider(LLMProvider):
             response = await client.post(self.api_url, json=payload, headers=headers)
         
         if response.status_code >= 400:
-            raise RuntimeError(f"Hugging Face error: {response.status_code} - {response.text}")
+            raise RuntimeError(f"Model {model_name} error: {response.status_code}")
         
         data = response.json()
         if not data.get("choices"):
-            raise RuntimeError("Hugging Face response missing choices")
+            raise RuntimeError(f"Model {model_name} response missing choices")
         
-        # Let the handler parse the response
-        return self.handler.parse_tool_response(data["choices"][0], tools)
+        return handler.parse_tool_response(data["choices"][0], tools)
+    
+    async def generate_with_tools(
+        self,
+        prompt: str,
+        tools: List[Dict[str, Any]],
+        max_tokens: int = 1000,
+        temperature: float = 0.7
+    ) -> Dict[str, Any]:
+        """Generate with tool calling with automatic model fallback."""
+        if not self.available:
+            raise RuntimeError("Hugging Face provider not available")
+        
+        messages = [{"role": "user", "content": prompt}]
+        
+        # Try primary model first, then fallbacks
+        models_to_try = [self.model_name] + [m for m in self.FALLBACK_MODELS if m != self.model_name]
+        last_error = None
+        
+        for model in models_to_try:
+            try:
+                result = await self._try_model_with_tools(model, messages, tools, max_tokens, temperature)
+                if model != self.model_name:
+                    logger.info(f"✓ LLM tool-call fallback succeeded with {model}")
+                return result
+            except Exception as e:
+                logger.warning(f"⚠️ LLM model {model} (tools) failed: {e}")
+                last_error = e
+                continue
+        
+        raise RuntimeError(f"All LLM models failed for tool calling. Last error: {last_error}")
 
 
 class OllamaProvider(LLMProvider):

@@ -30,10 +30,23 @@ class VoiceService:
         elif not self.client:
             logger.warning("⚠️ No OPENAI_API_KEY or HUGGINGFACE_API_KEY - voice features limited")
         
-        # Hugging Face model endpoints
-        self.hf_stt_model = os.environ.get("HF_STT_MODEL", "openai/whisper-base")
-        self.hf_tts_model = os.environ.get("HF_TTS_MODEL", "microsoft/speecht5_tts")
+        # Hugging Face model endpoints (free inference models)
+        # STT: Using facebook's wav2vec2 (more stable than whisper on HF)
+        self.hf_stt_model = os.environ.get("HF_STT_MODEL", "facebook/wav2vec2-large-960h-lv60-self")
+        # TTS: Using facebook's MMS (Massively Multilingual Speech)
+        self.hf_tts_model = os.environ.get("HF_TTS_MODEL", "facebook/mms-tts-eng")
         self.hf_api_base = "https://api-inference.huggingface.co/models"
+        
+        # Alternative models if primary fails
+        self.hf_stt_alternatives = [
+            "facebook/wav2vec2-base-960h",
+            "jonatasgrosman/wav2vec2-large-xlsr-53-english",
+            "openai/whisper-tiny",
+        ]
+        self.hf_tts_alternatives = [
+            "espnet/kan-bayashi_ljspeech_vits",
+            "facebook/fastspeech2-en-ljspeech",
+        ]
     
     async def speech_to_text(self, audio_data: bytes, filename: str = "audio.webm") -> str:
         """
@@ -69,22 +82,30 @@ class VoiceService:
         
         # Fallback to Hugging Face Inference API
         if self.hf_token:
-            try:
-                headers = {"Authorization": f"Bearer {self.hf_token}"}
-                url = f"{self.hf_api_base}/{self.hf_stt_model}"
-                
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(url, headers=headers, content=audio_data)
-                    response.raise_for_status()
-                    result = response.json()
+            # Try primary model first, then alternatives
+            models_to_try = [self.hf_stt_model] + self.hf_stt_alternatives
+            last_error = None
+            
+            for model in models_to_try:
+                try:
+                    headers = {"Authorization": f"Bearer {self.hf_token}"}
+                    url = f"{self.hf_api_base}/{model}"
                     
-                    transcript = result.get("text", "")
-                    logger.info(f"🎤 STT (HuggingFace): '{transcript[:50]}...'")
-                    return transcript
-                
-            except Exception as e:
-                logger.error(f"❌ HuggingFace STT Error: {e}")
-                raise Exception(f"Speech-to-text failed: {str(e)}")
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.post(url, headers=headers, content=audio_data)
+                        response.raise_for_status()
+                        result = response.json()
+                        
+                        transcript = result.get("text", "")
+                        logger.info(f"🎤 STT (HuggingFace/{model}): '{transcript[:50]}...'")
+                        return transcript
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ HF model {model} failed: {e}")
+                    last_error = e
+                    continue
+            
+            raise Exception(f"Speech-to-text failed (tried {len(models_to_try)} models): {str(last_error)}")
         
         raise Exception("No STT service available - set OPENAI_API_KEY or HUGGINGFACE_API_KEY")
     
@@ -126,22 +147,30 @@ class VoiceService:
         
         # Fallback to Hugging Face Inference API
         if self.hf_token:
-            try:
-                headers = {"Authorization": f"Bearer {self.hf_token}"}
-                url = f"{self.hf_api_base}/{self.hf_tts_model}"
-                payload = {"inputs": text[:1000]}  # HF has smaller limits
-                
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(url, headers=headers, json=payload)
-                    response.raise_for_status()
+            # Try primary model first, then alternatives
+            models_to_try = [self.hf_tts_model] + self.hf_tts_alternatives
+            last_error = None
+            
+            for model in models_to_try:
+                try:
+                    headers = {"Authorization": f"Bearer {self.hf_token}"}
+                    url = f"{self.hf_api_base}/{model}"
+                    payload = {"inputs": text[:1000]}  # HF has smaller limits
                     
-                    audio_bytes = response.content
-                    logger.info(f"🔊 TTS (HuggingFace): Generated {len(audio_bytes)} bytes")
-                    return audio_bytes
-                
-            except Exception as e:
-                logger.error(f"❌ HuggingFace TTS Error: {e}")
-                raise Exception(f"Text-to-speech failed: {str(e)}")
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.post(url, headers=headers, json=payload)
+                        response.raise_for_status()
+                        
+                        audio_bytes = response.content
+                        logger.info(f"🔊 TTS (HuggingFace/{model}): Generated {len(audio_bytes)} bytes")
+                        return audio_bytes
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ HF TTS model {model} failed: {e}")
+                    last_error = e
+                    continue
+            
+            raise Exception(f"Text-to-speech failed (tried {len(models_to_try)} models): {str(last_error)}")
         
         raise Exception("No TTS service available - set OPENAI_API_KEY or HUGGINGFACE_API_KEY")
 
