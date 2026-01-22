@@ -113,46 +113,52 @@ body {
 .user-menu {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+    margin-left: 12px;
 }
 
 .user-info {
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 14px;
-    padding: 6px 12px;
+    color: white;
+    font-size: 13px;
+    padding: 6px 14px;
     background: rgba(255, 255, 255, 0.15);
-    border-radius: 16px;
+    border-radius: 20px;
+    font-weight: 500;
 }
 
 .auth-btn {
-    padding: 6px 14px;
-    border-radius: 16px;
+    padding: 8px 16px;
+    border-radius: 20px;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
     text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: none;
 }
 
 .login-btn {
     background: white;
     color: var(--secondary);
-    border: none;
 }
 
 .login-btn:hover {
     transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 
 .logout-btn {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.15);
     color: white;
     border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .logout-btn:hover {
-    background: rgba(239, 68, 68, 0.8);
-    border-color: transparent;
+    background: #ef4444;
+    border-color: #ef4444;
 }
 
 /* Avatar Container (Voice Mode) */
