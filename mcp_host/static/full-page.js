@@ -461,7 +461,8 @@ async function sendVoiceMessage() {
         });
 
         if (!response.ok) {
-            throw new Error('Voice request failed');
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `Voice request failed (${response.status})`);
         }
 
         const audioResponse = await response.blob();
@@ -512,7 +513,8 @@ async function sendVoiceMessage() {
 
     } catch (error) {
         console.error('Voice error:', error);
-        addMessage('Sorry, voice processing failed. Please try again.', 'bot');
+        const errorMsg = error.message || 'Unknown error';
+        addMessage(`Sorry, voice processing failed: ${errorMsg}`, 'bot');
         if (currentMode === 'voice') {
             avatar.className = 'avatar idle';
             avatarStatus.textContent = 'Click the microphone to speak';
