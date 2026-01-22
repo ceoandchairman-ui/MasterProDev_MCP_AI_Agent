@@ -145,9 +145,16 @@ async def openapi_schema(authorization: Optional[str] = Header(None)):
 
 # Login page for docs access
 @app.get("/login-docs", include_in_schema=False)
-async def login_page():
+async def login_docs_page():
     """Login page to access API documentation"""
     return FileResponse(str(STATIC_DIR / "login-docs.html"))
+
+
+# Login page for chat (admin login)
+@app.get("/login", include_in_schema=False)
+async def login_page():
+    """Login page for admin access"""
+    return FileResponse(str(STATIC_DIR / "login.html"))
 
 
 # Custom docs UI with auth
