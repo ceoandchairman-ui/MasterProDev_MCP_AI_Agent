@@ -39,16 +39,16 @@ class VoiceService:
         # Use router.huggingface.co for better reliability
         self.hf_api_base = "https://router.huggingface.co/hf-inference/models"
         
-        # Alternative models if primary fails
+        # Alternative STT models (all free inference compatible)
         self.hf_stt_alternatives = [
             "facebook/wav2vec2-large-960h-lv60-self",
-            "jonatasgrosman/wav2vec2-large-xlsr-53-english",
-            "openai/whisper-tiny",
+            "facebook/hubert-large-ls960-ft",
+            "microsoft/speecht5_asr",
         ]
+        # Alternative TTS models
         self.hf_tts_alternatives = [
             "espnet/kan-bayashi_ljspeech_vits",
-            "facebook/fastspeech2-en-ljspeech",
-            "suno/bark-small",
+            "microsoft/speecht5_tts",
         ]
     
     async def speech_to_text(self, audio_data: bytes, filename: str = "audio.webm") -> str:
