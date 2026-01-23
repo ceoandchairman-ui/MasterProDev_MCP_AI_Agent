@@ -465,51 +465,93 @@ async function sendVoiceMessage() {
             throw new Error(errorData.detail || `Voice request failed (${response.status})`);
         }
 
-        const audioResponse = await response.blob();
-        const transcription = response.headers.get('X-Transcription');
-        const responseText = response.headers.get('X-Response-Text');
-
-        // Show user transcription
-        if (transcription) {
-            addMessage(transcription, 'user');
-        }
-
-        // Show bot response text
-        if (responseText) {
-            addMessage(decodeURIComponent(responseText), 'bot');
-        }
-
-        // Play audio response with lip sync
-        const audioUrl = URL.createObjectURL(audioResponse);
-        const audio = new Audio(audioUrl);
+        // Check content type - could be audio or JSON (for browser TTS fallback)
+        const contentType = response.headers.get('Content-Type');
         
-        // Setup audio analyser for 3D avatar lip sync
-        if (currentMode === 'avatar') {
-            audio.crossOrigin = 'anonymous';
-            audio.addEventListener('canplaythrough', () => {
-                setupAudioAnalyser(audio);
-            }, { once: true });
-            avatar3DStatus.textContent = 'Speaking...';
-        } else {
-            avatar.className = 'avatar speaking';
-            avatarStatus.textContent = 'Speaking...';
-        }
-        
-        audio.play();
-        
-        audio.onended = () => {
-            if (currentMode === 'voice') {
-                avatar.className = 'avatar idle';
-                avatarStatus.textContent = 'Click the microphone to speak';
-            } else if (currentMode === 'avatar') {
-                avatar3DStatus.textContent = 'Click microphone to speak';
-                // Reset mouth
-                if (analyser) {
-                    dataArray.fill(0);
-                }
+        if (contentType && contentType.includes('application/json')) {
+            // Server returned JSON - use browser TTS
+            const data = await response.json();
+            
+            // Show user transcription
+            if (data.transcription) {
+                addMessage(data.transcription, 'user');
             }
-            URL.revokeObjectURL(audioUrl);
-        };
+            
+            // Show bot response
+            if (data.response) {
+                addMessage(data.response, 'bot');
+            }
+            
+            // Use browser's speechSynthesis for TTS
+            if (data.use_browser_tts && data.response && 'speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(data.response);
+                utterance.lang = 'en-US';
+                utterance.rate = 1.0;
+                
+                if (currentMode === 'avatar') {
+                    avatar3DStatus.textContent = 'Speaking...';
+                    utterance.onend = () => {
+                        avatar3DStatus.textContent = 'Click microphone to speak';
+                    };
+                } else {
+                    avatar.className = 'avatar speaking';
+                    avatarStatus.textContent = 'Speaking...';
+                    utterance.onend = () => {
+                        avatar.className = 'avatar idle';
+                        avatarStatus.textContent = 'Click the microphone to speak';
+                    };
+                }
+                
+                speechSynthesis.speak(utterance);
+            }
+        } else {
+            // Server returned audio
+            const audioResponse = await response.blob();
+            const transcription = response.headers.get('X-Transcription');
+            const responseText = response.headers.get('X-Response-Text');
+
+            // Show user transcription
+            if (transcription) {
+                addMessage(transcription, 'user');
+            }
+
+            // Show bot response text
+            if (responseText) {
+                addMessage(decodeURIComponent(responseText), 'bot');
+            }
+
+            // Play audio response with lip sync
+            const audioUrl = URL.createObjectURL(audioResponse);
+            const audio = new Audio(audioUrl);
+            
+            // Setup audio analyser for 3D avatar lip sync
+            if (currentMode === 'avatar') {
+                audio.crossOrigin = 'anonymous';
+                audio.addEventListener('canplaythrough', () => {
+                    setupAudioAnalyser(audio);
+                }, { once: true });
+                avatar3DStatus.textContent = 'Speaking...';
+            } else {
+                avatar.className = 'avatar speaking';
+                avatarStatus.textContent = 'Speaking...';
+            }
+            
+            audio.play();
+            
+            audio.onended = () => {
+                if (currentMode === 'voice') {
+                    avatar.className = 'avatar idle';
+                    avatarStatus.textContent = 'Click the microphone to speak';
+                } else if (currentMode === 'avatar') {
+                    avatar3DStatus.textContent = 'Click microphone to speak';
+                    // Reset mouth
+                    if (analyser) {
+                        dataArray.fill(0);
+                    }
+                }
+                URL.revokeObjectURL(audioUrl);
+            };
+        }
 
     } catch (error) {
         console.error('Voice error:', error);

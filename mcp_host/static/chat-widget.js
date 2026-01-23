@@ -356,37 +356,77 @@
           throw new Error(`Server error: ${response.status}`);
         }
         
-        // Get transcription from headers
-        const heard = response.headers.get('X-Transcription');
+        // Check content type - could be audio or JSON (for browser TTS fallback)
+        const contentType = response.headers.get('Content-Type');
         const transcription = document.getElementById('voice-transcription');
         
-        if (heard && transcription) {
-          transcription.textContent = `You said: "${heard}"`;
-          transcription.style.display = 'block';
-        }
-        
-        // Play response audio
-        const audioResponseBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioResponseBlob);
-        const audio = new Audio(audioUrl);
-        
-        this.setVoiceStatus('Speaking...', '🗣️');
-        audio.play();
-        
-        audio.onended = () => {
-          this.setVoiceStatus('Click the microphone to speak', '😊');
-          URL.revokeObjectURL(audioUrl);
-          if (transcription) {
-            setTimeout(() => {
-              transcription.style.display = 'none';
-            }, 3000);
+        if (contentType && contentType.includes('application/json')) {
+          // Server returned JSON - use browser TTS
+          const data = await response.json();
+          
+          if (data.transcription && transcription) {
+            transcription.textContent = `You said: "${data.transcription}"`;
+            transcription.style.display = 'block';
           }
-        };
-        
-        audio.onerror = () => {
-          this.setVoiceStatus('Click the microphone to speak', '😊');
-          alert('Could not play audio response');
-        };
+          
+          // Add messages to chat
+          if (data.transcription) {
+            this.addMessage(data.transcription, true);
+          }
+          if (data.response) {
+            this.addMessage(data.response, false);
+          }
+          
+          // Use browser's speechSynthesis for TTS
+          if (data.use_browser_tts && data.response && 'speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(data.response);
+            utterance.lang = 'en-US';
+            utterance.rate = 1.0;
+            
+            this.setVoiceStatus('Speaking...', '🗣️');
+            utterance.onend = () => {
+              this.setVoiceStatus('Click the microphone to speak', '😊');
+              if (transcription) {
+                setTimeout(() => { transcription.style.display = 'none'; }, 3000);
+              }
+            };
+            
+            speechSynthesis.speak(utterance);
+          } else {
+            this.setVoiceStatus('Click the microphone to speak', '😊');
+          }
+        } else {
+          // Server returned audio
+          const heard = response.headers.get('X-Transcription');
+          
+          if (heard && transcription) {
+            transcription.textContent = `You said: "${heard}"`;
+            transcription.style.display = 'block';
+          }
+          
+          // Play response audio
+          const audioResponseBlob = await response.blob();
+          const audioUrl = URL.createObjectURL(audioResponseBlob);
+          const audio = new Audio(audioUrl);
+          
+          this.setVoiceStatus('Speaking...', '🗣️');
+          audio.play();
+          
+          audio.onended = () => {
+            this.setVoiceStatus('Click the microphone to speak', '😊');
+            URL.revokeObjectURL(audioUrl);
+            if (transcription) {
+              setTimeout(() => {
+                transcription.style.display = 'none';
+              }, 3000);
+            }
+          };
+          
+          audio.onerror = () => {
+            this.setVoiceStatus('Click the microphone to speak', '😊');
+            alert('Could not play audio response');
+          };
+        }
         
       } catch (error) {
         console.error('Voice chat error:', error);
