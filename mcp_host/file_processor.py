@@ -93,23 +93,27 @@ class FileProcessor:
     async def _process_audio(self, audio_data: bytes, filename: str) -> str:
         """Extract text from audio using STT"""
         if not self.voice_service:
-            raise Exception("Voice service not initialized")
+            logger.warning("Voice service not initialized - returning placeholder")
+            return f"[Audio file uploaded: {filename} - voice service not available]"
         
         try:
             transcript = await self.voice_service.speech_to_text(audio_data, filename)
-            logger.info(f"🎤 Audio transcribed: {len(transcript)} chars")
-            return f"[Audio transcription]\n{transcript}"
+            if transcript:
+                logger.info(f"🎤 Audio transcribed: {len(transcript)} chars")
+                return f"[Audio transcription]\n{transcript}"
+            else:
+                return f"[Audio file uploaded: {filename} - transcription returned empty]"
         except Exception as e:
             logger.error(f"Audio processing failed: {e}")
-            raise
+            return f"[Audio file uploaded: {filename} - transcription failed: {str(e)}]"
     
     async def _process_video(self, video_data: bytes, filename: str) -> str:
         """Extract audio from video and transcribe"""
         if not MOVIEPY_AVAILABLE:
-            return "[Video uploaded - moviepy not installed, cannot process]"
+            return f"[Video uploaded: {filename} - moviepy not installed for audio extraction]"
         
         if not self.voice_service:
-            raise Exception("Voice service not initialized")
+            return f"[Video uploaded: {filename} - voice service not available for transcription]"
         
         try:
             # Save video temporarily

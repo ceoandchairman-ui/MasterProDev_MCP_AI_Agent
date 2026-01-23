@@ -677,15 +677,24 @@ async def chat(
                 openai_client = None
                 openai_key = os.environ.get("OPENAI_API_KEY")
                 if openai_key:
-                    from openai import OpenAI
-                    openai_client = OpenAI(api_key=openai_key)
+                    try:
+                        from openai import OpenAI
+                        openai_client = OpenAI(api_key=openai_key)
+                        logger.info("✓ OpenAI client initialized for file processing")
+                    except Exception as e:
+                        logger.warning(f"⚠️ OpenAI client failed: {e}")
                 initialize_file_processor(openai_client, voice_service)
+                logger.info("✓ File processor initialized")
             
             extracted_text, file_type = await file_processor.process_file(file_data, file.filename)
             file_content = f"\n\n{extracted_text}"
             logger.info(f"✓ File processed ({file_type}): {len(extracted_text)} chars extracted")
+        except ValueError as e:
+            # Unsupported file type
+            logger.warning(f"⚠️ Unsupported file type: {e}")
+            file_content = f"\n\n[File uploaded: {file.filename} - unsupported format]"
         except Exception as e:
-            logger.error(f"❌ File processing error: {e}")
+            logger.error(f"❌ File processing error: {e}", exc_info=True)
             file_content = f"\n\n[File upload failed: {str(e)}]"
     
     # Combine message with file content
