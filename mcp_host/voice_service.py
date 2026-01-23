@@ -30,26 +30,23 @@ class VoiceService:
         elif not self.client:
             logger.warning("⚠️ No OPENAI_API_KEY or HUGGINGFACE_API_KEY - voice features limited")
         
-        # Hugging Face model endpoints (free inference models)
-        # STT: Using facebook's wav2vec2 (more stable than whisper on HF)
-        self.hf_stt_model = os.environ.get("HF_STT_MODEL", "facebook/wav2vec2-base-960h")
-        # TTS: Using facebook's MMS (Massively Multilingual Speech)
-        self.hf_tts_model = os.environ.get("HF_TTS_MODEL", "facebook/mms-tts-eng")
+        # Hugging Face model endpoints (verified working on HF Inference API)
+        # STT: OpenAI Whisper large-v3-turbo (confirmed available on hf-inference)
+        self.hf_stt_model = os.environ.get("HF_STT_MODEL", "openai/whisper-large-v3-turbo")
+        # TTS: Kokoro is the best free option but requires fal-ai provider
+        # For direct HF inference, options are limited - will use browser TTS as fallback
+        self.hf_tts_model = os.environ.get("HF_TTS_MODEL", "hexgrad/Kokoro-82M")
         
-        # Use router.huggingface.co for better reliability
+        # HF Inference API endpoint
         self.hf_api_base = "https://router.huggingface.co/hf-inference/models"
         
-        # Alternative STT models (all free inference compatible)
+        # Alternative STT models (verified on HF Inference)
         self.hf_stt_alternatives = [
-            "facebook/wav2vec2-large-960h-lv60-self",
-            "facebook/hubert-large-ls960-ft",
-            "microsoft/speecht5_asr",
+            "openai/whisper-large-v3",  # Larger, slower but accurate
         ]
-        # Alternative TTS models
-        self.hf_tts_alternatives = [
-            "espnet/kan-bayashi_ljspeech_vits",
-            "microsoft/speecht5_tts",
-        ]
+        # Alternative TTS models - most require external providers
+        # If TTS fails, frontend will use browser's speechSynthesis
+        self.hf_tts_alternatives = []
     
     async def speech_to_text(self, audio_data: bytes, filename: str = "audio.webm") -> str:
         """
@@ -174,9 +171,9 @@ class VoiceService:
                     async with httpx.AsyncClient(timeout=60.0) as client:
                         response = await client.post(url, headers=headers, json=payload)
                         
-                        # Check for model loading (503)
-                        if response.status_code == 503:
-                            logger.warning(f"⚠️ TTS model {tts_model} is loading, trying next...")
+                        # Check for model loading (503) or not found (404)
+                        if response.status_code in [503, 404]:
+                            logger.warning(f"⚠️ TTS model {tts_model} unavailable ({response.status_code})")
                             continue
                             
                         response.raise_for_status()
@@ -194,9 +191,13 @@ class VoiceService:
                     last_error = e
                     continue
             
-            raise Exception(f"Text-to-speech failed (tried {len(models_to_try)} models): {str(last_error)}")
+            # Return None instead of raising - frontend will use browser TTS
+            logger.warning(f"⚠️ All TTS models failed, returning None for browser fallback")
+            return None
         
-        raise Exception("No TTS service available - set OPENAI_API_KEY or HUGGINGFACE_API_KEY")
+        # No TTS available - return None for browser fallback
+        logger.warning("⚠️ No TTS service configured, returning None for browser fallback")
+        return None
 
 
 # Singleton instance

@@ -401,9 +401,8 @@ async def voice_chat(
         response_text = agent_result.get("response", "I couldn't process that.")
         logger.info(f"💬 Agent response: {response_text[:100]}...")
         
-        # Step 3: TTS - Convert text to speech
+        # Step 3: TTS - Convert text to speech (may return None if no TTS available)
         audio_response = await voice_service.text_to_speech(response_text)
-        logger.info(f"🔊 Generated audio response: {len(audio_response)} bytes")
         
         # Step 4: Save conversation (if authenticated)
         if user_id != "guest":
@@ -411,16 +410,32 @@ async def voice_chat(
                 session_id, user_id, conversation_id, user_message, response_text
             )
         
-        # Return audio
-        return Response(
-            content=audio_response,
-            media_type="audio/mpeg",
-            headers={
-                "Content-Disposition": "attachment; filename=response.mp3",
-                "X-Transcription": user_message,  # Send back what was heard
-                "X-Response-Text": response_text[:200]  # First 200 chars of response
-            }
-        )
+        # Return audio if available, otherwise return JSON for browser TTS
+        if audio_response:
+            logger.info(f"🔊 Generated audio response: {len(audio_response)} bytes")
+            return Response(
+                content=audio_response,
+                media_type="audio/mpeg",
+                headers={
+                    "Content-Disposition": "attachment; filename=response.mp3",
+                    "X-Transcription": user_message,
+                    "X-Response-Text": response_text[:200]
+                }
+            )
+        else:
+            # No audio - return JSON with text for browser TTS fallback
+            logger.info("🔊 No server TTS, returning text for browser TTS")
+            return JSONResponse(
+                content={
+                    "transcription": user_message,
+                    "response": response_text,
+                    "use_browser_tts": True
+                },
+                headers={
+                    "X-Transcription": user_message,
+                    "X-Response-Text": response_text[:200]
+                }
+            )
         
     except Exception as e:
         logger.error(f"❌ Voice chat error: {e}", exc_info=True)
