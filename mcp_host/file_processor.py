@@ -191,7 +191,7 @@ class FileProcessor:
             
             for model in self.VISION_MODELS:
                 try:
-                    url = f"https://api-inference.huggingface.co/models/{model}"
+                    url = f"https://router.huggingface.co/hf-inference/models/{model}"
                     headers = {"Authorization": f"Bearer {hf_token}"}
                     
                     async with httpx.AsyncClient(timeout=30.0) as client:

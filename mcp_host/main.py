@@ -674,8 +674,11 @@ async def chat(
             from .file_processor import file_processor, initialize_file_processor
             if not file_processor:
                 from .voice_service import voice_service
-                from openai import OpenAI
-                openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                openai_client = None
+                openai_key = os.environ.get("OPENAI_API_KEY")
+                if openai_key:
+                    from openai import OpenAI
+                    openai_client = OpenAI(api_key=openai_key)
                 initialize_file_processor(openai_client, voice_service)
             
             extracted_text, file_type = await file_processor.process_file(file_data, file.filename)
