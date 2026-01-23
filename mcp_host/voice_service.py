@@ -86,17 +86,40 @@ class VoiceService:
             models_to_try = [self.hf_stt_model] + self.hf_stt_alternatives
             last_error = None
             
+            # Determine content type from filename
+            content_type = "audio/webm"
+            ext = filename.lower().split('.')[-1] if '.' in filename else 'webm'
+            content_types = {
+                'webm': 'audio/webm',
+                'mp3': 'audio/mpeg',
+                'wav': 'audio/wav',
+                'flac': 'audio/flac',
+                'm4a': 'audio/m4a',
+                'ogg': 'audio/ogg',
+            }
+            content_type = content_types.get(ext, 'audio/webm')
+            
             for model in models_to_try:
                 try:
-                    headers = {"Authorization": f"Bearer {self.hf_token}"}
+                    headers = {
+                        "Authorization": f"Bearer {self.hf_token}",
+                        "Content-Type": content_type
+                    }
                     url = f"{self.hf_api_base}/{model}"
+                    
+                    logger.info(f"🎤 Trying STT model {model} with {content_type}...")
                     
                     async with httpx.AsyncClient(timeout=60.0) as client:
                         response = await client.post(url, headers=headers, content=audio_data)
                         
-                        # Check for model loading (503)
+                        # Check for model loading (503) or unsupported format
                         if response.status_code == 503:
                             logger.warning(f"⚠️ Model {model} is loading, trying next...")
+                            continue
+                        
+                        if response.status_code == 400:
+                            error_detail = response.text
+                            logger.warning(f"⚠️ Model {model} rejected audio: {error_detail[:100]}")
                             continue
                             
                         response.raise_for_status()
@@ -109,7 +132,6 @@ class VoiceService:
                         else:
                             logger.warning(f"⚠️ Model {model} returned empty transcription")
                             continue
-                        return transcript
                     
                 except Exception as e:
                     logger.warning(f"⚠️ HF model {model} failed: {e}")
