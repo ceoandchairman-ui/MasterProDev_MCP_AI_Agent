@@ -410,6 +410,10 @@ async def voice_chat(
                 session_id, user_id, conversation_id, user_message, response_text
             )
         
+        # Helper to sanitize text for HTTP headers (ASCII only)
+        def sanitize_header(text: str) -> str:
+            return text.encode('ascii', 'replace').decode('ascii')[:200]
+        
         # Return audio if available, otherwise return JSON for browser TTS
         if audio_response:
             logger.info(f"🔊 Generated audio response: {len(audio_response)} bytes")
@@ -418,8 +422,8 @@ async def voice_chat(
                 media_type="audio/mpeg",
                 headers={
                     "Content-Disposition": "attachment; filename=response.mp3",
-                    "X-Transcription": user_message,
-                    "X-Response-Text": response_text[:200]
+                    "X-Transcription": sanitize_header(user_message),
+                    "X-Response-Text": sanitize_header(response_text)
                 }
             )
         else:
@@ -432,8 +436,8 @@ async def voice_chat(
                     "use_browser_tts": True
                 },
                 headers={
-                    "X-Transcription": user_message,
-                    "X-Response-Text": response_text[:200]
+                    "X-Transcription": sanitize_header(user_message),
+                    "X-Response-Text": sanitize_header(response_text)
                 }
             )
         
