@@ -28,57 +28,85 @@ class RAGService:
             )
             logger.info("✓ Successfully connected to Weaviate.")
 
-            # 2. Initialize embeddings with multiple fallbacks
+            # 2. Initialize embeddings with retry logic and 1024-dim models
             logger.info(f"Initializing embeddings with model {self.embedding_model}...")
             
             class MultiFallbackEmbeddings:
-                # IMPORTANT: All models must have the SAME vector dimensions (384)
-                # to avoid Weaviate index errors when falling back between models
+                """Embeddings with retry logic and 1024-dim models for best quality"""
+                # Use 1024-dim models for better semantic richness and multilingual support
+                PRIMARY_MODEL = "BAAI/bge-m3"  # 1024 dims - best quality
                 FALLBACK_MODELS = [
-                    "BAAI/bge-small-en-v1.5",           # 384 dims - fast & reliable
-                    "sentence-transformers/all-MiniLM-L6-v2",  # 384 dims
-                    "thenlper/gte-small",               # 384 dims
-                    "intfloat/e5-small-v2",             # 384 dims
+                    "BAAI/bge-large-en-v1.5",  # 1024 dims - fallback
                 ]
+                MAX_RETRIES = 3
                 
                 def __init__(self, api_key, model_name):
                     self.api_key = api_key
                     self.model_name = model_name
-                    self.method = None
                     self.working_model = None
                     
-                def _try_requests(self, text, model):
+                def _try_requests(self, text, model, timeout=60):
                     import requests
                     url = f"https://router.huggingface.co/hf-inference/models/{model}/pipeline/feature-extraction"
                     headers = {"Authorization": f"Bearer {self.api_key}"}
-                    response = requests.post(url, headers=headers, json={"inputs": text}, timeout=30)
+                    response = requests.post(url, headers=headers, json={"inputs": text}, timeout=timeout)
                     response.raise_for_status()
                     return response.json()
                     
                 def embed_query(self, text):
-                    # If we found a working model, try it first
-                    if self.working_model:
-                        try:
-                            result = self._try_requests(text, self.working_model)
-                            if result and len(result) > 0:
-                                return result
-                        except Exception:
-                            self.working_model = None  # Reset and try all
+                    import time
                     
-                    # Try all models in order
-                    for model in self.FALLBACK_MODELS:
+                    # If we found a working model, try it first with retries
+                    if self.working_model:
+                        for attempt in range(self.MAX_RETRIES):
+                            try:
+                                result = self._try_requests(text, self.working_model)
+                                if result and len(result) > 0:
+                                    return result
+                            except Exception as e:
+                                if attempt < self.MAX_RETRIES - 1:
+                                    wait_time = 2 ** attempt
+                                    logger.warning(f"⚠️ Retry {attempt+1}/{self.MAX_RETRIES} for {self.working_model} in {wait_time}s...")
+                                    time.sleep(wait_time)
+                                else:
+                                    self.working_model = None
+                    
+                    # Try primary model with retries
+                    for attempt in range(self.MAX_RETRIES):
                         try:
-                            result = self._try_requests(text, model)
+                            result = self._try_requests(text, self.PRIMARY_MODEL)
                             if result and len(result) > 0:
-                                if self.working_model != model:
-                                    logger.info(f"✓ Embedding model: {model}")
-                                    self.working_model = model
+                                if self.working_model != self.PRIMARY_MODEL:
+                                    logger.info(f"✓ Embedding model: {self.PRIMARY_MODEL} (1024-dim)")
+                                    self.working_model = self.PRIMARY_MODEL
                                 return result
                         except Exception as e:
-                            logger.warning(f"⚠️ Embedding model {model} failed: {e}")
-                            continue
+                            if attempt < self.MAX_RETRIES - 1:
+                                wait_time = 2 ** attempt
+                                logger.warning(f"⚠️ Retry {attempt+1}/{self.MAX_RETRIES} for {self.PRIMARY_MODEL} in {wait_time}s: {e}")
+                                time.sleep(wait_time)
+                            else:
+                                logger.warning(f"⚠️ Primary model failed after {self.MAX_RETRIES} retries")
                     
-                    raise ValueError(f"All {len(self.FALLBACK_MODELS)} embedding models failed")
+                    # Try fallback models (same 1024-dim) with retries
+                    for model in self.FALLBACK_MODELS:
+                        for attempt in range(self.MAX_RETRIES):
+                            try:
+                                result = self._try_requests(text, model)
+                                if result and len(result) > 0:
+                                    if self.working_model != model:
+                                        logger.info(f"✓ Fallback embedding model: {model} (1024-dim)")
+                                        self.working_model = model
+                                    return result
+                            except Exception as e:
+                                if attempt < self.MAX_RETRIES - 1:
+                                    wait_time = 2 ** attempt
+                                    logger.warning(f"⚠️ Retry {attempt+1}/{self.MAX_RETRIES} for {model} in {wait_time}s: {e}")
+                                    time.sleep(wait_time)
+                                else:
+                                    break
+                    
+                    raise ValueError(f"All embedding models failed after retries")
                         
                 def embed_documents(self, texts):
                     return [self.embed_query(t) for t in texts]
