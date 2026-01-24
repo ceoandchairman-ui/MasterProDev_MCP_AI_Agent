@@ -314,19 +314,70 @@ function animate() {
 
 // ==================== Audio Analysis ====================
 
+let currentAudioSource = null;
+let lipSyncInterval = null;
+
 function setupAudioAnalyser(audioElement) {
-    if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
+        // Resume context if suspended (browser autoplay policy)
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+        
+        // Disconnect previous source if exists
+        if (currentAudioSource) {
+            try {
+                currentAudioSource.disconnect();
+            } catch (e) { /* ignore */ }
+        }
+        
+        currentAudioSource = audioContext.createMediaElementSource(audioElement);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        
+        currentAudioSource.connect(analyser);
+        analyser.connect(audioContext.destination);
+        
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        console.log('Audio analyser setup for lip sync');
+    } catch (e) {
+        console.warn('Could not setup audio analyser:', e);
+        // Fall back to simulated lip sync
+        startSimulatedLipSync();
+    }
+}
+
+// Simulated lip sync for browser TTS (speechSynthesis can't be analyzed)
+function startSimulatedLipSync() {
+    if (lipSyncInterval) clearInterval(lipSyncInterval);
+    
+    // Create fake audio data that simulates talking
+    if (!dataArray) {
+        dataArray = new Uint8Array(128);
     }
     
-    const source = audioContext.createMediaElementSource(audioElement);
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    
-    source.connect(analyser);
-    analyser.connect(audioContext.destination);
-    
-    dataArray = new Uint8Array(analyser.frequencyBinCount);
+    lipSyncInterval = setInterval(() => {
+        // Generate random mouth movement to simulate talking
+        const baseLevel = 60 + Math.random() * 80;
+        for (let i = 0; i < dataArray.length; i++) {
+            dataArray[i] = baseLevel + Math.random() * 40;
+        }
+    }, 50); // Update every 50ms
+}
+
+function stopSimulatedLipSync() {
+    if (lipSyncInterval) {
+        clearInterval(lipSyncInterval);
+        lipSyncInterval = null;
+    }
+    // Reset mouth
+    if (dataArray) {
+        dataArray.fill(0);
+    }
 }
 
 // ==================== Event Listeners ====================
@@ -488,9 +539,12 @@ async function sendVoiceMessage() {
                 utterance.lang = 'en-US';
                 utterance.rate = 1.0;
                 
+                // Start simulated lip sync for browser TTS
                 if (currentMode === 'avatar') {
                     avatar3DStatus.textContent = 'Speaking...';
+                    startSimulatedLipSync();
                     utterance.onend = () => {
+                        stopSimulatedLipSync();
                         avatar3DStatus.textContent = 'Click microphone to speak';
                     };
                 } else {
