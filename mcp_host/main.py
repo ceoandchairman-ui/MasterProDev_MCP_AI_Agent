@@ -717,23 +717,23 @@ async def chat(
                 conv_id = conversation_id or str(uuid.uuid4())
                 conversation_history = await state_manager.get_conversation_history(session_id)
             else:
-                # Invalid session - fall back to guest mode
-                session_id = str(uuid.uuid4())
-                user_id = "guest"
+                # Invalid session - fall back to guest mode with persistent conv_id
                 conv_id = conversation_id or str(uuid.uuid4())
-                conversation_history = []
+                session_id = f"guest_{conv_id}"  # Use conv_id to persist history
+                user_id = "guest"
+                conversation_history = await state_manager.get_conversation_history(session_id)
         except HTTPException:
-            # Token validation failed - use guest mode
-            session_id = str(uuid.uuid4())
-            user_id = "guest"
+            # Token validation failed - use guest mode with persistent conv_id
             conv_id = conversation_id or str(uuid.uuid4())
-            conversation_history = []
+            session_id = f"guest_{conv_id}"
+            user_id = "guest"
+            conversation_history = await state_manager.get_conversation_history(session_id)
     else:
-        # No token provided - guest mode
-        session_id = str(uuid.uuid4())
-        user_id = "guest"
+        # No token provided - guest mode with persistent conv_id
         conv_id = conversation_id or str(uuid.uuid4())
-        conversation_history = []
+        session_id = f"guest_{conv_id}"  # Use conv_id to persist history
+        user_id = "guest"
+        conversation_history = await state_manager.get_conversation_history(session_id)
     
     # Process message through LangChain agent
     agent_result = await mcp_agent.process_message(
@@ -751,11 +751,10 @@ async def chat(
     
     response_text = agent_result.get("response", "I couldn't process that request.")
     
-    # Save conversation only for authenticated users
-    if user_id != "guest":
-        await state_manager.save_conversation_turn(
-            session_id, user_id, conv_id, full_message, response_text
-        )
+    # Save conversation for ALL users (guests save to Redis only, authenticated to PostgreSQL too)
+    await state_manager.save_conversation_turn(
+        session_id, user_id, conv_id, full_message, response_text
+    )
     
     return ChatResponse(
         response=response_text,

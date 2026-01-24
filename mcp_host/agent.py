@@ -971,7 +971,7 @@ Consider date, time, title, and any details mentioned."""
         """Collapse recent turns to a readable block. Handles both old and new history formats."""
         if not conversation_history:
             return ""
-        trimmed = conversation_history[-3:]
+        trimmed = conversation_history[-10:]  # Keep last 10 turns for better context
         return "\n".join(
             # Try new format first ("user"/"assistant"), fall back to old format ("role"/"content")
             f"{msg.get('role') or 'user'}: {msg.get('content') or msg.get('assistant', '')}" for msg in trimmed

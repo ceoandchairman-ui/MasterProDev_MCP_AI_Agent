@@ -304,8 +304,8 @@ class StateManager:
         state.add_turn(user_message, assistant_response)
         await self.update_conversation_state(session_id, state)
 
-        # Also save to persistent storage if available
-        if ASYNCPG_AVAILABLE and self.db_pool:
+        # Also save to persistent storage if available (skip for guests)
+        if user_id != "guest" and ASYNCPG_AVAILABLE and self.db_pool:
             try:
                 async with self.db_pool.acquire() as conn:
                     await conn.execute(
