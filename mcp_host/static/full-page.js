@@ -459,10 +459,9 @@ function stopLipSync() {
     }
 }
 
-// ==================== Audio Analysis ====================
+// ==================== Audio Analysis (Legacy Fallback) ====================
 
 let currentAudioSource = null;
-let lipSyncInterval = null;
 
 function setupAudioAnalyser(audioElement) {
     try {
