@@ -9,7 +9,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const API_URL = window.location.origin;
 
 // State
-let currentMode = 'text';
+let currentMode = 'avatar';  // Default to avatar mode for talking experience
 let isRecording = false;
 let mediaRecorder = null;
 let audioChunks = [];
@@ -51,6 +51,19 @@ const headerLogout = document.getElementById('header-logout');
 async function init() {
     checkAuth();
     attachEventListeners();
+    
+    // Auto-start avatar mode
+    avatar3DContainer.classList.add('active');
+    init3DAvatar();
+    
+    // Mark avatar button as active
+    modeBtns.forEach(btn => {
+        if (btn.dataset.mode === 'avatar') {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
 }
 
 // Check if user is authenticated (but don't require it - guests allowed)
@@ -276,11 +289,20 @@ function animate() {
         mixer.update(delta);
     }
     
-    // Audio-driven lip sync
-    if (analyser && dataArray && avatar3D) {
-        analyser.getByteFrequencyData(dataArray);
-        const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-        const mouthOpenAmount = Math.min(average / 128, 1);
+    // Audio-driven lip sync (real audio analyser or simulated)
+    if (dataArray && avatar3D) {
+        let mouthOpenAmount = 0;
+        
+        if (analyser && !lipSyncInterval) {
+            // Real audio analyser
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+            mouthOpenAmount = Math.min(average / 128, 1);
+        } else if (lipSyncInterval) {
+            // Simulated lip sync (browser TTS)
+            const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+            mouthOpenAmount = Math.min(average / 128, 1);
+        }
         
         // Animate mouth based on audio
         if (mouthMorphTarget && mouthMorphTarget.morphTargetDictionary) {
@@ -655,6 +677,11 @@ async function sendMessage() {
         conversationId = data.conversation_id;
         addMessage(data.response, 'bot');
 
+        // Auto-speak response in voice/avatar modes
+        if ((currentMode === 'voice' || currentMode === 'avatar') && data.response && 'speechSynthesis' in window) {
+            speakText(data.response);
+        }
+
         if (selectedFile) {
             selectedFile = null;
             fileInput.value = '';
@@ -667,6 +694,39 @@ async function sendMessage() {
     } finally {
         typingIndicator.classList.remove('active');
     }
+}
+
+// Speak text using browser TTS with lip sync
+function speakText(text) {
+    // Cancel any ongoing speech
+    speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.rate = 1.0;
+    
+    // Start lip sync animation
+    if (currentMode === 'avatar') {
+        avatar3DStatus.textContent = 'Speaking...';
+        startSimulatedLipSync();
+        utterance.onend = () => {
+            stopSimulatedLipSync();
+            avatar3DStatus.textContent = 'Click microphone to speak';
+        };
+        utterance.onerror = () => {
+            stopSimulatedLipSync();
+            avatar3DStatus.textContent = 'Ready';
+        };
+    } else if (currentMode === 'voice') {
+        avatar.className = 'avatar speaking';
+        avatarStatus.textContent = 'Speaking...';
+        utterance.onend = () => {
+            avatar.className = 'avatar idle';
+            avatarStatus.textContent = 'Click the microphone to speak';
+        };
+    }
+    
+    speechSynthesis.speak(utterance);
 }
 
 // Add Message to UI
