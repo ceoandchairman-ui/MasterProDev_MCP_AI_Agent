@@ -24,6 +24,51 @@ let scene, camera, renderer, avatar3D, mixer, clock;
 let audioContext, analyser, dataArray;
 let avatar3DLoaded = false;
 let mouthMorphTarget = null;
+let visemeInfluences = {};  // Store all viseme morph target indices
+
+// Viseme mapping for ReadyPlayer.me avatars (Oculus visemes)
+const VISEME_NAMES = [
+    'viseme_sil',   // 0: Silence
+    'viseme_PP',    // 1: P, B, M
+    'viseme_FF',    // 2: F, V  
+    'viseme_TH',    // 3: TH
+    'viseme_DD',    // 4: T, D
+    'viseme_kk',    // 5: K, G
+    'viseme_CH',    // 6: CH, J, SH
+    'viseme_SS',    // 7: S, Z
+    'viseme_nn',    // 8: N, L
+    'viseme_RR',    // 9: R
+    'viseme_aa',    // 10: A
+    'viseme_E',     // 11: E
+    'viseme_I',     // 12: I
+    'viseme_O',     // 13: O
+    'viseme_U'      // 14: U
+];
+
+// Text-to-phoneme mapping (approximate)
+const CHAR_TO_VISEME = {
+    'a': 'viseme_aa', 'à': 'viseme_aa', 'á': 'viseme_aa',
+    'e': 'viseme_E', 'è': 'viseme_E', 'é': 'viseme_E',
+    'i': 'viseme_I', 'ì': 'viseme_I', 'í': 'viseme_I', 'y': 'viseme_I',
+    'o': 'viseme_O', 'ò': 'viseme_O', 'ó': 'viseme_O',
+    'u': 'viseme_U', 'ù': 'viseme_U', 'ú': 'viseme_U', 'w': 'viseme_U',
+    'p': 'viseme_PP', 'b': 'viseme_PP', 'm': 'viseme_PP',
+    'f': 'viseme_FF', 'v': 'viseme_FF',
+    't': 'viseme_DD', 'd': 'viseme_DD',
+    'k': 'viseme_kk', 'g': 'viseme_kk', 'c': 'viseme_kk', 'q': 'viseme_kk',
+    's': 'viseme_SS', 'z': 'viseme_SS', 'x': 'viseme_SS',
+    'n': 'viseme_nn', 'l': 'viseme_nn',
+    'r': 'viseme_RR',
+    'j': 'viseme_CH', 'h': 'viseme_CH',
+    ' ': 'viseme_sil', '.': 'viseme_sil', ',': 'viseme_sil', '!': 'viseme_sil', '?': 'viseme_sil'
+};
+
+// Lip sync state
+let lipSyncQueue = [];
+let lipSyncInterval = null;
+let currentViseme = 'viseme_sil';
+let targetViseme = 'viseme_sil';
+let visemeBlendFactor = 0;
 
 // Elements
 const chatMessages = document.getElementById('chat-messages');
@@ -188,9 +233,16 @@ function loadAvatar() {
             
             // Find mesh with morph targets for lip sync
             avatar3D.traverse((child) => {
-                if (child.isMesh && child.morphTargetInfluences) {
+                if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
                     mouthMorphTarget = child;
-                    console.log('Found morph targets:', child.morphTargetDictionary);
+                    
+                    // Map all viseme morph targets
+                    for (const visemeName of VISEME_NAMES) {
+                        if (child.morphTargetDictionary[visemeName] !== undefined) {
+                            visemeInfluences[visemeName] = child.morphTargetDictionary[visemeName];
+                        }
+                    }
+                    console.log('Found viseme morph targets:', Object.keys(visemeInfluences));
                 }
             });
             
@@ -289,38 +341,35 @@ function animate() {
         mixer.update(delta);
     }
     
-    // Audio-driven lip sync (real audio analyser or simulated)
-    if (dataArray && avatar3D) {
-        let mouthOpenAmount = 0;
+    // Viseme-based lip sync
+    if (mouthMorphTarget && Object.keys(visemeInfluences).length > 0) {
+        // Smooth transition between visemes
+        visemeBlendFactor = Math.min(visemeBlendFactor + delta * 12, 1);
         
-        if (analyser && !lipSyncInterval) {
-            // Real audio analyser
-            analyser.getByteFrequencyData(dataArray);
-            const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-            mouthOpenAmount = Math.min(average / 128, 1);
-        } else if (lipSyncInterval) {
-            // Simulated lip sync (browser TTS)
-            const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-            mouthOpenAmount = Math.min(average / 128, 1);
-        }
-        
-        // Animate mouth based on audio
-        if (mouthMorphTarget && mouthMorphTarget.morphTargetDictionary) {
-            // Try different morph target names
-            const mouthTargets = ['jawOpen', 'viseme_aa', 'mouthOpen', 'jawForward'];
-            for (const targetName of mouthTargets) {
-                if (mouthMorphTarget.morphTargetDictionary[targetName] !== undefined) {
-                    const index = mouthMorphTarget.morphTargetDictionary[targetName];
-                    mouthMorphTarget.morphTargetInfluences[index] = mouthOpenAmount;
-                    break;
+        // Reset all visemes first (with smooth decay)
+        for (const visemeName of VISEME_NAMES) {
+            if (visemeInfluences[visemeName] !== undefined) {
+                const index = visemeInfluences[visemeName];
+                const currentValue = mouthMorphTarget.morphTargetInfluences[index];
+                
+                if (visemeName === targetViseme) {
+                    // Blend towards target viseme
+                    const targetValue = 0.7;  // Max mouth open amount (0.7 = natural)
+                    mouthMorphTarget.morphTargetInfluences[index] = 
+                        currentValue + (targetValue - currentValue) * visemeBlendFactor;
+                } else {
+                    // Decay other visemes
+                    mouthMorphTarget.morphTargetInfluences[index] = currentValue * 0.85;
                 }
             }
-        } else {
-            // Fallback: scale the mouth mesh
-            const mouth = avatar3D.getObjectByName('mouth');
-            if (mouth) {
-                mouth.scale.y = 1 + mouthOpenAmount * 3;
-            }
+        }
+    } else if (avatar3D) {
+        // Fallback avatar: scale the mouth mesh
+        const mouth = avatar3D.getObjectByName('mouth');
+        if (mouth && targetViseme !== 'viseme_sil') {
+            mouth.scale.y = 1 + Math.sin(Date.now() * 0.02) * 0.5;
+        } else if (mouth) {
+            mouth.scale.y = 1;
         }
     }
     
@@ -331,6 +380,82 @@ function animate() {
     
     if (renderer && scene && camera) {
         renderer.render(scene, camera);
+    }
+}
+
+// ==================== Text-to-Viseme Lip Sync ====================
+
+function textToVisemes(text) {
+    const visemes = [];
+    const words = text.toLowerCase().split(/\s+/);
+    
+    for (const word of words) {
+        for (let i = 0; i < word.length; i++) {
+            const char = word[i];
+            
+            // Check for digraphs (th, ch, sh)
+            if (i < word.length - 1) {
+                const digraph = char + word[i + 1];
+                if (digraph === 'th') {
+                    visemes.push('viseme_TH');
+                    i++;
+                    continue;
+                } else if (digraph === 'ch' || digraph === 'sh') {
+                    visemes.push('viseme_CH');
+                    i++;
+                    continue;
+                }
+            }
+            
+            // Single character mapping
+            const viseme = CHAR_TO_VISEME[char] || 'viseme_sil';
+            visemes.push(viseme);
+        }
+        // Add silence between words
+        visemes.push('viseme_sil');
+    }
+    
+    return visemes;
+}
+
+function startTextLipSync(text, durationMs) {
+    stopLipSync();
+    
+    const visemes = textToVisemes(text);
+    if (visemes.length === 0) return;
+    
+    // Calculate timing - spread visemes over speech duration
+    const msPerViseme = durationMs / visemes.length;
+    let visemeIndex = 0;
+    
+    lipSyncInterval = setInterval(() => {
+        if (visemeIndex >= visemes.length) {
+            stopLipSync();
+            return;
+        }
+        
+        targetViseme = visemes[visemeIndex];
+        visemeBlendFactor = 0;  // Reset blend for smooth transition
+        visemeIndex++;
+    }, msPerViseme);
+}
+
+function stopLipSync() {
+    if (lipSyncInterval) {
+        clearInterval(lipSyncInterval);
+        lipSyncInterval = null;
+    }
+    targetViseme = 'viseme_sil';
+    visemeBlendFactor = 0;
+    
+    // Reset all visemes
+    if (mouthMorphTarget && Object.keys(visemeInfluences).length > 0) {
+        for (const visemeName of VISEME_NAMES) {
+            if (visemeInfluences[visemeName] !== undefined) {
+                const index = visemeInfluences[visemeName];
+                mouthMorphTarget.morphTargetInfluences[index] = 0;
+            }
+        }
     }
 }
 
@@ -555,36 +680,16 @@ async function sendVoiceMessage() {
                 addMessage(data.response, 'bot');
             }
             
-            // Use browser's speechSynthesis for TTS
+            // Use browser's speechSynthesis for TTS with proper lip sync
             if (data.use_browser_tts && data.response && 'speechSynthesis' in window) {
-                const utterance = new SpeechSynthesisUtterance(data.response);
-                utterance.lang = 'en-US';
-                utterance.rate = 1.0;
-                
-                // Start simulated lip sync for browser TTS
-                if (currentMode === 'avatar') {
-                    avatar3DStatus.textContent = 'Speaking...';
-                    startSimulatedLipSync();
-                    utterance.onend = () => {
-                        stopSimulatedLipSync();
-                        avatar3DStatus.textContent = 'Click microphone to speak';
-                    };
-                } else {
-                    avatar.className = 'avatar speaking';
-                    avatarStatus.textContent = 'Speaking...';
-                    utterance.onend = () => {
-                        avatar.className = 'avatar idle';
-                        avatarStatus.textContent = 'Click the microphone to speak';
-                    };
-                }
-                
-                speechSynthesis.speak(utterance);
+                speakText(data.response);  // Use centralized speakText with viseme lip sync
             }
         } else {
             // Server returned audio
             const audioResponse = await response.blob();
             const transcription = response.headers.get('X-Transcription');
             const responseText = response.headers.get('X-Response-Text');
+            const decodedResponseText = responseText ? decodeURIComponent(responseText) : '';
 
             // Show user transcription
             if (transcription) {
@@ -592,22 +697,24 @@ async function sendVoiceMessage() {
             }
 
             // Show bot response text
-            if (responseText) {
-                addMessage(decodeURIComponent(responseText), 'bot');
+            if (decodedResponseText) {
+                addMessage(decodedResponseText, 'bot');
             }
 
-            // Play audio response with lip sync
+            // Play audio response with viseme lip sync
             const audioUrl = URL.createObjectURL(audioResponse);
             const audio = new Audio(audioUrl);
             
-            // Setup audio analyser for 3D avatar lip sync
-            if (currentMode === 'avatar') {
-                audio.crossOrigin = 'anonymous';
-                audio.addEventListener('canplaythrough', () => {
-                    setupAudioAnalyser(audio);
-                }, { once: true });
+            // Start text-to-viseme lip sync based on response text
+            if (currentMode === 'avatar' && decodedResponseText) {
                 avatar3DStatus.textContent = 'Speaking...';
-            } else {
+                
+                // Estimate audio duration (will be more accurate than TTS estimation)
+                audio.addEventListener('loadedmetadata', () => {
+                    const durationMs = audio.duration * 1000;
+                    startTextLipSync(decodedResponseText, durationMs);
+                }, { once: true });
+            } else if (currentMode === 'voice') {
                 avatar.className = 'avatar speaking';
                 avatarStatus.textContent = 'Speaking...';
             }
@@ -615,15 +722,12 @@ async function sendVoiceMessage() {
             audio.play();
             
             audio.onended = () => {
+                stopLipSync();
                 if (currentMode === 'voice') {
                     avatar.className = 'avatar idle';
                     avatarStatus.textContent = 'Click the microphone to speak';
                 } else if (currentMode === 'avatar') {
                     avatar3DStatus.textContent = 'Click microphone to speak';
-                    // Reset mouth
-                    if (analyser) {
-                        dataArray.fill(0);
-                    }
                 }
                 URL.revokeObjectURL(audioUrl);
             };
@@ -696,25 +800,33 @@ async function sendMessage() {
     }
 }
 
-// Speak text using browser TTS with lip sync
+// Speak text using browser TTS with viseme lip sync
 function speakText(text) {
     // Cancel any ongoing speech
     speechSynthesis.cancel();
+    stopLipSync();
     
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
     utterance.rate = 1.0;
     
-    // Start lip sync animation
+    // Estimate speech duration (~150 words per minute for TTS)
+    const wordCount = text.split(/\s+/).length;
+    const estimatedDurationMs = (wordCount / 150) * 60 * 1000;
+    const minDuration = 1000;  // At least 1 second
+    const durationMs = Math.max(estimatedDurationMs, minDuration);
+    
+    // Start text-to-viseme lip sync
     if (currentMode === 'avatar') {
         avatar3DStatus.textContent = 'Speaking...';
-        startSimulatedLipSync();
+        startTextLipSync(text, durationMs);
+        
         utterance.onend = () => {
-            stopSimulatedLipSync();
+            stopLipSync();
             avatar3DStatus.textContent = 'Click microphone to speak';
         };
         utterance.onerror = () => {
-            stopSimulatedLipSync();
+            stopLipSync();
             avatar3DStatus.textContent = 'Ready';
         };
     } else if (currentMode === 'voice') {
