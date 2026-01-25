@@ -781,25 +781,25 @@ async def get_conversations(authorization: Optional[str] = Header(None)):
 @app.get("/")
 async def root():
     """Serve full page chat (default view)"""
-    return FileResponse(STATIC_DIR / "full-page.html")
+    return FileResponse(str(STATIC_DIR / "full-page.html"))
 
 
 @app.get("/chat")
 async def chat_page():
     """Serve full page chat"""
-    return FileResponse(STATIC_DIR / "full-page.html")
+    return FileResponse(str(STATIC_DIR / "full-page.html"))
 
 
 @app.get("/widget")
 async def widget_page():
     """Serve embeddable chat widget"""
-    return FileResponse(STATIC_DIR / "chat-widget.html")
+    return FileResponse(str(STATIC_DIR / "chat-widget.html"))
 
 
 @app.get("/embed")
 async def embed_page():
     """Serve embeddable chat widget (alias)"""
-    return FileResponse(STATIC_DIR / "chat-widget.html")
+    return FileResponse(str(STATIC_DIR / "chat-widget.html"))
 
 
 if __name__ == "__main__":
