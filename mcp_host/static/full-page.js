@@ -70,30 +70,37 @@ let currentViseme = 'viseme_sil';
 let targetViseme = 'viseme_sil';
 let visemeBlendFactor = 0;
 
-// Elements
-const chatMessages = document.getElementById('chat-messages');
-const chatInput = document.getElementById('chat-input');
-const sendBtn = document.getElementById('send-btn');
-const attachBtn = document.getElementById('attach-btn');
-const voiceBtn = document.getElementById('voice-btn');
-const fileInput = document.getElementById('file-input');
-const filePreview = document.getElementById('file-preview');
-const fileName = document.getElementById('file-name');
-const removeFileBtn = document.getElementById('remove-file');
-const typingIndicator = document.getElementById('typing-indicator');
-const avatar = document.getElementById('avatar');
-const avatarContainer = document.getElementById('avatar-container');
-const avatarStatus = document.getElementById('avatar-status');
-const avatar3DContainer = document.getElementById('avatar-3d-container');
-const avatar3DStatus = document.getElementById('avatar-3d-status');
-const avatarCanvas = document.getElementById('avatar-canvas');
-const modeBtns = document.querySelectorAll('.mode-btn');
-const userInfo = document.getElementById('user-info');
-const headerLogin = document.getElementById('header-login');
-const headerLogout = document.getElementById('header-logout');
+// Elements (initialized in init())
+let chatMessages, chatInput, sendBtn, attachBtn, voiceBtn;
+let fileInput, filePreview, fileName, removeFileBtn;
+let typingIndicator, avatar, avatarContainer, avatarStatus;
+let avatar3DContainer, avatar3DStatus, avatarCanvas;
+let modeBtns, userInfo, headerLogin, headerLogout;
 
 // Initialize
 async function init() {
+    // Get DOM elements
+    chatMessages = document.getElementById('chat-messages');
+    chatInput = document.getElementById('chat-input');
+    sendBtn = document.getElementById('send-btn');
+    attachBtn = document.getElementById('attach-btn');
+    voiceBtn = document.getElementById('voice-btn');
+    fileInput = document.getElementById('file-input');
+    filePreview = document.getElementById('file-preview');
+    fileName = document.getElementById('file-name');
+    removeFileBtn = document.getElementById('remove-file');
+    typingIndicator = document.getElementById('typing-indicator');
+    avatar = document.getElementById('avatar');
+    avatarContainer = document.getElementById('avatar-container');
+    avatarStatus = document.getElementById('avatar-status');
+    avatar3DContainer = document.getElementById('avatar-3d-container');
+    avatar3DStatus = document.getElementById('avatar-3d-status');
+    avatarCanvas = document.getElementById('avatar-canvas');
+    modeBtns = document.querySelectorAll('.mode-btn');
+    userInfo = document.getElementById('user-info');
+    headerLogin = document.getElementById('header-login');
+    headerLogout = document.getElementById('header-logout');
+    
     checkAuth();
     attachEventListeners();
     
