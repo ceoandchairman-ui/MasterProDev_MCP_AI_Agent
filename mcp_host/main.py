@@ -401,8 +401,8 @@ async def voice_chat(
         response_text = agent_result.get("response", "I couldn't process that.")
         logger.info(f"💬 Agent response: {response_text[:100]}...")
         
-        # Step 3: TTS - Convert text to speech (may return None if no TTS available)
-        audio_response = await voice_service.text_to_speech(response_text)
+        # Step 3: TTS - Convert text to speech (returns tuple: audio_bytes, content_type)
+        audio_response, audio_content_type = await voice_service.text_to_speech(response_text)
         
         # Step 4: Save conversation (if authenticated)
         if user_id != "guest":
@@ -416,10 +416,10 @@ async def voice_chat(
         
         # Return audio if available, otherwise return JSON for browser TTS
         if audio_response:
-            logger.info(f"🔊 Generated audio response: {len(audio_response)} bytes")
+            logger.info(f"🔊 Generated audio response: {len(audio_response)} bytes ({audio_content_type})")
             return Response(
                 content=audio_response,
-                media_type="audio/mpeg",
+                media_type=audio_content_type or "audio/mpeg",
                 headers={
                     "Content-Disposition": "attachment; filename=response.mp3",
                     "X-Transcription": sanitize_header(user_message),

@@ -1,52 +1,69 @@
-"""Voice Processing Service - STT and TTS with Hugging Face Fallbacks"""
+"""Voice Processing Service - STT and TTS with Multiple Fallbacks"""
 
 import logging
 import io
-from typing import Optional
+import asyncio
+from typing import Optional, Tuple
 from openai import OpenAI
 import os
 import httpx
+
+# Edge TTS (Free, High Quality)
+try:
+    import edge_tts
+    EDGE_TTS_AVAILABLE = True
+except ImportError:
+    EDGE_TTS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 
 class VoiceService:
-    """Handles speech-to-text and text-to-speech conversion with Hugging Face fallbacks"""
+    """Handles speech-to-text and text-to-speech conversion with multiple fallbacks"""
+    
+    # Edge TTS voice options (natural-sounding, free)
+    EDGE_VOICES = {
+        "female_us": "en-US-JennyNeural",
+        "male_us": "en-US-GuyNeural",
+        "female_uk": "en-GB-SoniaNeural",
+        "male_uk": "en-GB-RyanNeural",
+        "female_au": "en-AU-NatashaNeural",
+    }
     
     def __init__(self):
-        # OpenAI (Primary)
+        # OpenAI (Primary - best quality, costs money)
         self.openai_key = os.environ.get("OPENAI_API_KEY")
         if not self.openai_key:
-            logger.warning("⚠️ OPENAI_API_KEY not set - using Hugging Face fallbacks")
+            logger.warning("⚠️ OPENAI_API_KEY not set - using free alternatives")
             self.client = None
         else:
             self.client = OpenAI(api_key=self.openai_key)
             logger.info("✓ Voice service initialized with OpenAI (primary)")
         
-        # Hugging Face Inference API (Fallback)
+        # Edge TTS (Free, high quality - recommended fallback)
+        if EDGE_TTS_AVAILABLE:
+            logger.info("✓ Edge TTS available (free, high quality)")
+        else:
+            logger.warning("⚠️ Edge TTS not installed (pip install edge-tts)")
+        
+        # Hugging Face Inference API (Fallback for STT)
         self.hf_token = os.environ.get("HUGGINGFACE_API_KEY") or os.environ.get("HF_TOKEN")
         if self.hf_token:
-            logger.info("✓ Hugging Face API token found (fallback enabled)")
+            logger.info("✓ Hugging Face API token found (STT fallback enabled)")
         elif not self.client:
-            logger.warning("⚠️ No OPENAI_API_KEY or HUGGINGFACE_API_KEY - voice features limited")
+            logger.warning("⚠️ No OPENAI_API_KEY or HUGGINGFACE_API_KEY - STT limited")
         
-        # Hugging Face model endpoints (verified working on HF Inference API)
-        # STT: OpenAI Whisper large-v3-turbo (confirmed available on hf-inference)
+        # Hugging Face model endpoints
         self.hf_stt_model = os.environ.get("HF_STT_MODEL", "openai/whisper-large-v3-turbo")
-        # TTS: Kokoro is the best free option but requires fal-ai provider
-        # For direct HF inference, options are limited - will use browser TTS as fallback
-        self.hf_tts_model = os.environ.get("HF_TTS_MODEL", "hexgrad/Kokoro-82M")
-        
-        # HF Inference API endpoint
         self.hf_api_base = "https://router.huggingface.co/hf-inference/models"
         
-        # Alternative STT models (verified on HF Inference)
+        # Alternative STT models
         self.hf_stt_alternatives = [
-            "openai/whisper-large-v3",  # Larger, slower but accurate
+            "openai/whisper-large-v3",
         ]
-        # Alternative TTS models - most require external providers
-        # If TTS fails, frontend will use browser's speechSynthesis
-        self.hf_tts_alternatives = []
+        
+        # Default Edge voice
+        self.default_edge_voice = os.environ.get("EDGE_TTS_VOICE", "en-US-JennyNeural")
     
     async def speech_to_text(self, audio_data: bytes, filename: str = "audio.webm") -> str:
         """
@@ -147,75 +164,75 @@ class VoiceService:
         text: str, 
         voice: str = "alloy",
         model: str = "tts-1"
-    ) -> bytes:
+    ) -> Tuple[Optional[bytes], Optional[str]]:
         """
-        Convert text to speech using OpenAI TTS (primary) or Hugging Face (fallback)
+        Convert text to speech with multiple fallbacks.
+        
+        Priority:
+        1. OpenAI TTS (best quality, paid)
+        2. Edge TTS (free, high quality)
+        3. Return None → browser speechSynthesis
         
         Args:
             text: Text to convert
-            voice: Voice model (alloy, echo, fable, onyx, nova, shimmer) - OpenAI only
-            model: TTS model (tts-1 or tts-1-hd) - OpenAI only
+            voice: Voice preference
+            model: TTS model (OpenAI only)
             
         Returns:
-            Audio bytes (MP3 or FLAC format)
+            Tuple of (audio_bytes, audio_format) or (None, None) for browser fallback
         """
-        # Try OpenAI first
+        # Clean text for TTS
+        clean_text = text[:4096].strip()
+        if not clean_text:
+            return None, None
+        
+        # 1. Try OpenAI first (best quality)
         if self.client:
             try:
                 response = self.client.audio.speech.create(
                     model=model,
                     voice=voice,
-                    input=text[:4096]  # Max 4096 chars
+                    input=clean_text
                 )
-                
                 audio_bytes = response.content
                 logger.info(f"🔊 TTS (OpenAI): Generated {len(audio_bytes)} bytes")
-                return audio_bytes
+                return audio_bytes, "audio/mpeg"
                 
             except Exception as e:
-                logger.error(f"❌ OpenAI TTS Error: {e}")
-                if not self.hf_token:
-                    raise Exception(f"Text-to-speech failed: {str(e)}")
-                logger.info("Falling back to Hugging Face...")
+                logger.warning(f"⚠️ OpenAI TTS failed: {e}")
         
-        # Fallback to Hugging Face Inference API
-        if self.hf_token:
-            # Try primary model first, then alternatives
-            models_to_try = [self.hf_tts_model] + self.hf_tts_alternatives
-            last_error = None
+        # 2. Try Edge TTS (free, high quality)
+        if EDGE_TTS_AVAILABLE:
+            try:
+                audio_bytes = await self._edge_tts(clean_text)
+                if audio_bytes:
+                    logger.info(f"🔊 TTS (Edge): Generated {len(audio_bytes)} bytes")
+                    return audio_bytes, "audio/mpeg"
+            except Exception as e:
+                logger.warning(f"⚠️ Edge TTS failed: {e}")
+        
+        # 3. Return None - frontend will use browser speechSynthesis
+        logger.info("ℹ️ Using browser TTS fallback")
+        return None, None
+    
+    async def _edge_tts(self, text: str) -> Optional[bytes]:
+        """Generate speech using Edge TTS (Microsoft's free TTS)"""
+        try:
+            communicate = edge_tts.Communicate(text, self.default_edge_voice)
             
-            for tts_model in models_to_try:
-                try:
-                    headers = {"Authorization": f"Bearer {self.hf_token}"}
-                    url = f"{self.hf_api_base}/{tts_model}"
-                    payload = {"inputs": text[:500]}  # HF has smaller limits
-                    
-                    async with httpx.AsyncClient(timeout=60.0) as client:
-                        response = await client.post(url, headers=headers, json=payload)
-                        
-                        # Check for model loading (503) or not found (404)
-                        if response.status_code in [503, 404]:
-                            logger.warning(f"⚠️ TTS model {tts_model} unavailable ({response.status_code})")
-                            continue
-                            
-                        response.raise_for_status()
-                        
-                        audio_bytes = response.content
-                        if audio_bytes and len(audio_bytes) > 100:
-                            logger.info(f"🔊 TTS (HuggingFace/{tts_model}): Generated {len(audio_bytes)} bytes")
-                            return audio_bytes
-                        else:
-                            logger.warning(f"⚠️ TTS model {tts_model} returned empty/small audio")
-                            continue
-                    
-                except Exception as e:
-                    logger.warning(f"⚠️ HF TTS model {tts_model} failed: {e}")
-                    last_error = e
-                    continue
+            # Collect audio chunks
+            audio_chunks = []
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_chunks.append(chunk["data"])
             
-            # Return None instead of raising - frontend will use browser TTS
-            logger.warning(f"⚠️ All TTS models failed, returning None for browser fallback")
+            if audio_chunks:
+                return b"".join(audio_chunks)
             return None
+            
+        except Exception as e:
+            logger.error(f"Edge TTS error: {e}")
+            raise
         
         # No TTS available - return None for browser fallback
         logger.warning("⚠️ No TTS service configured, returning None for browser fallback")
