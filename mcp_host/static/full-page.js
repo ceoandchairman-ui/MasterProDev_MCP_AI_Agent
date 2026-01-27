@@ -70,12 +70,52 @@ let currentViseme = 'viseme_sil';
 let targetViseme = 'viseme_sil';
 let visemeBlendFactor = 0;
 
+// Avatar Gallery - Professional characters with visemes
+const AVATAR_GALLERY = [
+    {
+        id: 'sophia',
+        name: 'Sophia',
+        description: 'Professional Business Woman',
+        // ReadyPlayer.me avatar with business look
+        url: 'https://models.readyplayer.me/6479c67a2e7c2c3d3c2b8f1a.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+        thumbnail: '👩‍💼',
+        gender: 'female'
+    },
+    {
+        id: 'james',
+        name: 'James',
+        description: 'Customer Service Representative',
+        url: 'https://models.readyplayer.me/6479c5f82e7c2c3d3c2b8f19.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+        thumbnail: '👨‍💼',
+        gender: 'male'
+    },
+    {
+        id: 'maya',
+        name: 'Maya',
+        description: 'Friendly Support Agent',
+        url: 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+        thumbnail: '👩‍🦰',
+        gender: 'female'
+    },
+    {
+        id: 'alex',
+        name: 'Alex',
+        description: 'Technical Assistant',
+        url: 'https://models.readyplayer.me/6479c6c52e7c2c3d3c2b8f1b.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+        thumbnail: '🧑‍💻',
+        gender: 'neutral'
+    }
+];
+
+let currentAvatarId = localStorage.getItem('selectedAvatar') || 'sophia';
+
 // Elements (initialized in init())
 let chatMessages, chatInput, sendBtn, attachBtn, voiceBtn;
 let fileInput, filePreview, fileName, removeFileBtn;
 let typingIndicator, avatar, avatarContainer, avatarStatus;
 let avatar3DContainer, avatar3DStatus, avatarCanvas;
 let modeBtns, userInfo, headerLogin, headerLogout;
+let avatarSelector;
 
 // Initialize
 async function init() {
@@ -103,6 +143,7 @@ async function init() {
     
     checkAuth();
     attachEventListeners();
+    createAvatarSelector();  // Add avatar selection UI
     
     // Auto-start avatar mode
     avatar3DContainer.classList.add('active');
@@ -221,14 +262,23 @@ function init3DAvatar() {
     avatar3DLoaded = true;
 }
 
-function loadAvatar() {
+function loadAvatar(avatarId = null) {
     const loader = new GLTFLoader();
     
-    // Use a sample avatar URL - this is a free CC0 model
-    // You can replace with your own GLB file at /static/avatars/avatar.glb
-    const avatarUrl = 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024';
+    // Get avatar from gallery or use default
+    const selectedId = avatarId || currentAvatarId;
+    const avatarData = AVATAR_GALLERY.find(a => a.id === selectedId) || AVATAR_GALLERY[0];
+    const avatarUrl = avatarData.url;
     
-    avatar3DStatus.textContent = 'Loading 3D Avatar...';
+    // Clear existing avatar if any
+    if (avatar3D) {
+        scene.remove(avatar3D);
+        avatar3D = null;
+        mouthMorphTarget = null;
+        visemeInfluences = {};
+    }
+    
+    avatar3DStatus.textContent = `Loading ${avatarData.name}...`;
     
     loader.load(
         avatarUrl,
@@ -260,12 +310,12 @@ function loadAvatar() {
                 idleAction.play();
             }
             
-            avatar3DStatus.textContent = 'Click microphone to speak';
-            console.log('Avatar loaded successfully');
+            avatar3DStatus.textContent = `${avatarData.name} - Click microphone to speak`;
+            console.log(`Avatar ${avatarData.name} loaded successfully`);
         },
         (progress) => {
             const percent = Math.round((progress.loaded / progress.total) * 100);
-            avatar3DStatus.textContent = `Loading... ${percent}%`;
+            avatar3DStatus.textContent = `Loading ${avatarData.name}... ${percent}%`;
         },
         (error) => {
             console.error('Error loading avatar:', error);
@@ -329,6 +379,78 @@ function createFallbackAvatar() {
     scene.add(avatar3D);
     
     avatar3DStatus.textContent = 'Click microphone to speak';
+}
+
+// Avatar Selection
+function createAvatarSelector() {
+    const selectorHTML = `
+        <div class="avatar-selector" id="avatar-selector">
+            <button class="avatar-selector-toggle" id="avatar-selector-toggle" title="Change Avatar">
+                👤 Change Avatar
+            </button>
+            <div class="avatar-selector-dropdown" id="avatar-selector-dropdown">
+                <div class="avatar-selector-title">Choose Your Assistant</div>
+                ${AVATAR_GALLERY.map(av => `
+                    <div class="avatar-option ${av.id === currentAvatarId ? 'selected' : ''}" 
+                         data-avatar-id="${av.id}">
+                        <span class="avatar-option-thumb">${av.thumbnail}</span>
+                        <div class="avatar-option-info">
+                            <div class="avatar-option-name">${av.name}</div>
+                            <div class="avatar-option-desc">${av.description}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+    
+    // Insert into header
+    const headerRight = document.querySelector('.header-right');
+    if (headerRight) {
+        headerRight.insertAdjacentHTML('afterbegin', selectorHTML);
+        
+        // Attach events
+        const toggle = document.getElementById('avatar-selector-toggle');
+        const dropdown = document.getElementById('avatar-selector-dropdown');
+        
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdown.classList.toggle('show');
+        });
+        
+        // Close when clicking outside
+        document.addEventListener('click', () => {
+            dropdown.classList.remove('show');
+        });
+        
+        // Avatar selection
+        document.querySelectorAll('.avatar-option').forEach(option => {
+            option.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const avatarId = option.dataset.avatarId;
+                selectAvatar(avatarId);
+                dropdown.classList.remove('show');
+            });
+        });
+    }
+}
+
+function selectAvatar(avatarId) {
+    currentAvatarId = avatarId;
+    localStorage.setItem('selectedAvatar', avatarId);
+    
+    // Update selected state in UI
+    document.querySelectorAll('.avatar-option').forEach(opt => {
+        opt.classList.toggle('selected', opt.dataset.avatarId === avatarId);
+    });
+    
+    // Reload avatar
+    if (avatar3DLoaded) {
+        loadAvatar(avatarId);
+    }
+    
+    const avatarData = AVATAR_GALLERY.find(a => a.id === avatarId);
+    console.log(`Switched to avatar: ${avatarData?.name}`);
 }
 
 function onWindowResize() {
