@@ -45,7 +45,13 @@ class Settings(BaseSettings):
     # HuggingFace LLM
     HUGGINGFACE_API_KEY: Optional[str] = None
     HUGGINGFACE_MODEL: Optional[str] = None
-    ACTIVE_LLM_PROVIDER: Optional[str] = None
+    
+    # Anthropic Claude LLM
+    ANTHROPIC_API_KEY: Optional[str] = None
+    CLAUDE_MODEL: str = "claude-3-5-haiku-20241022"
+    
+    # Active LLM Provider
+    ACTIVE_LLM_PROVIDER: Optional[str] = "claude"  # Options: 'claude', 'bedrock', 'huggingface', 'ollama'
 
     # Google OAuth
     GOOGLE_CLIENT_ID: Optional[str] = None

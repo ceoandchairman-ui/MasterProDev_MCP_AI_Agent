@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 class LLMType(Enum):
     """Available LLM providers"""
+    CLAUDE = "claude"  # Anthropic Claude (proprietary)
     BEDROCK = "bedrock"  # AWS Bedrock (proprietary)
     HUGGINGFACE = "huggingface"  # Hugging Face Inference API (open source)
     OLLAMA = "ollama"  # Ollama local (open source)

@@ -70,40 +70,16 @@ let currentViseme = 'viseme_sil';
 let targetViseme = 'viseme_sil';
 let visemeBlendFactor = 0;
 
-// Avatar Gallery - Professional characters with visemes
+// Avatar Gallery - Single high-quality professional avatar (business woman)
 const AVATAR_GALLERY = [
     {
-        id: 'sophia',
-        name: 'Sophia',
-        description: 'Professional Business Woman',
-        // ReadyPlayer.me avatar with business look
-        url: 'https://models.readyplayer.me/6479c67a2e7c2c3d3c2b8f1a.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+        id: 'businesswoman',
+        name: 'Business Woman',
+        description: 'Professional, realistic business woman avatar',
+        // ReadyPlayer.me demo avatar with business attire and viseme support
+        url: 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
         thumbnail: '👩‍💼',
         gender: 'female'
-    },
-    {
-        id: 'james',
-        name: 'James',
-        description: 'Customer Service Representative',
-        url: 'https://models.readyplayer.me/6479c5f82e7c2c3d3c2b8f19.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
-        thumbnail: '👨‍💼',
-        gender: 'male'
-    },
-    {
-        id: 'maya',
-        name: 'Maya',
-        description: 'Friendly Support Agent',
-        url: 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
-        thumbnail: '👩‍🦰',
-        gender: 'female'
-    },
-    {
-        id: 'alex',
-        name: 'Alex',
-        description: 'Technical Assistant',
-        url: 'https://models.readyplayer.me/6479c6c52e7c2c3d3c2b8f1b.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
-        thumbnail: '🧑‍💻',
-        gender: 'neutral'
     }
 ];
 
