@@ -58,8 +58,17 @@
     },
 
     createWidget: function() {
+      // Load Three.js dynamically for genie avatar
+      this.loadThreeJS();
+      
       const widgetHTML = `
         <div id="mpd-chat-widget">
+          <!-- Genie Avatar Container -->
+          <div id="mpd-genie-container">
+            <canvas id="mpd-genie-canvas"></canvas>
+            <div id="mpd-genie-particles"></div>
+          </div>
+          
           <!-- Chat Button -->
           <button id="mpd-chat-button" aria-label="Open chat">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -443,8 +452,14 @@
         chatWindow.classList.add('open');
         document.getElementById('mpd-chat-input').focus();
         this.clearNotifications();
+        
+        // Initialize and show genie avatar
+        this.initGenieAvatar().then(() => {
+          setTimeout(() => this.showGenieAvatar(), 200);
+        });
       } else {
         chatWindow.classList.remove('open');
+        this.hideGenieAvatar();
       }
     },
 
@@ -581,6 +596,11 @@
 
       messagesContainer.insertAdjacentHTML('beforeend', messageHTML);
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      
+      // Trigger lip sync for bot messages
+      if (sender === 'bot' && this.genieState.isVisible) {
+        this.startWidgetLipSync(text);
+      }
 
       // Store message
       this.state.messages.push({ text, sender, timestamp: new Date() });
@@ -639,6 +659,294 @@
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+  };
+
+    // ========== GENIE AVATAR SYSTEM ==========
+    
+    loadThreeJS: function() {
+      if (window.THREE) return Promise.resolve();
+      
+      return new Promise((resolve) => {
+        const scripts = [
+          'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js',
+          'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js'
+        ];
+        
+        let loaded = 0;
+        scripts.forEach(src => {
+          const script = document.createElement('script');
+          script.src = src;
+          script.onload = () => {
+            loaded++;
+            if (loaded === scripts.length) resolve();
+          };
+          document.head.appendChild(script);
+        });
+      });
+    },
+    
+    genieState: {
+      scene: null,
+      camera: null,
+      renderer: null,
+      avatar: null,
+      mixer: null,
+      isVisible: false,
+      particles: [],
+      animationId: null
+    },
+    
+    initGenieAvatar: async function() {
+      if (!window.THREE) {
+        await this.loadThreeJS();
+      }
+      
+      const canvas = document.getElementById('mpd-genie-canvas');
+      if (!canvas || this.genieState.scene) return;
+      
+      const container = document.getElementById('mpd-genie-container');
+      const width = 150;
+      const height = 200;
+      
+      // Scene setup
+      this.genieState.scene = new THREE.Scene();
+      this.genieState.camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 100);
+      this.genieState.camera.position.set(0, 0.8, 2.5);
+      
+      this.genieState.renderer = new THREE.WebGLRenderer({ 
+        canvas, 
+        alpha: true, 
+        antialias: true 
+      });
+      this.genieState.renderer.setSize(width, height);
+      this.genieState.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+      this.genieState.scene.add(ambientLight);
+      
+      const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      keyLight.position.set(2, 3, 2);
+      this.genieState.scene.add(keyLight);
+      
+      const fillLight = new THREE.DirectionalLight(0x00C896, 0.4);
+      fillLight.position.set(-2, 1, 1);
+      this.genieState.scene.add(fillLight);
+      
+      // Load avatar
+      const loader = new THREE.GLTFLoader();
+      const avatarUrl = 'https://models.readyplayer.me/64c3e4e8c1e3f3d1a4b5c6d7.glb?morphTargets=ARKit,Oculus+Visemes';
+      
+      try {
+        loader.load(avatarUrl, (gltf) => {
+          this.genieState.avatar = gltf.scene;
+          this.genieState.avatar.position.set(0, -0.6, 0);
+          this.genieState.avatar.scale.set(0, 0, 0);
+          this.genieState.scene.add(this.genieState.avatar);
+          
+          if (gltf.animations.length > 0) {
+            this.genieState.mixer = new THREE.AnimationMixer(this.genieState.avatar);
+            const idleClip = gltf.animations[0];
+            this.genieState.mixer.clipAction(idleClip).play();
+          }
+          
+          this.animateGenie();
+        });
+      } catch (e) {
+        console.warn('Avatar load failed, using fallback');
+      }
+    },
+    
+    animateGenie: function() {
+      if (!this.genieState.scene) return;
+      
+      const clock = new THREE.Clock();
+      
+      const animate = () => {
+        this.genieState.animationId = requestAnimationFrame(animate);
+        
+        const delta = clock.getDelta();
+        
+        if (this.genieState.mixer) {
+          this.genieState.mixer.update(delta);
+        }
+        
+        // Gentle floating motion
+        if (this.genieState.avatar && this.genieState.isVisible) {
+          this.genieState.avatar.position.y = -0.6 + Math.sin(Date.now() * 0.002) * 0.03;
+          this.genieState.avatar.rotation.y = Math.sin(Date.now() * 0.001) * 0.1;
+        }
+        
+        this.genieState.renderer.render(this.genieState.scene, this.genieState.camera);
+      };
+      
+      animate();
+    },
+    
+    showGenieAvatar: function() {
+      const container = document.getElementById('mpd-genie-container');
+      if (!container) return;
+      
+      this.genieState.isVisible = true;
+      container.classList.add('visible');
+      
+      // Create magic particles
+      this.createMagicParticles();
+      
+      // Genie emerge animation
+      if (this.genieState.avatar) {
+        let progress = 0;
+        const emergeAnimation = () => {
+          progress += 0.03;
+          if (progress >= 1) {
+            this.genieState.avatar.scale.set(1, 1, 1);
+            this.genieState.avatar.rotation.y = 0;
+            return;
+          }
+          
+          // Easing function for smooth emergence
+          const ease = 1 - Math.pow(1 - progress, 3);
+          
+          // Scale up with spiral
+          this.genieState.avatar.scale.set(ease, ease, ease);
+          this.genieState.avatar.rotation.y = (1 - ease) * Math.PI * 4;
+          this.genieState.avatar.position.y = -0.6 + (1 - ease) * -0.5;
+          
+          requestAnimationFrame(emergeAnimation);
+        };
+        emergeAnimation();
+      }
+    },
+    
+    hideGenieAvatar: function() {
+      const container = document.getElementById('mpd-genie-container');
+      if (!container) return;
+      
+      // Disappear animation
+      if (this.genieState.avatar) {
+        let progress = 0;
+        const disappearAnimation = () => {
+          progress += 0.05;
+          if (progress >= 1) {
+            this.genieState.isVisible = false;
+            container.classList.remove('visible');
+            this.genieState.avatar.scale.set(0, 0, 0);
+            return;
+          }
+          
+          const ease = 1 - progress;
+          this.genieState.avatar.scale.set(ease, ease, ease);
+          this.genieState.avatar.rotation.y = progress * Math.PI * 2;
+          
+          requestAnimationFrame(disappearAnimation);
+        };
+        disappearAnimation();
+      } else {
+        this.genieState.isVisible = false;
+        container.classList.remove('visible');
+      }
+      
+      // Clear particles
+      const particleContainer = document.getElementById('mpd-genie-particles');
+      if (particleContainer) particleContainer.innerHTML = '';
+    },
+    
+    createMagicParticles: function() {
+      const container = document.getElementById('mpd-genie-particles');
+      if (!container) return;
+      
+      container.innerHTML = '';
+      
+      // Create sparkle particles
+      for (let i = 0; i < 20; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'mpd-particle';
+        particle.style.cssText = `
+          left: ${Math.random() * 100}%;
+          animation-delay: ${Math.random() * 0.5}s;
+          animation-duration: ${1 + Math.random()}s;
+        `;
+        container.appendChild(particle);
+      }
+      
+      // Create smoke effect
+      for (let i = 0; i < 5; i++) {
+        const smoke = document.createElement('div');
+        smoke.className = 'mpd-smoke';
+        smoke.style.cssText = `
+          left: ${30 + Math.random() * 40}%;
+          animation-delay: ${i * 0.1}s;
+        `;
+        container.appendChild(smoke);
+      }
+    },
+    
+    // Viseme lip sync for widget avatar
+    VISEME_NAMES: ['viseme_sil', 'viseme_PP', 'viseme_FF', 'viseme_TH', 'viseme_DD', 
+                   'viseme_kk', 'viseme_CH', 'viseme_SS', 'viseme_nn', 'viseme_RR',
+                   'viseme_aa', 'viseme_E', 'viseme_I', 'viseme_O', 'viseme_U'],
+    
+    startWidgetLipSync: function(text) {
+      if (!this.genieState.avatar) return;
+      
+      const headMesh = this.genieState.avatar.getObjectByName('Wolf3D_Head');
+      if (!headMesh?.morphTargetDictionary) return;
+      
+      const chars = text.toLowerCase().split('');
+      let index = 0;
+      
+      this.lipSyncInterval = setInterval(() => {
+        if (index >= chars.length) {
+          this.stopWidgetLipSync();
+          return;
+        }
+        
+        const char = chars[index];
+        let viseme = 'viseme_sil';
+        
+        if ('aeiou'.includes(char)) {
+          viseme = char === 'a' ? 'viseme_aa' : 
+                   char === 'e' ? 'viseme_E' : 
+                   char === 'i' ? 'viseme_I' : 
+                   char === 'o' ? 'viseme_O' : 'viseme_U';
+        } else if ('pbm'.includes(char)) viseme = 'viseme_PP';
+        else if ('fv'.includes(char)) viseme = 'viseme_FF';
+        else if ('td'.includes(char)) viseme = 'viseme_DD';
+        else if ('kg'.includes(char)) viseme = 'viseme_kk';
+        else if ('sz'.includes(char)) viseme = 'viseme_SS';
+        else if ('nm'.includes(char)) viseme = 'viseme_nn';
+        else if ('rl'.includes(char)) viseme = 'viseme_RR';
+        
+        // Apply viseme
+        this.VISEME_NAMES.forEach(v => {
+          const idx = headMesh.morphTargetDictionary[v];
+          if (idx !== undefined) {
+            headMesh.morphTargetInfluences[idx] = v === viseme ? 0.7 : 0;
+          }
+        });
+        
+        index++;
+      }, 80);
+    },
+    
+    stopWidgetLipSync: function() {
+      if (this.lipSyncInterval) {
+        clearInterval(this.lipSyncInterval);
+        this.lipSyncInterval = null;
+      }
+      
+      if (!this.genieState.avatar) return;
+      
+      const headMesh = this.genieState.avatar.getObjectByName('Wolf3D_Head');
+      if (headMesh?.morphTargetDictionary) {
+        this.VISEME_NAMES.forEach(v => {
+          const idx = headMesh.morphTargetDictionary[v];
+          if (idx !== undefined) {
+            headMesh.morphTargetInfluences[idx] = 0;
+          }
+        });
+      }
     }
   };
 
