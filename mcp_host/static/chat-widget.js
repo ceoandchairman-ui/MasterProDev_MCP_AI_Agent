@@ -3,11 +3,16 @@
  * Embeddable AI Agent Chat Interface
  */
 
+
+// === 3D Avatar/Avatar Gallery Imports (via CDN) ===
+const THREE_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+const GLTFLoader_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
 (function() {
   'use strict';
-
-  const MCPChat = {
-    config: {
+        this.loadThreeJSDeps();
+        this.setupAvatarGallery();
       apiUrl: 'http://localhost:8000',
       position: 'bottom-right',
       primaryColor: '#00C896',
@@ -21,40 +26,75 @@
         { icon: '💡', text: 'Get suggestions', action: 'suggestions' }
       ]
     },
-
-    state: {
-      isOpen: false,
-      isAuthenticated: false,
-      authToken: null,
-      conversationId: null,
-      messages: [],
-      isTyping: false,
-      selectedFile: null,
-      voiceMode: false,
-      mediaRecorder: null,
+    loadThreeJSDeps: async function() {
+      if (!window.THREE) {
+        await import(THREE_CDN);
+      }
+      if (!window.THREE.GLTFLoader) {
+        await import(GLTFLoader_CDN);
+      }
+      if (!window.THREE.OrbitControls) {
+        await import(OrbitControls_CDN);
+      }
+    },
       audioChunks: []
     },
-
-    init: function(customConfig = {}) {
-      try {
-        // Merge custom config
-        this.config = { ...this.config, ...customConfig };
-        // Check if already initialized
-        if (document.getElementById('mpd-chat-widget')) {
-          console.warn('MCP Chat Widget already initialized');
-          return;
+    setupAvatarGallery: function() {
+      const AVATAR_GALLERY = [
+        {
+          id: 'businesswoman',
+          name: 'Business Woman',
+          description: 'Professional, realistic business woman avatar',
+          url: 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+          thumbnail: '👩‍💼',
+          gender: 'female'
+        },
+        {
+          id: 'businessman',
+          name: 'Business Man',
+          description: 'Professional, realistic business man avatar',
+          url: 'https://models.readyplayer.me/6479c5f82e7c2c3d3c2b8f19.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+          thumbnail: '👨‍💼',
+          gender: 'male'
+        },
+        {
+          id: 'supportwoman',
+          name: 'Support Agent (F)',
+          description: 'Friendly female support agent',
+          url: 'https://models.readyplayer.me/6479c67a2e7c2c3d3c2b8f1a.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+          thumbnail: '👩‍🦰',
+          gender: 'female'
+        },
+        {
+          id: 'supportman',
+          name: 'Support Agent (M)',
+          description: 'Friendly male support agent',
+          url: 'https://models.readyplayer.me/6479c6c52e7c2c3d3c2b8f1b.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+          thumbnail: '🧑‍💻',
+          gender: 'male'
         }
-        // Create widget HTML
-        this.createWidget();
-        // Attach event listeners
-        this.attachEventListeners();
-        // Load saved token
-        this.loadAuthToken();
-        console.log('MCP Chat Widget initialized');
-      } catch (e) {
-        console.error('MCP Chat Widget failed to initialize:', e);
-        alert('Chat Widget failed to load: ' + e.message);
+      ];
+          requestAnimationFrame(animate);
+          controls.update();
+          renderer.render(scene, camera);
+        }
+      },
+      undefined,
+      (error) => {
+        status.textContent = 'Failed to load avatar.';
       }
+    );
+    window.mpdAvatarRenderer = renderer;
+  };
+            renderer.render(scene, camera);
+          }
+        },
+        undefined,
+        (error) => {
+          status.textContent = 'Failed to load avatar.';
+        }
+      );
+      window.mpdAvatarRenderer = renderer;
     },
 
     createWidget: function() {
@@ -95,6 +135,14 @@
                   <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                 </svg>
               </button>
+              <!-- Avatar Selector UI -->
+              <div id="mpd-avatar-selector-container"></div>
+            </div>
+
+            <!-- 3D Avatar Container -->
+            <div class="mpd-avatar-3d-container" id="mpd-avatar-3d-container" style="display:none;">
+              <canvas id="mpd-avatar-canvas"></canvas>
+              <div class="mpd-avatar-3d-status" id="mpd-avatar-3d-status">Loading 3D Avatar...</div>
             </div>
 
             <!-- Messages Area -->
@@ -174,26 +222,380 @@
       `;
 
         document.body.insertAdjacentHTML('beforeend', widgetHTML);
-      } catch (e) {
-        console.error('Failed to create chat widget HTML:', e);
-        alert('Failed to create chat widget: ' + e.message);
-      }
-    },
 
-    attachEventListeners: function() {
-      const chatButton = document.getElementById('mpd-chat-button');
-      const chatClose = document.getElementById('mpd-chat-close');
-      const chatSend = document.getElementById('mpd-chat-send');
-      const chatInput = document.getElementById('mpd-chat-input');
-      const quickActions = document.querySelectorAll('.mpd-quick-action');
-      
-      // File upload elements
-      const attachButton = document.getElementById('mpd-attach-btn');
-      const fileInput = document.getElementById('mpd-file-input');
-      const removeFileButton = document.getElementById('mpd-remove-file');
-      
-      // Voice button
-      const voiceButton = document.getElementById('mpd-voice-btn');
+        // Dynamically load three.js, GLTFLoader, and OrbitControls if not present
+        this.loadThreeJSDeps().then(() => {
+          this.setupAvatarGallery();
+        });
+          // Loads three.js and its loaders from CDN if not already present
+          loadThreeJSDeps: async function() {
+            if (!window.THREE) {
+              await import(THREE_CDN);
+            }
+            if (!window.THREE.GLTFLoader) {
+              await import(GLTFLoader_CDN);
+            }
+            if (!window.THREE.OrbitControls) {
+              await import(OrbitControls_CDN);
+            }
+          },
+
+          // Avatar gallery and 3D avatar logic
+          setupAvatarGallery: function() {
+            // Avatar gallery data (sync with full-page.js)
+            const AVATAR_GALLERY = [
+              {
+                id: 'businesswoman',
+                name: 'Business Woman',
+                description: 'Professional, realistic business woman avatar',
+                url: 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+                thumbnail: '👩‍💼',
+                gender: 'female'
+              },
+              {
+                id: 'businessman',
+                name: 'Business Man',
+                description: 'Professional, realistic business man avatar',
+                url: 'https://models.readyplayer.me/6479c5f82e7c2c3d3c2b8f19.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+                thumbnail: '👨‍💼',
+                gender: 'male'
+              },
+              {
+                id: 'supportwoman',
+                name: 'Support Agent (F)',
+                description: 'Friendly female support agent',
+                url: 'https://models.readyplayer.me/6479c67a2e7c2c3d3c2b8f1a.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+                thumbnail: '👩‍🦰',
+                gender: 'female'
+              },
+              {
+                id: 'supportman',
+                name: 'Support Agent (M)',
+                description: 'Friendly male support agent',
+                url: 'https://models.readyplayer.me/6479c6c52e7c2c3d3c2b8f1b.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+                thumbnail: '🧑‍💻',
+                gender: 'male'
+              }
+            ];
+
+            // Insert avatar selector UI
+            const selectorHTML = `
+              <div class="mpd-avatar-selector" id="mpd-avatar-selector">
+                <button class="mpd-avatar-selector-toggle" id="mpd-avatar-selector-toggle" title="Change Avatar">
+                  👤 Change Avatar
+                </button>
+                <div class="mpd-avatar-selector-dropdown" id="mpd-avatar-selector-dropdown">
+                  <div class="mpd-avatar-selector-title">Choose Your Assistant</div>
+                  ${AVATAR_GALLERY.map(av => `
+                    <div class="mpd-avatar-option" data-avatar-id="${av.id}">
+                      <span class="mpd-avatar-thumb">${av.thumbnail}</span>
+                      <div class="mpd-avatar-info">
+                        <div class="mpd-avatar-name">${av.name}</div>
+                        <div class="mpd-avatar-desc">${av.description}</div>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            `;
+            const selectorContainer = document.getElementById('mpd-avatar-selector-container');
+            if (selectorContainer) selectorContainer.innerHTML = selectorHTML;
+
+            // Avatar selector toggle
+            const toggle = document.getElementById('mpd-avatar-selector-toggle');
+            const dropdown = document.getElementById('mpd-avatar-selector-dropdown');
+            if (toggle && dropdown) {
+              toggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.toggle('show');
+              });
+              document.addEventListener('click', () => dropdown.classList.remove('show'));
+            }
+
+            // Avatar selection logic
+            document.querySelectorAll('.mpd-avatar-option').forEach(option => {
+              option.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const avatarId = option.dataset.avatarId;
+                localStorage.setItem('selectedAvatar', avatarId);
+                this.load3DAvatar(avatarId, AVATAR_GALLERY);
+                dropdown.classList.remove('show');
+              });
+            });
+
+            // Load initial avatar
+            const savedAvatar = localStorage.getItem('selectedAvatar') || 'businesswoman';
+            this.load3DAvatar(savedAvatar, AVATAR_GALLERY);
+          },
+
+          // Loads and renders the 3D avatar using three.js
+          load3DAvatar: function(avatarId, AVATAR_GALLERY) {
+            const avatarData = AVATAR_GALLERY.find(a => a.id === avatarId) || AVATAR_GALLERY[0];
+            const container = document.getElementById('mpd-avatar-3d-container');
+            const canvas = document.getElementById('mpd-avatar-canvas');
+            const status = document.getElementById('mpd-avatar-3d-status');
+            if (!container || !canvas) return;
+            container.style.display = 'block';
+            status.textContent = `Loading ${avatarData.name}...`;
+
+            // Genie-style pop-out effect
+            container.classList.add('mpd-genie-pop');
+            setTimeout(() => container.classList.remove('mpd-genie-pop'), 800);
+
+            // Remove previous renderer if any
+            if (window.mpdAvatarRenderer && window.mpdAvatarRenderer.dispose) {
+              window.mpdAvatarRenderer.dispose();
+            }
+            canvas.width = container.clientWidth || 320;
+            canvas.height = container.clientHeight || 320;
+
+            // Setup three.js scene
+            const THREE = window.THREE;
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            const camera = new THREE.PerspectiveCamera(45, canvas.width / canvas.height, 0.1, 100);
+            camera.position.set(0, 1.5, 2);
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setSize(canvas.width, canvas.height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            // Lighting
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(5, 10, 7.5);
+            // === 3D Avatar/Avatar Gallery Imports (via CDN) ===
+            const THREE_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+            const GLTFLoader_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+            const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+            (function() {
+              'use strict';
+
+              const MCPChat = {
+                config: {
+                  apiUrl: 'http://localhost:8000',
+                  position: 'bottom-right',
+                  primaryColor: '#00C896',
+                  secondaryColor: '#6B5CE7',
+                  accentColor: '#FFB800',
+                  brandName: 'Master Pro Dev',
+                  welcomeMessage: 'Hi! I\'m your AI assistant. How can I help you today?',
+                  quickActions: [
+                    { icon: '📅', text: 'Check my calendar', action: 'calendar' },
+                    { icon: '📧', text: 'Read my emails', action: 'email' },
+                    { icon: '💡', text: 'Get suggestions', action: 'suggestions' }
+                  ]
+                },
+
+                state: {
+                  isOpen: false,
+                  isAuthenticated: false,
+                  authToken: null,
+                  conversationId: null,
+                  messages: [],
+                  isTyping: false,
+                  selectedFile: null,
+                  voiceMode: false,
+                  mediaRecorder: null,
+                  audioChunks: []
+                },
+
+                init: function(customConfig = {}) {
+                  try {
+                    // Merge custom config
+                    this.config = { ...this.config, ...customConfig };
+                    // Check if already initialized
+                    if (document.getElementById('mpd-chat-widget')) {
+                      console.warn('MCP Chat Widget already initialized');
+                      return;
+                    }
+                    // Create widget HTML
+                    this.createWidget();
+                    // Dynamically load three.js, GLTFLoader, and OrbitControls if not present
+                    this.loadThreeJSDeps().then(() => {
+                      this.setupAvatarGallery();
+                    });
+                    // Attach event listeners
+                    this.attachEventListeners();
+                    // Load saved token
+                    this.loadAuthToken();
+                    console.log('MCP Chat Widget initialized');
+                  } catch (e) {
+                    console.error('MCP Chat Widget failed to initialize:', e);
+                    alert('Chat Widget failed to load: ' + e.message);
+                  }
+                },
+
+                // ...existing code...
+
+                // Loads three.js and its loaders from CDN if not already present
+                loadThreeJSDeps: async function() {
+                  if (!window.THREE) {
+                    await import(THREE_CDN);
+                  }
+                  if (!window.THREE.GLTFLoader) {
+                    await import(GLTFLoader_CDN);
+                  }
+                  if (!window.THREE.OrbitControls) {
+                    await import(OrbitControls_CDN);
+                  }
+                },
+
+                // Avatar gallery and 3D avatar logic
+                setupAvatarGallery: function() {
+                  const AVATAR_GALLERY = [
+                    {
+                      id: 'businesswoman',
+                      name: 'Business Woman',
+                      description: 'Professional, realistic business woman avatar',
+                      url: 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+                      thumbnail: '👩‍💼',
+                      gender: 'female'
+                    },
+                    {
+                      id: 'businessman',
+                      name: 'Business Man',
+                      description: 'Professional, realistic business man avatar',
+                      url: 'https://models.readyplayer.me/6479c5f82e7c2c3d3c2b8f19.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+                      thumbnail: '👨‍💼',
+                      gender: 'male'
+                    },
+                    {
+                      id: 'supportwoman',
+                      name: 'Support Agent (F)',
+                      description: 'Friendly female support agent',
+                      url: 'https://models.readyplayer.me/6479c67a2e7c2c3d3c2b8f1a.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+                      thumbnail: '👩‍🦰',
+                      gender: 'female'
+                    },
+                    {
+                      id: 'supportman',
+                      name: 'Support Agent (M)',
+                      description: 'Friendly male support agent',
+                      url: 'https://models.readyplayer.me/6479c6c52e7c2c3d3c2b8f1b.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+                      thumbnail: '🧑‍💻',
+                      gender: 'male'
+                    }
+                  ];
+
+                  // Insert avatar selector UI
+                  const selectorHTML = `
+                    <div class="mpd-avatar-selector" id="mpd-avatar-selector">
+                      <button class="mpd-avatar-selector-toggle" id="mpd-avatar-selector-toggle" title="Change Avatar">
+                        👤 Change Avatar
+                      </button>
+                      <div class="mpd-avatar-selector-dropdown" id="mpd-avatar-selector-dropdown">
+                        <div class="mpd-avatar-selector-title">Choose Your Assistant</div>
+                        ${AVATAR_GALLERY.map(av => `
+                          <div class="mpd-avatar-option" data-avatar-id="${av.id}">
+                            <span class="mpd-avatar-thumb">${av.thumbnail}</span>
+                            <div class="mpd-avatar-info">
+                              <div class="mpd-avatar-name">${av.name}</div>
+                              <div class="mpd-avatar-desc">${av.description}</div>
+                            </div>
+                          </div>
+                        `).join('')}
+                      </div>
+                    </div>
+                  `;
+                  const selectorContainer = document.getElementById('mpd-avatar-selector-container');
+                  if (selectorContainer) selectorContainer.innerHTML = selectorHTML;
+
+                  // Avatar selector toggle
+                  const toggle = document.getElementById('mpd-avatar-selector-toggle');
+                  const dropdown = document.getElementById('mpd-avatar-selector-dropdown');
+                  if (toggle && dropdown) {
+                    toggle.addEventListener('click', (e) => {
+                      e.stopPropagation();
+                      dropdown.classList.toggle('show');
+                    });
+                    document.addEventListener('click', () => dropdown.classList.remove('show'));
+                  }
+
+                  // Avatar selection logic
+                  document.querySelectorAll('.mpd-avatar-option').forEach(option => {
+                    option.addEventListener('click', (e) => {
+                      e.stopPropagation();
+                      const avatarId = option.dataset.avatarId;
+                      localStorage.setItem('selectedAvatar', avatarId);
+                      this.load3DAvatar(avatarId, AVATAR_GALLERY);
+                      dropdown.classList.remove('show');
+                    });
+                  });
+
+                  // Load initial avatar
+                  const savedAvatar = localStorage.getItem('selectedAvatar') || 'businesswoman';
+                  this.load3DAvatar(savedAvatar, AVATAR_GALLERY);
+                },
+
+                // Loads and renders the 3D avatar using three.js
+                load3DAvatar: function(avatarId, AVATAR_GALLERY) {
+                  const avatarData = AVATAR_GALLERY.find(a => a.id === avatarId) || AVATAR_GALLERY[0];
+                  const container = document.getElementById('mpd-avatar-3d-container');
+                  const canvas = document.getElementById('mpd-avatar-canvas');
+                  const status = document.getElementById('mpd-avatar-3d-status');
+                  if (!container || !canvas) return;
+                  container.style.display = 'block';
+                  status.textContent = `Loading ${avatarData.name}...`;
+
+                  // Genie-style pop-out effect
+                  container.classList.add('mpd-genie-pop');
+                  setTimeout(() => container.classList.remove('mpd-genie-pop'), 800);
+
+                  // Remove previous renderer if any
+                  if (window.mpdAvatarRenderer && window.mpdAvatarRenderer.dispose) {
+                    window.mpdAvatarRenderer.dispose();
+                  }
+                  canvas.width = container.clientWidth || 320;
+                  canvas.height = container.clientHeight || 320;
+
+                  // Setup three.js scene
+                  const THREE = window.THREE;
+                  const scene = new THREE.Scene();
+                  scene.background = new THREE.Color(0x1a1a2e);
+                  const camera = new THREE.PerspectiveCamera(45, canvas.width / canvas.height, 0.1, 100);
+                  camera.position.set(0, 1.5, 2);
+                  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+                  renderer.setSize(canvas.width, canvas.height);
+                  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                  // Lighting
+                  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+                  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                  dirLight.position.set(5, 10, 7.5);
+                  scene.add(dirLight);
+                  // Controls
+                  const controls = new window.THREE.OrbitControls(camera, canvas);
+                  controls.target.set(0, 1.2, 0);
+                  controls.enableDamping = true;
+                  controls.dampingFactor = 0.05;
+                  controls.minDistance = 1;
+                  controls.maxDistance = 5;
+                  controls.update();
+                  // Load avatar model
+                  const loader = new window.THREE.GLTFLoader();
+                  loader.load(
+                    avatarData.url,
+                    (gltf) => {
+                      const avatar3D = gltf.scene;
+                      avatar3D.position.set(0, 0, 0);
+                      avatar3D.scale.set(1, 1, 1);
+                      scene.add(avatar3D);
+                      status.textContent = `${avatarData.name} loaded`;
+                      animate();
+                      function animate() {
+                        requestAnimationFrame(animate);
+                        controls.update();
+                        renderer.render(scene, camera);
+                      }
+                    },
+                    undefined,
+                    (error) => {
+                      status.textContent = 'Failed to load avatar.';
+                    }
+                  );
+                  window.mpdAvatarRenderer = renderer;
+                },
+
+                // ...existing code...
 
       chatButton.addEventListener('click', () => this.toggleChat());
       chatClose.addEventListener('click', () => this.toggleChat());
@@ -640,10 +1042,180 @@
       });
     },
 
+
     escapeHtml: function(text) {
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    },
+
+    // Loads three.js and its loaders from CDN if not already present
+    loadThreeJSDeps: async function() {
+      if (!window.THREE) {
+        await import(THREE_CDN);
+      }
+      if (!window.THREE.GLTFLoader) {
+        await import(GLTFLoader_CDN);
+      }
+      if (!window.THREE.OrbitControls) {
+        await import(OrbitControls_CDN);
+      }
+    },
+
+    // Avatar gallery and 3D avatar logic
+    setupAvatarGallery: function() {
+      // Avatar gallery data (sync with full-page.js)
+      const AVATAR_GALLERY = [
+        {
+          id: 'businesswoman',
+          name: 'Business Woman',
+          description: 'Professional, realistic business woman avatar',
+          url: 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+          thumbnail: '👩‍💼',
+          gender: 'female'
+        },
+        {
+          id: 'businessman',
+          name: 'Business Man',
+          description: 'Professional, realistic business man avatar',
+          url: 'https://models.readyplayer.me/6479c5f82e7c2c3d3c2b8f19.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+          thumbnail: '👨‍💼',
+          gender: 'male'
+        },
+        {
+          id: 'supportwoman',
+          name: 'Support Agent (F)',
+          description: 'Friendly female support agent',
+          url: 'https://models.readyplayer.me/6479c67a2e7c2c3d3c2b8f1a.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+          thumbnail: '👩‍🦰',
+          gender: 'female'
+        },
+        {
+          id: 'supportman',
+          name: 'Support Agent (M)',
+          description: 'Friendly male support agent',
+          url: 'https://models.readyplayer.me/6479c6c52e7c2c3d3c2b8f1b.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+          thumbnail: '🧑‍💻',
+          gender: 'male'
+        }
+      ];
+
+      // Insert avatar selector UI
+      const selectorHTML = `
+        <div class="mpd-avatar-selector" id="mpd-avatar-selector">
+          <button class="mpd-avatar-selector-toggle" id="mpd-avatar-selector-toggle" title="Change Avatar">
+            👤 Change Avatar
+          </button>
+          <div class="mpd-avatar-selector-dropdown" id="mpd-avatar-selector-dropdown">
+            <div class="mpd-avatar-selector-title">Choose Your Assistant</div>
+            ${AVATAR_GALLERY.map(av => `
+              <div class="mpd-avatar-option" data-avatar-id="${av.id}">
+                <span class="mpd-avatar-thumb">${av.thumbnail}</span>
+                <div class="mpd-avatar-info">
+                  <div class="mpd-avatar-name">${av.name}</div>
+                  <div class="mpd-avatar-desc">${av.description}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+      const selectorContainer = document.getElementById('mpd-avatar-selector-container');
+      if (selectorContainer) selectorContainer.innerHTML = selectorHTML;
+
+      // Avatar selector toggle
+      const toggle = document.getElementById('mpd-avatar-selector-toggle');
+      const dropdown = document.getElementById('mpd-avatar-selector-dropdown');
+      if (toggle && dropdown) {
+        toggle.addEventListener('click', (e) => {
+          e.stopPropagation();
+          dropdown.classList.toggle('show');
+        });
+        document.addEventListener('click', () => dropdown.classList.remove('show'));
+      }
+
+      // Avatar selection logic
+      document.querySelectorAll('.mpd-avatar-option').forEach(option => {
+        option.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const avatarId = option.dataset.avatarId;
+          localStorage.setItem('selectedAvatar', avatarId);
+          this.load3DAvatar(avatarId, AVATAR_GALLERY);
+          dropdown.classList.remove('show');
+        });
+      });
+
+      // Load initial avatar
+      const savedAvatar = localStorage.getItem('selectedAvatar') || 'businesswoman';
+      this.load3DAvatar(savedAvatar, AVATAR_GALLERY);
+    },
+
+    // Loads and renders the 3D avatar using three.js
+    load3DAvatar: function(avatarId, AVATAR_GALLERY) {
+      const avatarData = AVATAR_GALLERY.find(a => a.id === avatarId) || AVATAR_GALLERY[0];
+      const container = document.getElementById('mpd-avatar-3d-container');
+      const canvas = document.getElementById('mpd-avatar-canvas');
+      const status = document.getElementById('mpd-avatar-3d-status');
+      if (!container || !canvas) return;
+      container.style.display = 'block';
+      status.textContent = `Loading ${avatarData.name}...`;
+
+      // Genie-style pop-out effect
+      container.classList.add('mpd-genie-pop');
+      setTimeout(() => container.classList.remove('mpd-genie-pop'), 800);
+
+      // Remove previous renderer if any
+      if (window.mpdAvatarRenderer && window.mpdAvatarRenderer.dispose) {
+        window.mpdAvatarRenderer.dispose();
+      }
+      canvas.width = container.clientWidth || 320;
+      canvas.height = container.clientHeight || 320;
+
+      // Setup three.js scene
+      const THREE = window.THREE;
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1a1a2e);
+      const camera = new THREE.PerspectiveCamera(45, canvas.width / canvas.height, 0.1, 100);
+      camera.position.set(0, 1.5, 2);
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setSize(canvas.width, canvas.height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      // Lighting
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      dirLight.position.set(5, 10, 7.5);
+      scene.add(dirLight);
+      // Controls
+      const controls = new window.THREE.OrbitControls(camera, canvas);
+      controls.target.set(0, 1.2, 0);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.minDistance = 1;
+      controls.maxDistance = 5;
+      controls.update();
+      // Load avatar model
+      const loader = new window.THREE.GLTFLoader();
+      loader.load(
+        avatarData.url,
+        (gltf) => {
+          const avatar3D = gltf.scene;
+          avatar3D.position.set(0, 0, 0);
+          avatar3D.scale.set(1, 1, 1);
+          scene.add(avatar3D);
+          status.textContent = `${avatarData.name} loaded`;
+          animate();
+          function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+          }
+        },
+        undefined,
+        (error) => {
+          status.textContent = 'Failed to load avatar.';
+        }
+      );
+      window.mpdAvatarRenderer = renderer;
     }
   };
 

@@ -70,16 +70,39 @@ let currentViseme = 'viseme_sil';
 let targetViseme = 'viseme_sil';
 let visemeBlendFactor = 0;
 
-// Avatar Gallery - Single high-quality professional avatar (business woman)
+// Avatar Gallery - Diverse, high-quality business avatars
 const AVATAR_GALLERY = [
     {
         id: 'businesswoman',
         name: 'Business Woman',
         description: 'Professional, realistic business woman avatar',
-        // ReadyPlayer.me demo avatar with business attire and viseme support
         url: 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
         thumbnail: '👩‍💼',
         gender: 'female'
+    },
+    {
+        id: 'businessman',
+        name: 'Business Man',
+        description: 'Professional, realistic business man avatar',
+        url: 'https://models.readyplayer.me/6479c5f82e7c2c3d3c2b8f19.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+        thumbnail: '👨‍💼',
+        gender: 'male'
+    },
+    {
+        id: 'supportwoman',
+        name: 'Support Agent (F)',
+        description: 'Friendly female support agent',
+        url: 'https://models.readyplayer.me/6479c67a2e7c2c3d3c2b8f1a.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+        thumbnail: '👩‍🦰',
+        gender: 'female'
+    },
+    {
+        id: 'supportman',
+        name: 'Support Agent (M)',
+        description: 'Friendly male support agent',
+        url: 'https://models.readyplayer.me/6479c6c52e7c2c3d3c2b8f1b.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+        thumbnail: '🧑‍💻',
+        gender: 'male'
     }
 ];
 
