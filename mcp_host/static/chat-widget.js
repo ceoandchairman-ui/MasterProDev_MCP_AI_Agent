@@ -537,10 +537,6 @@ const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/j
                   container.style.display = 'block';
                   status.textContent = `Loading ${avatarData.name}...`;
 
-                  // Genie-style pop-out effect
-                  container.classList.add('mpd-genie-pop');
-                  setTimeout(() => container.classList.remove('mpd-genie-pop'), 800);
-
                   // Remove previous renderer if any
                   if (window.mpdAvatarRenderer && window.mpdAvatarRenderer.dispose) {
                     window.mpdAvatarRenderer.dispose();
@@ -580,6 +576,9 @@ const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/j
                       avatar3D.scale.set(1, 1, 1);
                       scene.add(avatar3D);
                       status.textContent = `${avatarData.name} loaded`;
+                      // Genie-style pop-out effect (only on successful load)
+                      container.classList.add('mpd-genie-pop');
+                      setTimeout(() => container.classList.remove('mpd-genie-pop'), 800);
                       animate();
                       function animate() {
                         requestAnimationFrame(animate);
@@ -590,6 +589,7 @@ const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/j
                     undefined,
                     (error) => {
                       status.textContent = 'Failed to load avatar.';
+                      // Do not show fallback geometry, just show error
                     }
                   );
                   window.mpdAvatarRenderer = renderer;

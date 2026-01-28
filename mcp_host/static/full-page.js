@@ -278,7 +278,6 @@ function loadAvatar(avatarId = null) {
     }
     
     avatar3DStatus.textContent = `Loading ${avatarData.name}...`;
-    
     loader.load(
         avatarUrl,
         (gltf) => {
@@ -286,12 +285,10 @@ function loadAvatar(avatarId = null) {
             avatar3D.position.set(0, 0, 0);
             avatar3D.scale.set(1, 1, 1);
             scene.add(avatar3D);
-            
             // Find mesh with morph targets for lip sync
             avatar3D.traverse((child) => {
                 if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
                     mouthMorphTarget = child;
-                    
                     // Map all viseme morph targets
                     for (const visemeName of VISEME_NAMES) {
                         if (child.morphTargetDictionary[visemeName] !== undefined) {
@@ -301,14 +298,12 @@ function loadAvatar(avatarId = null) {
                     console.log('Found viseme morph targets:', Object.keys(visemeInfluences));
                 }
             });
-            
             // Setup animations if available
             if (gltf.animations && gltf.animations.length > 0) {
                 mixer = new THREE.AnimationMixer(avatar3D);
                 const idleAction = mixer.clipAction(gltf.animations[0]);
                 idleAction.play();
             }
-            
             avatar3DStatus.textContent = `${avatarData.name} - Click microphone to speak`;
             console.log(`Avatar ${avatarData.name} loaded successfully`);
         },
@@ -318,67 +313,12 @@ function loadAvatar(avatarId = null) {
         },
         (error) => {
             console.error('Error loading avatar:', error);
-            avatar3DStatus.textContent = 'Using fallback avatar';
-            createFallbackAvatar();
+            avatar3DStatus.textContent = 'Failed to load avatar. Please check your network or choose another avatar.';
         }
     );
 }
 
-function createFallbackAvatar() {
-    // Create a simple geometric avatar as fallback
-    const group = new THREE.Group();
-    
-    // Head
-    const headGeometry = new THREE.SphereGeometry(0.3, 32, 32);
-    const headMaterial = new THREE.MeshStandardMaterial({ color: 0x00C896 });
-    const head = new THREE.Mesh(headGeometry, headMaterial);
-    head.position.y = 1.5;
-    group.add(head);
-    
-    // Eyes
-    const eyeGeometry = new THREE.SphereGeometry(0.05, 16, 16);
-    const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
-    
-    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-    leftEye.position.set(-0.1, 1.55, 0.25);
-    group.add(leftEye);
-    
-    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-    rightEye.position.set(0.1, 1.55, 0.25);
-    group.add(rightEye);
-    
-    // Pupils
-    const pupilGeometry = new THREE.SphereGeometry(0.02, 16, 16);
-    const pupilMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
-    
-    const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-    leftPupil.position.set(-0.1, 1.55, 0.29);
-    group.add(leftPupil);
-    
-    const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-    rightPupil.position.set(0.1, 1.55, 0.29);
-    group.add(rightPupil);
-    
-    // Mouth (will be animated)
-    const mouthGeometry = new THREE.BoxGeometry(0.15, 0.03, 0.05);
-    const mouthMaterial = new THREE.MeshStandardMaterial({ color: 0x6B5CE7 });
-    const mouth = new THREE.Mesh(mouthGeometry, mouthMaterial);
-    mouth.position.set(0, 1.4, 0.27);
-    mouth.name = 'mouth';
-    group.add(mouth);
-    
-    // Body
-    const bodyGeometry = new THREE.CylinderGeometry(0.25, 0.3, 0.8, 32);
-    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x6B5CE7 });
-    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    body.position.y = 0.9;
-    group.add(body);
-    
-    avatar3D = group;
-    scene.add(avatar3D);
-    
-    avatar3DStatus.textContent = 'Click microphone to speak';
-}
+
 
 // Avatar Selection
 function createAvatarSelector() {
