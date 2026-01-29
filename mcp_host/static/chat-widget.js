@@ -753,7 +753,8 @@ const CHAR_TO_VISEME = {
                           for (const visemeName of VISEME_NAMES) {
                             if (child.morphTargetDictionary[visemeName] !== undefined) {
                               self.state.visemeInfluences[visemeName] = child.morphTargetDictionary[visemeName];
-                            }\n                          }
+                            }
+                          }
                           console.log('Found viseme morph targets:', Object.keys(self.state.visemeInfluences));
                         }
                       });
