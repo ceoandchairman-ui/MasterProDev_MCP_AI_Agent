@@ -260,9 +260,10 @@ const CHAR_TO_VISEME = {
           e.stopPropagation();
           const avatarId = option.dataset.avatarId;
           localStorage.setItem('selectedAvatar', avatarId);
-          this.load3DAvatar(avatarId); // Remove AVATAR_GALLERY parameter - use global
+          this.load3DAvatar(avatarId);
           dropdown.classList.remove('show');
-        })ole.log('Loading avatar:', avatarId);
+        });
+        console.log('Loading avatar:', avatarId);
       
       const avatarData = AVATAR_GALLERY.find(a => a.id === avatarId) || AVATAR_GALLERY[0];
       console.log('Avatar data:', avatarData);
@@ -288,8 +289,9 @@ const CHAR_TO_VISEME = {
         console.error('Three.js dependencies not loaded!');
         status.textContent = 'Error: 3D system not ready';
         return;
-      } Remove AVATAR_GALLERY parameter - use global
+      }
     },
+    
     // Fixed load3DAvatar function that uses global AVATAR_GALLERY
     load3DAvatar: function(avatarId) {
       const avatarData = AVATAR_GALLERY.find(a => a.id === avatarId) || AVATAR_GALLERY[0];
