@@ -9,10 +9,48 @@ const THREE_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module
 const GLTFLoader_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
 const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 
+// Viseme mapping for ReadyPlayer.me avatars (Oculus visemes)
+const VISEME_NAMES = [
+    'viseme_sil',   // 0: Silence
+    'viseme_PP',    // 1: P, B, M
+    'viseme_FF',    // 2: F, V  
+    'viseme_TH',    // 3: TH
+    'viseme_DD',    // 4: T, D
+    'viseme_kk',    // 5: K, G
+    'viseme_CH',    // 6: CH, J, SH
+    'viseme_SS',    // 7: S, Z
+    'viseme_nn',    // 8: N, L
+    'viseme_RR',    // 9: R
+    'viseme_aa',    // 10: A
+    'viseme_E',     // 11: E
+    'viseme_I',     // 12: I
+    'viseme_O',     // 13: O
+    'viseme_U'      // 14: U
+];
+
+// Text-to-phoneme mapping (approximate)
+const CHAR_TO_VISEME = {
+    'a': 'viseme_aa', 'à': 'viseme_aa', 'á': 'viseme_aa',
+    'e': 'viseme_E', 'è': 'viseme_E', 'é': 'viseme_E',
+    'i': 'viseme_I', 'ì': 'viseme_I', 'í': 'viseme_I', 'y': 'viseme_I',
+    'o': 'viseme_O', 'ò': 'viseme_O', 'ó': 'viseme_O',
+    'u': 'viseme_U', 'ù': 'viseme_U', 'ú': 'viseme_U', 'w': 'viseme_U',
+    'p': 'viseme_PP', 'b': 'viseme_PP', 'm': 'viseme_PP',
+    'f': 'viseme_FF', 'v': 'viseme_FF',
+    't': 'viseme_DD', 'd': 'viseme_DD',
+    'k': 'viseme_kk', 'g': 'viseme_kk', 'c': 'viseme_kk', 'q': 'viseme_kk',
+    's': 'viseme_SS', 'z': 'viseme_SS', 'x': 'viseme_SS',
+    'n': 'viseme_nn', 'l': 'viseme_nn',
+    'r': 'viseme_RR',
+    'j': 'viseme_CH', 'h': 'viseme_CH',
+    ' ': 'viseme_sil', '.': 'viseme_sil', ',': 'viseme_sil', '!': 'viseme_sil', '?': 'viseme_sil'
+};
+
 (function() {
   'use strict';
         this.loadThreeJSDeps();
         this.setupAvatarGallery();
+        this.initLipSync();
       apiUrl: 'http://localhost:8000',
       position: 'bottom-right',
       primaryColor: '#00C896',
@@ -37,7 +75,22 @@ const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/j
         await import(OrbitControls_CDN);
       }
     },
-      audioChunks: []
+      audioChunks: [],
+      lipSyncInterval: null,
+      currentViseme: 'viseme_sil',
+      targetViseme: 'viseme_sil',
+      visemeBlendFactor: 0,
+      mouthMorphTarget: null,
+      visemeInfluences: {},
+      avatar3D: null,
+      mixer: null,
+      clock: null
+    },
+    initLipSync: function() {
+      this.state.lipSyncInterval = null;
+      this.state.currentViseme = 'viseme_sil';
+      this.state.targetViseme = 'viseme_sil';
+      this.state.visemeBlendFactor = 0;
     },
     setupAvatarGallery: function() {
       const AVATAR_GALLERY = [
@@ -97,6 +150,117 @@ const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/j
       window.mpdAvatarRenderer = renderer;
     },
 
+    textToVisemes: function(text) {
+      const visemes = [];
+      const words = text.toLowerCase().split(/\s+/);
+      
+      for (const word of words) {
+        for (let i = 0; i < word.length; i++) {
+          const char = word[i];
+          
+          // Check for digraphs (th, ch, sh)
+          if (i < word.length - 1) {
+            const digraph = char + word[i + 1];
+            if (digraph === 'th') {
+              visemes.push('viseme_TH');
+              i++;
+              continue;
+            } else if (digraph === 'ch' || digraph === 'sh') {
+              visemes.push('viseme_CH');
+              i++;
+              continue;
+            }
+          }
+          
+          // Single character mapping
+          const viseme = CHAR_TO_VISEME[char] || 'viseme_sil';
+          visemes.push(viseme);
+        }
+        // Add silence between words
+        visemes.push('viseme_sil');
+      }
+      
+      return visemes;
+    },
+    startTextLipSync: function(text, durationMs) {
+      this.stopLipSync();
+      
+      const visemes = this.textToVisemes(text);
+      if (visemes.length === 0) return;
+      
+      // Calculate timing - spread visemes over speech duration
+      const msPerViseme = durationMs / visemes.length;
+      let visemeIndex = 0;
+      
+      this.state.lipSyncInterval = setInterval(() => {
+        if (visemeIndex >= visemes.length) {
+          this.stopLipSync();
+          return;
+        }
+        
+        this.state.targetViseme = visemes[visemeIndex];
+        this.state.visemeBlendFactor = 0;
+        visemeIndex++;
+      }, msPerViseme);
+    },
+    stopLipSync: function() {
+      if (this.state.lipSyncInterval) {
+        clearInterval(this.state.lipSyncInterval);
+        this.state.lipSyncInterval = null;
+      }
+      this.state.targetViseme = 'viseme_sil';
+      this.state.visemeBlendFactor = 0;
+      
+      // Reset all visemes
+      if (this.state.mouthMorphTarget && Object.keys(this.state.visemeInfluences).length > 0) {
+        for (const visemeName of VISEME_NAMES) {
+          if (this.state.visemeInfluences[visemeName] !== undefined) {
+            const index = this.state.visemeInfluences[visemeName];
+            this.state.mouthMorphTarget.morphTargetInfluences[index] = 0;
+          }
+        }
+      }
+    },
+    speakText: function(text) {
+      // Cancel any ongoing speech
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      this.stopLipSync();
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.rate = 1.0;
+      
+      // Estimate speech duration (~150 words per minute for TTS)
+      const wordCount = text.split(/\s+/).length;
+      const estimatedDurationMs = (wordCount / 150) * 60 * 1000;
+      const minDuration = 1000;
+      const durationMs = Math.max(estimatedDurationMs, minDuration);
+      
+      // Start text-to-viseme lip sync
+      const status = document.getElementById('mpd-avatar-3d-status');
+      if (status) {
+        status.textContent = 'Speaking...';
+      }
+      this.startTextLipSync(text, durationMs);
+      
+      const self = this;
+      utterance.onend = () => {
+        self.stopLipSync();
+        if (status) {
+          status.textContent = 'Ready';
+        }
+      };
+      utterance.onerror = () => {
+        self.stopLipSync();
+        if (status) {
+          status.textContent = 'Ready';
+        }
+      };
+      
+      window.speechSynthesis.speak(utterance);
+    },
     createWidget: function() {
       try {
         const widgetHTML = `
@@ -567,6 +731,7 @@ const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/j
                   controls.maxDistance = 5;
                   controls.update();
                   // Load avatar model
+                  const self = this;
                   const loader = new window.THREE.GLTFLoader();
                   loader.load(
                     avatarData.url,
@@ -575,13 +740,70 @@ const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/j
                       avatar3D.position.set(0, 0, 0);
                       avatar3D.scale.set(1, 1, 1);
                       scene.add(avatar3D);
-                      status.textContent = `${avatarData.name} loaded`;
+                      
+                      // Store avatar for lip sync
+                      self.state.avatar3D = avatar3D;
+                      
+                      // Find mesh with morph targets for lip sync
+                      avatar3D.traverse((child) => {
+                        if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
+                          self.state.mouthMorphTarget = child;
+                          
+                          // Map all viseme morph targets
+                          for (const visemeName of VISEME_NAMES) {
+                            if (child.morphTargetDictionary[visemeName] !== undefined) {
+                              self.state.visemeInfluences[visemeName] = child.morphTargetDictionary[visemeName];
+                            }\n                          }
+                          console.log('Found viseme morph targets:', Object.keys(self.state.visemeInfluences));
+                        }
+                      });
+                      
+                      // Setup animations if available
+                      if (gltf.animations && gltf.animations.length > 0) {
+                        self.state.mixer = new THREE.AnimationMixer(avatar3D);
+                        const idleAction = self.state.mixer.clipAction(gltf.animations[0]);
+                        idleAction.play();
+                        self.state.clock = new THREE.Clock();
+                      }
+                      
+                      status.textContent = `${avatarData.name} - Ready`;
                       // Genie-style pop-out effect (only on successful load)
                       container.classList.add('mpd-genie-pop');
                       setTimeout(() => container.classList.remove('mpd-genie-pop'), 800);
-                      animate();
+                      
+                      // Animation loop with lip sync
                       function animate() {
                         requestAnimationFrame(animate);
+                        
+                        // Update mixer for animations
+                        if (self.state.mixer && self.state.clock) {
+                          const delta = self.state.clock.getDelta();
+                          self.state.mixer.update(delta);
+                        }
+                        
+                        // Update viseme blending
+                        self.state.visemeBlendFactor = Math.min(1, self.state.visemeBlendFactor + 0.15);
+                        
+                        // Apply visemes to morph targets
+                        if (self.state.mouthMorphTarget && Object.keys(self.state.visemeInfluences).length > 0) {
+                          for (const visemeName of VISEME_NAMES) {
+                            if (self.state.visemeInfluences[visemeName] !== undefined) {
+                              const index = self.state.visemeInfluences[visemeName];
+                              const currentValue = self.state.mouthMorphTarget.morphTargetInfluences[index];
+                              
+                              if (visemeName === self.state.targetViseme) {
+                                // Blend towards target viseme
+                                const targetValue = 0.7;
+                                self.state.mouthMorphTarget.morphTargetInfluences[index] = 
+                                  currentValue + (targetValue - currentValue) * self.state.visemeBlendFactor;
+                              } else {
+                                // Decay other visemes
+                                self.state.mouthMorphTarget.morphTargetInfluences[index] = currentValue * 0.85;
+                              }
+                            }
+                          }
+                        }
+                        
                         controls.update();
                         renderer.render(scene, camera);
                       }
@@ -910,6 +1132,11 @@ const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/j
         // Add bot response
         this.showTyping(false);
         this.addMessage(data.response, 'bot');
+        
+        // Auto-speak response with lip sync if avatar is present
+        if (this.state.avatar3D) {
+          this.speakText(data.response);
+        }
         
         // Clear file selection
         this.removeFile();
