@@ -808,6 +808,7 @@ const CHAR_TO_VISEME = {
                         controls.update();
                         renderer.render(scene, camera);
                       }
+                      animate();
                     },
                     undefined,
                     (error) => {
