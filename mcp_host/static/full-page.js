@@ -106,7 +106,7 @@ const AVATAR_GALLERY = [
     }
 ];
 
-let currentAvatarId = localStorage.getItem('selectedAvatar') || 'sophia';
+let currentAvatarId = localStorage.getItem('selectedAvatar') || 'businesswoman';
 
 // Elements (initialized in init())
 let chatMessages, chatInput, sendBtn, attachBtn, voiceBtn;
@@ -847,6 +847,11 @@ async function sendMessage() {
         const data = await response.json();
         conversationId = data.conversation_id;
         addMessage(data.response, 'bot');
+        
+        // Auto-speak bot response in avatar mode
+        if (currentMode === 'avatar' && data.response) {
+            speakText(data.response);
+        }
 
         // Auto-speak response in voice/avatar modes
         if ((currentMode === 'voice' || currentMode === 'avatar') && data.response && 'speechSynthesis' in window) {

@@ -3,10 +3,10 @@
  * Embeddable AI Agent Chat Interface
  */
 
-// === 3D Avatar/Avatar Gallery Imports (via CDN) ===
-const THREE_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-const GLTFLoader_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
-const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+// === 3D Avatar/Avatar Gallery CDN URLs ===
+const THREE_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js';
+const GLTFLoader_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js';
+const OrbitControls_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js';
 
 // Viseme mapping for ReadyPlayer.me avatars (Oculus visemes)
 const VISEME_NAMES = [
@@ -141,7 +141,11 @@ const CHAR_TO_VISEME = {
         
         // Dynamically load three.js dependencies and setup avatar
         this.loadThreeJSDeps().then(() => {
+          console.log('Three.js loaded successfully, setting up avatar gallery...');
           this.setupAvatarGallery();
+        }).catch((error) => {
+          console.error('Failed to load Three.js dependencies:', error);
+          alert('3D Avatar system failed to load. Please refresh the page.');
         });
         
         // Attach event listeners
@@ -157,17 +161,45 @@ const CHAR_TO_VISEME = {
       }
     },
 
-    // Loads three.js and its loaders from CDN if not already present
+    // Loads three.js and its loaders from CDN using script tags
     loadThreeJSDeps: async function() {
-      if (!window.THREE) {
-        await import(THREE_CDN);
-      }
-      if (!window.THREE.GLTFLoader) {
-        await import(GLTFLoader_CDN);
-      }
-      if (!window.THREE.OrbitControls) {
-        await import(OrbitControls_CDN);
-      }
+      return new Promise((resolve, reject) => {
+        console.log('Loading Three.js dependencies...');
+        
+        // Load Three.js first
+        if (!window.THREE) {
+          const script1 = document.createElement('script');
+          script1.src = THREE_CDN;
+          script1.onload = () => {
+            console.log('THREE.js loaded');
+            
+            // Load GLTFLoader
+            const script2 = document.createElement('script');
+            script2.src = GLTFLoader_CDN;
+            script2.onload = () => {
+              console.log('GLTFLoader loaded');
+              
+              // Load OrbitControls
+              const script3 = document.createElement('script');
+              script3.src = OrbitControls_CDN;
+              script3.onload = () => {
+                console.log('OrbitControls loaded');
+                console.log('All Three.js dependencies loaded successfully');
+                resolve();
+              };
+              script3.onerror = () => reject(new Error('Failed to load OrbitControls'));
+              document.head.appendChild(script3);
+            };
+            script2.onerror = () => reject(new Error('Failed to load GLTFLoader'));
+            document.head.appendChild(script2);
+          };
+          script1.onerror = () => reject(new Error('Failed to load THREE.js'));
+          document.head.appendChild(script1);
+        } else {
+          console.log('Three.js already loaded');
+          resolve();
+        }
+      });
     },
 
     initLipSync: function() {
@@ -178,6 +210,9 @@ const CHAR_TO_VISEME = {
     },
     // SINGLE setupAvatarGallery function that uses global AVATAR_GALLERY
     setupAvatarGallery: function() {
+      console.log('Setting up avatar gallery...');
+      console.log('Available avatars:', AVATAR_GALLERY.length);
+      
       // Insert avatar selector UI
       const selectorHTML = `
         <div class="mpd-avatar-selector" id="mpd-avatar-selector">
@@ -200,7 +235,13 @@ const CHAR_TO_VISEME = {
       `;
       
       const selectorContainer = document.getElementById('mpd-avatar-selector-container');
-      if (selectorContainer) selectorContainer.innerHTML = selectorHTML;
+      if (selectorContainer) {
+        selectorContainer.innerHTML = selectorHTML;
+        console.log('Avatar selector UI injected');
+      } else {
+        console.error('Avatar selector container not found!');
+        return;
+      }
 
       // Avatar selector toggle
       const toggle = document.getElementById('mpd-avatar-selector-toggle');
@@ -221,12 +262,33 @@ const CHAR_TO_VISEME = {
           localStorage.setItem('selectedAvatar', avatarId);
           this.load3DAvatar(avatarId); // Remove AVATAR_GALLERY parameter - use global
           dropdown.classList.remove('show');
-        });
+        })ole.log('Loading avatar:', avatarId);
+      
+      const avatarData = AVATAR_GALLERY.find(a => a.id === avatarId) || AVATAR_GALLERY[0];
+      console.log('Avatar data:', avatarData);
+      
+      const container = document.getElementById('mpd-avatar-3d-container');
+      const canvas = document.getElementById('mpd-avatar-canvas');
+      const status = document.getElementById('mpd-avatar-3d-status');
+      
+      console.log('DOM elements:', { container: !!container, canvas: !!canvas, status: !!status });
+      
+      if (!container || !canvas) {
+        console.error('Required DOM elements not found!');
+        return;
+      }
+      
+      console.log('Three.js availability:', { 
+        THREE: !!window.THREE, 
+        GLTFLoader: !!window.THREE?.GLTFLoader, 
+        OrbitControls: !!window.THREE?.OrbitControls 
       });
-
-      // Load initial avatar
-      const savedAvatar = localStorage.getItem('selectedAvatar') || 'businesswoman';
-      this.load3DAvatar(savedAvatar); // Remove AVATAR_GALLERY parameter - use global
+      
+      if (!window.THREE || !window.THREE.GLTFLoader || !window.THREE.OrbitControls) {
+        console.error('Three.js dependencies not loaded!');
+        status.textContent = 'Error: 3D system not ready';
+        return;
+      } Remove AVATAR_GALLERY parameter - use global
     },
     // Fixed load3DAvatar function that uses global AVATAR_GALLERY
     load3DAvatar: function(avatarId) {
@@ -269,7 +331,7 @@ const CHAR_TO_VISEME = {
       scene.add(dirLight);
       
       // Controls
-      const controls = new window.THREE.OrbitControls(camera, canvas);
+      const controls = new THREE.OrbitControls(camera, canvas);
       controls.target.set(0, 1.2, 0);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
@@ -279,7 +341,7 @@ const CHAR_TO_VISEME = {
       
       // Load avatar model
       const self = this;
-      const loader = new window.THREE.GLTFLoader();
+      const loader = new THREE.GLTFLoader();
       loader.load(
         avatarData.url,
         (gltf) => {
@@ -308,10 +370,10 @@ const CHAR_TO_VISEME = {
           
           // Setup animations if available
           if (gltf.animations && gltf.animations.length > 0) {
-            self.state.mixer = new window.THREE.AnimationMixer(avatar3D);
+            self.state.mixer = new THREE.AnimationMixer(avatar3D);
             const idleAction = self.state.mixer.clipAction(gltf.animations[0]);
             idleAction.play();
-            self.state.clock = new window.THREE.Clock();
+            self.state.clock = new THREE.Clock();
           }
           
           status.textContent = `${avatarData.name} - Ready`;
