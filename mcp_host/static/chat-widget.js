@@ -41,7 +41,7 @@ const AVATAR_GALLERY = [
     id: 'businessman',
     name: 'Business Man',
     description: 'Professional, realistic business man avatar',
-    url: 'https://models.readyplayer.me/6479c5f82e7c2c3d3c2b8f19.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+    url: 'https://cdn.sketchfab.com/models/b6f6740f883b4749abac47af0045a9dd/model.glb',
     thumbnail: '👨‍💼',
     gender: 'male'
   },
@@ -49,7 +49,7 @@ const AVATAR_GALLERY = [
     id: 'supportwoman',
     name: 'Support Agent (F)',
     description: 'Friendly female support agent',
-    url: 'https://models.readyplayer.me/6479c67a2e7c2c3d3c2b8f1a.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+    url: 'https://cdn.sketchfab.com/models/ed3154322eee4bdda8241aeb6024c129/model.glb',
     thumbnail: '👩‍🦰',
     gender: 'female'
   },
@@ -57,7 +57,7 @@ const AVATAR_GALLERY = [
     id: 'supportman',
     name: 'Support Agent (M)',
     description: 'Helpful male support agent',
-    url: 'https://models.readyplayer.me/6479c6c82e7c2c3d3c2b8f1b.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
+    url: 'https://cdn.sketchfab.com/models/72164207fe884fd285a03779987d0509/model.glb',
     thumbnail: '👨‍🦱',
     gender: 'male'
   }
@@ -283,6 +283,7 @@ const CHAR_TO_VISEME = {
         THREE: !!window.THREE, 
         GLTFLoader: !!window.THREE?.GLTFLoader, 
         OrbitControls: !!window.THREE?.OrbitControls 
+      }); 
       });
       
       if (!window.THREE || !window.THREE.GLTFLoader || !window.THREE.OrbitControls) {
