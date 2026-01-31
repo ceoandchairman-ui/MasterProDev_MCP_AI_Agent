@@ -43,31 +43,38 @@
             description: 'Professional, realistic business woman avatar',
             url: 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
             thumbnail: '👩‍💼',
-            gender: 'female'
+            gender: 'female',
+            isWorking: true
         },
         {
             id: 'businessman',
-            name: 'Business Man',
-            description: 'Professional, realistic business man avatar',
-            url: 'https://cdn.sketchfab.com/models/b6f6740f883b4749abac47af0045a9dd/model.glb',
+            name: 'Business Man (Fallback)',
+            description: 'Simple fallback avatar - 3D sphere with styling',
+            url: null,
             thumbnail: '👨‍💼',
-            gender: 'male'
+            gender: 'male',
+            isWorking: false,
+            fallbackType: 'sphere'
         },
         {
             id: 'supportwoman',
-            name: 'Support Agent (F)',
-            description: 'Friendly female support agent',
-            url: 'https://cdn.sketchfab.com/models/ed3154322eee4bdda8241aeb6024c129/model.glb',
+            name: 'Support Agent (F) (Fallback)',
+            description: 'Simple fallback avatar - 3D cylinder with styling',
+            url: null,
             thumbnail: '👩‍🦰',
-            gender: 'female'
+            gender: 'female',
+            isWorking: false,
+            fallbackType: 'cylinder'
         },
         {
             id: 'supportman',
-            name: 'Support Agent (M)',
-            description: 'Friendly male support agent',
-            url: 'https://cdn.sketchfab.com/models/72164207fe884fd285a03779987d0509/model.glb',
+            name: 'Support Agent (M) (Fallback)',
+            description: 'Simple fallback avatar - 3D box with styling',
+            url: null,
             thumbnail: '🧑‍💻',
-            gender: 'male'
+            gender: 'male',
+            isWorking: false,
+            fallbackType: 'box'
         }
     ];
 
@@ -105,9 +112,11 @@
                 <button id="mpd-chat-button" class="mpd-chat-btn" title="Chat with AI">
                     <span>💬</span>
                 </button>
-                <div id="mpd-chat-window" class="mpd-chat-window" style="display: none;">
-                    <div class="mpd-chat-header">
-                        <h3>${this.config.brandName}</h3>
+                <div id="mpd-chat-window" class="mpd-chat-window">
+                    <div id="mpd-chat-header" class="mpd-chat-header">
+                        <div class="mpd-chat-header-content">
+                            <h3>${this.config.brandName}</h3>
+                        </div>
                         <button id="mpd-chat-close" class="mpd-close-btn">×</button>
                     </div>
                     <div id="mpd-avatar-3d-container" class="mpd-avatar-container">
@@ -133,13 +142,18 @@
         },
 
         toggleChat: function() {
-            const window = document.getElementById('mpd-chat-window');
+            const chatWindow = document.getElementById('mpd-chat-window');
             state.isOpen = !state.isOpen;
-            window.style.display = state.isOpen ? 'flex' : 'none';
             
-            if (state.isOpen && !window.dataset.initialized) {
+            if (state.isOpen) {
+                chatWindow.classList.add('open');
+            } else {
+                chatWindow.classList.remove('open');
+            }
+            
+            if (state.isOpen && !chatWindow.dataset.initialized) {
                 this.init3DAvatar();
-                window.dataset.initialized = 'true';
+                chatWindow.dataset.initialized = 'true';
             }
         },
 
@@ -186,7 +200,6 @@
             }
 
             const THREE = window.THREE;
-            const loader = new THREE.GLTFLoader();
 
             // Scene setup
             const scene = new THREE.Scene();
@@ -205,28 +218,75 @@
             scene.add(light);
             scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
-            // Load avatar model
-            loader.load(
-                avatarData.url,
-                (gltf) => {
-                    const avatar = gltf.scene;
-                    avatar.position.set(0, 0, 0);
-                    avatar.scale.set(1, 1, 1);
-                    scene.add(avatar);
-                    status.textContent = `Loaded: ${avatarData.name}`;
-                },
-                undefined,
-                (error) => {
-                    status.textContent = `Failed to load avatar: ${error.message}`;
-                    console.error('Avatar load error:', error);
-                }
-            );
-
-            // Animation loop
-            function animate() {
-                requestAnimationFrame(animate);
-                renderer.render(scene, camera);
+            // Load avatar model or create fallback geometry
+            if (avatarData.url && avatarData.isWorking) {
+                // Load actual model
+                const loader = new THREE.GLTFLoader();
+                loader.load(
+                    avatarData.url,
+                    (gltf) => {
+                        const avatar = gltf.scene;
+                        avatar.position.set(0, 0, 0);
+                        avatar.scale.set(1, 1, 1);
+                        scene.add(avatar);
+                        status.textContent = `✓ ${avatarData.name}`;
+                        this.startRenderLoop(renderer, scene, camera);
+                    },
+                    undefined,
+                    (error) => {
+                        status.textContent = `✗ Failed: ${error.message}`;
+                        console.error('Avatar load error:', error);
+                        // Fallback to geometry if model fails
+                        this.createFallbackAvatar(THREE, scene, avatarData);
+                        status.textContent = `⚠ Fallback: ${avatarData.name}`;
+                        this.startRenderLoop(renderer, scene, camera);
+                    }
+                );
+            } else {
+                // Use fallback geometry
+                this.createFallbackAvatar(THREE, scene, avatarData);
+                status.textContent = `📦 ${avatarData.name}`;
+                this.startRenderLoop(renderer, scene, camera);
             }
+        },
+
+        createFallbackAvatar: function(THREE, scene, avatarData) {
+            let geometry;
+            const material = new THREE.MeshPhongMaterial({ 
+                color: 0x0099ff, 
+                emissive: 0x003366,
+                shininess: 100 
+            });
+
+            // Create different geometries based on fallback type
+            switch(avatarData.fallbackType) {
+                case 'sphere':
+                    geometry = new THREE.SphereGeometry(1, 32, 32);
+                    break;
+                case 'cylinder':
+                    geometry = new THREE.CylinderGeometry(0.8, 0.6, 2, 32);
+                    break;
+                case 'box':
+                    geometry = new THREE.BoxGeometry(1, 2, 0.8);
+                    break;
+                default:
+                    geometry = new THREE.SphereGeometry(1, 32, 32);
+            }
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(0, 0, 0);
+            scene.add(mesh);
+        },
+
+        startRenderLoop: function(renderer, scene, camera) {
+            const animate = () => {
+                requestAnimationFrame(animate);
+                // Rotate avatar
+                scene.children.forEach(obj => {
+                    if (obj.rotation) obj.rotation.y += 0.01;
+                });
+                renderer.render(scene, camera);
+            };
             animate();
         },
 
@@ -240,16 +300,18 @@
             input.value = '';
 
             try {
+                const formData = new FormData();
+                formData.append('message', message);
+                if (state.conversationId) {
+                    formData.append('conversation_id', state.conversationId);
+                }
+
                 const response = await fetch(`${this.config.apiUrl}/chat`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: message,
-                        conversation_id: state.conversationId
-                    })
+                    body: formData
                 });
 
-                if (!response.ok) throw new Error('Chat request failed');
+                if (!response.ok) throw new Error(`Chat request failed: ${response.status}`);
 
                 const data = await response.json();
                 state.conversationId = data.conversation_id;

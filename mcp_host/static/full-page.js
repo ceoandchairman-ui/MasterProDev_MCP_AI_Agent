@@ -78,31 +78,38 @@ const AVATAR_GALLERY = [
         description: 'Professional, realistic business woman avatar',
         url: 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024',
         thumbnail: '👩‍💼',
-        gender: 'female'
+        gender: 'female',
+        isWorking: true
     },
     {
         id: 'businessman',
-        name: 'Business Man',
-        description: 'Professional, realistic business man avatar',
-        url: 'https://cdn.sketchfab.com/models/b6f6740f883b4749abac47af0045a9dd/model.glb',
+        name: 'Business Man (Fallback)',
+        description: 'Simple fallback avatar - 3D sphere with styling',
+        url: null,
         thumbnail: '👨‍💼',
-        gender: 'male'
+        gender: 'male',
+        isWorking: false,
+        fallbackType: 'sphere'
     },
     {
         id: 'supportwoman',
-        name: 'Support Agent (F)',
-        description: 'Friendly female support agent',
-        url: 'https://cdn.sketchfab.com/models/ed3154322eee4bdda8241aeb6024c129/model.glb',
+        name: 'Support Agent (F) (Fallback)',
+        description: 'Simple fallback avatar - 3D cylinder with styling',
+        url: null,
         thumbnail: '👩‍🦰',
-        gender: 'female'
+        gender: 'female',
+        isWorking: false,
+        fallbackType: 'cylinder'
     },
     {
         id: 'supportman',
-        name: 'Support Agent (M)',
-        description: 'Friendly male support agent',
-        url: 'https://cdn.sketchfab.com/models/72164207fe884fd285a03779987d0509/model.glb',
+        name: 'Support Agent (M) (Fallback)',
+        description: 'Simple fallback avatar - 3D box with styling',
+        url: null,
         thumbnail: '🧑‍💻',
-        gender: 'male'
+        gender: 'male',
+        isWorking: false,
+        fallbackType: 'box'
     }
 ];
 
