@@ -283,7 +283,6 @@ const CHAR_TO_VISEME = {
         THREE: !!window.THREE, 
         GLTFLoader: !!window.THREE?.GLTFLoader, 
         OrbitControls: !!window.THREE?.OrbitControls 
-      }); 
       });
       
       if (!window.THREE || !window.THREE.GLTFLoader || !window.THREE.OrbitControls) {
