@@ -87,7 +87,8 @@
         conversationId: null,
         authToken: null,
         isAuthenticated: false,
-        currentAvatarId: localStorage.getItem('selectedAvatar') || 'businesswoman'
+        currentAvatarId: localStorage.getItem('selectedAvatar') || 'businesswoman',
+        welcomeShown: false
     };
 
     // MCPChat API
@@ -113,18 +114,56 @@
                     <span>💬</span>
                 </button>
                 <div id="mpd-chat-window" class="mpd-chat-window">
+                    <!-- Header -->
                     <div id="mpd-chat-header" class="mpd-chat-header">
-                        <div class="mpd-chat-header-content">
+                        <div class="mpd-header-left">
                             <h3>${this.config.brandName}</h3>
                         </div>
-                        <button id="mpd-chat-close" class="mpd-close-btn">×</button>
+                        <div class="mpd-header-right">
+                            <div class="mpd-mode-toggle">
+                                <button class="mpd-mode-btn active" data-mode="avatar" title="3D Avatar">🧑</button>
+                                <button class="mpd-mode-btn" data-mode="text" title="Text">💬</button>
+                            </div>
+                            <button id="mpd-chat-close" class="mpd-close-btn">×</button>
+                        </div>
                     </div>
-                    <div id="mpd-avatar-3d-container" class="mpd-avatar-container">
+                    
+                    <!-- Avatar Container -->
+                    <div id="mpd-avatar-3d-container" class="mpd-avatar-container active">
+                        <div class="mpd-avatar-selector-row">
+                            <select id="mpd-avatar-select" class="mpd-avatar-select">
+                                <option value="businesswoman">👩‍💼 Business Woman</option>
+                                <option value="businessman">👨‍💼 Business Man</option>
+                                <option value="supportwoman">👩‍🦰 Support Agent (F)</option>
+                                <option value="supportman">🧑‍💻 Support Agent (M)</option>
+                            </select>
+                        </div>
                         <canvas id="mpd-avatar-canvas"></canvas>
                         <div id="mpd-avatar-3d-status" class="mpd-avatar-status">Loading 3D Avatar...</div>
                     </div>
+                    
+                    <!-- Messages -->
                     <div id="mpd-chat-messages" class="mpd-messages"></div>
+                    
+                    <!-- File Preview -->
+                    <div id="mpd-file-preview" class="mpd-file-preview" style="display:none;">
+                        <span id="mpd-file-name">📎 file.pdf</span>
+                        <button id="mpd-remove-file" class="mpd-remove-file">×</button>
+                    </div>
+                    
+                    <!-- Input Area -->
                     <div class="mpd-input-area">
+                        <input type="file" id="mpd-file-input" accept="audio/*,video/*,image/*,.pdf,.docx,.doc,.txt" style="display: none;">
+                        
+                        <div class="mpd-action-buttons">
+                            <button id="mpd-attach-btn" class="mpd-action-btn" title="Attach file">
+                                📎
+                            </button>
+                            <button id="mpd-voice-btn" class="mpd-action-btn" title="Record voice">
+                                🎙️
+                            </button>
+                        </div>
+                        
                         <input type="text" id="mpd-chat-input" placeholder="Type message..." />
                         <button id="mpd-send-btn" class="mpd-send-btn">Send</button>
                     </div>
@@ -139,6 +178,39 @@
             document.getElementById('mpd-chat-input').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') this.sendMessage();
             });
+            
+            // Mode toggle
+            document.querySelectorAll('.mpd-mode-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => this.setMode(e.target.dataset.mode));
+            });
+            
+            // Avatar selector
+            document.getElementById('mpd-avatar-select').addEventListener('change', (e) => {
+                state.currentAvatarId = e.target.value;
+                localStorage.setItem('selectedAvatar', e.target.value);
+                this.init3DAvatar();
+            });
+            
+            // File attachment
+            document.getElementById('mpd-attach-btn').addEventListener('click', () => {
+                document.getElementById('mpd-file-input').click();
+            });
+            document.getElementById('mpd-file-input').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    state.selectedFile = file;
+                    document.getElementById('mpd-file-name').textContent = `📎 ${file.name}`;
+                    document.getElementById('mpd-file-preview').style.display = 'flex';
+                }
+            });
+            document.getElementById('mpd-remove-file').addEventListener('click', () => {
+                state.selectedFile = null;
+                document.getElementById('mpd-file-preview').style.display = 'none';
+                document.getElementById('mpd-file-input').value = '';
+            });
+            
+            // Voice button
+            document.getElementById('mpd-voice-btn').addEventListener('click', () => this.toggleVoiceRecord());
         },
 
         toggleChat: function() {
@@ -153,8 +225,97 @@
             
             if (state.isOpen && !chatWindow.dataset.initialized) {
                 this.init3DAvatar();
+                this.showWelcomeMessage();
                 chatWindow.dataset.initialized = 'true';
             }
+        },
+
+        setMode: function(mode) {
+            state.currentMode = mode;
+            
+            // Update button states
+            document.querySelectorAll('.mpd-mode-btn').forEach(btn => {
+                if (btn.dataset.mode === mode) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+            
+            // Update container visibility
+            const avatarContainer = document.getElementById('mpd-avatar-3d-container');
+            if (mode === 'avatar') {
+                avatarContainer.style.display = 'flex';
+            } else {
+                avatarContainer.style.display = 'none';
+            }
+        },
+
+        showWelcomeMessage: function() {
+            if (state.welcomeShown) return;
+            
+            const messagesContainer = document.getElementById('mpd-chat-messages');
+            const welcomeDiv = document.createElement('div');
+            welcomeDiv.className = 'mpd-message mpd-message-bot mpd-welcome';
+            welcomeDiv.innerHTML = `
+                <div class="mpd-message-avatar">🤖</div>
+                <div class="mpd-message-content">
+                    <p><strong>Hi! I'm your AI assistant.</strong></p>
+                    <p>I can help you with:</p>
+                    <ul>
+                        <li>📅 Calendar management</li>
+                        <li>📧 Email operations</li>
+                        <li>📄 Document analysis</li>
+                        <li>🎙️ Voice conversations</li>
+                        <li>💡 Knowledge queries</li>
+                    </ul>
+                    <p>How can I help you today?</p>
+                    <div class="mpd-message-time">${this.getTimeString()}</div>
+                </div>
+            `;
+            messagesContainer.appendChild(welcomeDiv);
+            state.welcomeShown = true;
+        },
+
+        toggleVoiceRecord: function() {
+            if (state.isRecording) {
+                state.isRecording = false;
+                document.getElementById('mpd-voice-btn').classList.remove('recording');
+                // TODO: Implement actual voice recording and transcription
+            } else {
+                state.isRecording = true;
+                document.getElementById('mpd-voice-btn').classList.add('recording');
+                // TODO: Start voice recording
+            }
+        },
+
+        getTimeString: function() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            return `${hours}:${minutes}`;
+        },
+
+        showTypingIndicator: function() {
+            const messagesContainer = document.getElementById('mpd-chat-messages');
+            const typingDiv = document.createElement('div');
+            typingDiv.id = 'mpd-typing-indicator';
+            typingDiv.className = 'mpd-typing-indicator';
+            typingDiv.innerHTML = `
+                <div class="mpd-message-avatar">🤖</div>
+                <div class="mpd-typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+            messagesContainer.appendChild(typingDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        },
+
+        removeTypingIndicator: function() {
+            const typing = document.getElementById('mpd-typing-indicator');
+            if (typing) typing.remove();
         },
 
         loadThreeJS: function() {
@@ -298,12 +459,25 @@
 
             this.addMessage(message, 'user');
             input.value = '';
+            
+            // Clear file selection after sending
+            if (state.selectedFile) {
+                document.getElementById('mpd-file-preview').style.display = 'none';
+                state.selectedFile = null;
+                document.getElementById('mpd-file-input').value = '';
+            }
+
+            // Show typing indicator
+            this.showTypingIndicator();
 
             try {
                 const formData = new FormData();
                 formData.append('message', message);
                 if (state.conversationId) {
                     formData.append('conversation_id', state.conversationId);
+                }
+                if (state.selectedFile) {
+                    formData.append('file', state.selectedFile);
                 }
 
                 const response = await fetch(`${this.config.apiUrl}/chat`, {
@@ -315,9 +489,14 @@
 
                 const data = await response.json();
                 state.conversationId = data.conversation_id;
+                
+                // Remove typing indicator before adding response
+                this.removeTypingIndicator();
+                
                 this.addMessage(data.response, 'bot');
             } catch (error) {
                 console.error('Chat error:', error);
+                this.removeTypingIndicator();
                 this.addMessage('Sorry, something went wrong. Please try again.', 'bot');
             }
         },
@@ -326,7 +505,18 @@
             const messagesContainer = document.getElementById('mpd-chat-messages');
             const messageDiv = document.createElement('div');
             messageDiv.className = `mpd-message mpd-message-${sender}`;
-            messageDiv.textContent = text;
+            
+            const senderAvatar = sender === 'bot' ? '🤖' : '👤';
+            const timeString = this.getTimeString();
+            
+            messageDiv.innerHTML = `
+                <div class="mpd-message-avatar">${senderAvatar}</div>
+                <div class="mpd-message-content">
+                    <p>${text}</p>
+                    <div class="mpd-message-time">${timeString}</div>
+                </div>
+            `;
+            
             messagesContainer.appendChild(messageDiv);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }

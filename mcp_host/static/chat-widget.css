@@ -871,3 +871,333 @@
   font-style: italic;
   color: #333;
 }
+
+/* === NEW FEATURES === */
+
+/* Header Improvements */
+.mpd-chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+}
+
+.mpd-header-left h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mpd-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Mode Toggle */
+.mpd-mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: rgba(107, 92, 231, 0.1);
+  padding: 4px;
+  border-radius: 12px;
+}
+
+.mpd-mode-btn {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.2s;
+  color: #666;
+}
+
+.mpd-mode-btn:hover {
+  background: rgba(0, 200, 150, 0.1);
+}
+
+.mpd-mode-btn.active {
+  background: var(--mpd-primary);
+  color: white;
+  font-weight: 600;
+}
+
+/* Avatar Selector */
+.mpd-avatar-selector-row {
+  padding: 12px;
+  background: #f9f9f9;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.mpd-avatar-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  background: white;
+  font-family: inherit;
+}
+
+.mpd-avatar-select:focus {
+  outline: none;
+  border-color: var(--mpd-primary);
+  box-shadow: 0 0 0 3px rgba(0, 200, 150, 0.1);
+}
+
+/* File Preview */
+.mpd-file-preview {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #f0f7ff;
+  border-bottom: 1px solid #e5e5e5;
+  gap: 8px;
+}
+
+.mpd-file-preview.show {
+  display: flex;
+}
+
+#mpd-file-name {
+  font-size: 13px;
+  color: #333;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mpd-remove-file {
+  background: none;
+  border: none;
+  color: #ff6b6b;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.mpd-remove-file:hover {
+  background: rgba(255, 107, 107, 0.1);
+}
+
+/* Input Area with Action Buttons */
+.mpd-input-area {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 12px;
+  background: #fafafa;
+  border-top: 1px solid #e5e5e5;
+  flex-wrap: wrap;
+}
+
+.mpd-action-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.mpd-action-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e0e0e0;
+  background: white;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.mpd-action-btn:hover {
+  background: #f5f5f5;
+  border-color: var(--mpd-primary);
+  color: var(--mpd-primary);
+}
+
+.mpd-action-btn.recording {
+  background: #ff6b6b;
+  border-color: #ff6b6b;
+  color: white;
+  animation: pulse 1s infinite;
+}
+
+#mpd-chat-input {
+  flex: 1;
+  min-width: 150px;
+  padding: 10px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: none;
+  max-height: 100px;
+}
+
+#mpd-chat-input:focus {
+  outline: none;
+  border-color: var(--mpd-primary);
+  box-shadow: 0 0 0 3px rgba(0, 200, 150, 0.1);
+}
+
+.mpd-send-btn {
+  padding: 10px 20px;
+  background: var(--mpd-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.mpd-send-btn:hover {
+  background: #00b37d;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 200, 150, 0.3);
+}
+
+.mpd-send-btn:active {
+  transform: translateY(0);
+}
+
+/* Message Styling */
+.mpd-message {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px;
+  margin: 8px 12px;
+  border-radius: 12px;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mpd-message-user {
+  background: rgba(0, 200, 150, 0.15);
+  margin-left: auto;
+  margin-right: 0;
+  flex-direction: row-reverse;
+}
+
+.mpd-message-bot {
+  background: #f0f0f0;
+  margin-right: auto;
+}
+
+.mpd-message-avatar {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.mpd-message-content {
+  flex: 1;
+}
+
+.mpd-message-content p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #333;
+}
+
+.mpd-message-content ul {
+  margin: 8px 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: #555;
+}
+
+.mpd-message-content li {
+  margin: 4px 0;
+}
+
+.mpd-message-time {
+  font-size: 12px;
+  color: #999;
+  margin-top: 6px;
+}
+
+/* Welcome Message */
+.mpd-welcome {
+  background: linear-gradient(135deg, rgba(0, 200, 150, 0.1) 0%, rgba(107, 92, 231, 0.1) 100%);
+  margin: 16px 12px 8px 12px;
+  border-left: 4px solid var(--mpd-primary);
+}
+
+.mpd-welcome p {
+  font-size: 14px;
+}
+
+.mpd-welcome p strong {
+  color: var(--mpd-secondary);
+}
+
+/* Typing Indicator */
+.mpd-typing-indicator {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px;
+  margin: 8px 12px;
+  background: #f0f0f0;
+  border-radius: 12px;
+  align-items: center;
+}
+
+.mpd-typing-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 20px;
+}
+
+.mpd-typing-dots span {
+  width: 8px;
+  height: 8px;
+  background: #999;
+  border-radius: 50%;
+  animation: typing 1.4s infinite;
+}
+
+.mpd-typing-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.mpd-typing-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  30% {
+    transform: translateY(-10px);
+    opacity: 1;
+  }
+}
