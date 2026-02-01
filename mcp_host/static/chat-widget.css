@@ -2,7 +2,7 @@
 
 :root {
     --primary: #00C896;
-    --secondary: #4D7CFE;
+    --secondary: #2563EB;
     --accent-gold: #FFB800;
     --accent-blue: #2563EB;
     --dark: #111827;
@@ -542,16 +542,17 @@
 
 /* Brand Color Accents */
 .mpd-welcome-message h4 {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--accent-blue) 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, var(--accent-gold) 50%, var(--secondary) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
 }
 
 .mpd-quick-action:hover {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--accent-blue) 20%, var(--accent-gold) 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, var(--accent-gold) 50%, var(--secondary) 100%);
     color: var(--light);
     border-color: var(--accent-gold);
+    font-weight: 600;
 }
 
 /* Gold accent for typing indicator */
@@ -564,13 +565,22 @@
     color: var(--secondary);
 }
 
-/* Brand gradient for file preview hover */
+/* Brand gradient for file preview */
 #mpd-file-preview {
-    border: 1px solid var(--accent-gold);
+    border: 2px solid var(--primary);
+    background: linear-gradient(135deg, rgba(0, 200, 150, 0.05) 0%, rgba(255, 184, 0, 0.03) 100%);
 }
 
 #mpd-file-preview:hover {
-    background: rgba(255, 184, 0, 0.05);
+    background: rgba(255, 184, 0, 0.08);
+}
+
+/* Brand gradient accents on buttons */
+.mpd-action-btn:hover {
+    background: var(--bg-light);
+    border-color: var(--primary);
+    color: var(--accent-gold);
+    font-weight: 600;
 }
   position: absolute;
   top: -5px;
