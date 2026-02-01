@@ -3,32 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MasterProDev AI Agent</title>
+    <title>MasterProDev AI Chat</title>
     <link rel="stylesheet" href="/static/chat-widget.css">
 </head>
 <body>
     <!-- The widget is injected by chat-widget.js -->
     <script src="/static/chat-widget.js"></script>
     <script>
-        // Initialize the chat widget when DOM is ready
         document.addEventListener('DOMContentLoaded', function() {
             MCPChat.init({
                 apiUrl: window.location.origin,
-                brandName: 'MasterProDev AI Agent',
-                welcomeMessage: "Hi! I'm your AI assistant. I can help you with calendar, email, documents, and voice conversations.",
+                brandName: 'MasterProDev AI',
+                welcomeMessage: "Hi! I can help with calendar, email, documents, and voice conversations.",
                 quickActions: [
-                    { icon: '📅', text: 'Check my calendar', action: 'calendar' },
-                    { icon: '📧', text: 'Read my emails', action: 'email' },
-                    { icon: '📄', text: 'Analyze a document', action: 'document' },
-                    { icon: '🎙️', text: 'Voice chat', action: 'voice' }
+                    { icon: '📅', text: 'Check my calendar' },
+                    { icon: '📧', text: 'Read my emails' },
+                    { icon: '📄', text: 'Analyze a document' },
+                    { icon: '🎙️', text: 'Voice chat' }
                 ]
             });
             
-            // Auto-open the chat window for full page mode
             setTimeout(() => {
                 const chatButton = document.getElementById('mpd-chat-button');
                 if (chatButton) chatButton.click();
-            }, 300);
+            }, 500);
         });
     </script>
 </body>
