@@ -332,7 +332,7 @@ function createAvatarSelector() {
     const selectorHTML = `
         <div class="avatar-selector" id="avatar-selector">
             <button class="avatar-selector-toggle" id="avatar-selector-toggle" title="Change Avatar">
-                👤 Change Avatar
+                <iconify-icon icon="mdi:account-convert"></iconify-icon>
             </button>
             <div class="avatar-selector-dropdown" id="avatar-selector-dropdown">
                 <div class="avatar-selector-title">Choose Your Assistant</div>
@@ -359,25 +359,27 @@ function createAvatarSelector() {
         const toggle = document.getElementById('avatar-selector-toggle');
         const dropdown = document.getElementById('avatar-selector-dropdown');
         
-        toggle.addEventListener('click', (e) => {
-            e.stopPropagation();
-            dropdown.classList.toggle('show');
-        });
-        
-        // Close when clicking outside
-        document.addEventListener('click', () => {
-            dropdown.classList.remove('show');
-        });
-        
-        // Avatar selection
-        document.querySelectorAll('.avatar-option').forEach(option => {
-            option.addEventListener('click', (e) => {
+        if (toggle && dropdown) {
+            toggle.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const avatarId = option.dataset.avatarId;
-                selectAvatar(avatarId);
+                dropdown.classList.toggle('show');
+            });
+            
+            // Close when clicking outside
+            document.addEventListener('click', () => {
                 dropdown.classList.remove('show');
             });
-        });
+            
+            // Avatar selection
+            document.querySelectorAll('.avatar-option').forEach(option => {
+                option.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const avatarId = option.dataset.avatarId;
+                    selectAvatar(avatarId);
+                    dropdown.classList.remove('show');
+                });
+            });
+        }
     }
 }
 
