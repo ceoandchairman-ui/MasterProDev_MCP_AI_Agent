@@ -45,12 +45,53 @@ class ArmosChatWidget {
         const style = document.createElement('style');
         style.id = styleId;
         style.textContent = `
-            /* Armosa Chat Widget Styles */
+            /* Armosa Chat Widget Styles - Scoped Reset */
+            #armosa-fab,
+            #armosa-widget,
+            #armosa-widget *,
+            #armosa-widget *::before,
+            #armosa-widget *::after {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            /* Floating Action Button */
+            #armosa-fab {
+                position: fixed;
+                bottom: 24px;
+                right: 24px;
+                width: 60px;
+                height: 60px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #00C896 0%, #2563EB 100%);
+                border: none;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 4px 20px rgba(0, 200, 150, 0.4);
+                z-index: 999998;
+                transition: all 0.3s ease;
+            }
+
+            #armosa-fab:hover {
+                transform: scale(1.1);
+                box-shadow: 0 6px 28px rgba(0, 200, 150, 0.5);
+            }
+
+            #armosa-fab.hidden {
+                transform: scale(0);
+                opacity: 0;
+                pointer-events: none;
+            }
+
+            /* Widget Container */
             #armosa-widget {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 position: fixed;
-                bottom: 20px;
-                right: 20px;
+                bottom: 24px;
+                right: 24px;
                 width: 400px;
                 height: 600px;
                 background: white;
@@ -61,6 +102,39 @@ class ArmosChatWidget {
                 z-index: 999999;
                 overflow: hidden;
                 border: 1px solid rgba(0, 0, 0, 0.1);
+                transition: all 0.3s ease;
+                transform-origin: bottom right;
+            }
+
+            #armosa-widget.hidden {
+                transform: scale(0);
+                opacity: 0;
+                pointer-events: none;
+            }
+
+            /* Close Button */
+            .close-btn {
+                position: absolute;
+                top: 12px;
+                right: 12px;
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                background: rgba(255, 255, 255, 0.2);
+                border: none;
+                color: white;
+                font-size: 16px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.2s;
+                z-index: 10;
+            }
+
+            .close-btn:hover {
+                background: rgba(255, 255, 255, 0.3);
+                transform: scale(1.1);
             }
 
             /* Header with Dynamic Gradient */
@@ -69,6 +143,7 @@ class ArmosChatWidget {
                 background-size: 400% 400%;
                 animation: gradientShift 15s ease infinite;
                 padding: 20px;
+                position: relative;
                 color: white;
                 display: flex;
                 flex-direction: column;
@@ -424,18 +499,12 @@ class ArmosChatWidget {
 
             /* Input Area */
             .armosa-input-container {
-                padding: 16px;
+                padding: 12px 16px;
                 background: white;
-                border-top: 1px solid #e5e5e5;
+                border-top: 1px solid #e8e8e8;
                 display: flex;
                 gap: 8px;
-                align-items: flex-end;
-            }
-
-            .input-row {
-                display: flex;
-                gap: 8px;
-                flex: 1;
+                align-items: center;
             }
 
             .action-btn {
@@ -577,10 +646,25 @@ class ArmosChatWidget {
     }
 
     createWidget() {
+        // Create FAB (Floating Action Button)
+        const fab = document.createElement('button');
+        fab.id = 'armosa-fab';
+        fab.innerHTML = `
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="white">
+                <path d="M12 2C6.48 2 2 6.48 2 12c0 1.54.36 2.98.97 4.29L2 22l5.71-.97A9.96 9.96 0 0 0 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-2h-2v2zm0-4h2V7h-2v6z"/>
+            </svg>
+        `;
+        fab.title = 'Chat with Armosa';
+        document.body.appendChild(fab);
+        this.fab = fab;
+
+        // Create Widget (hidden by default)
         const widget = document.createElement('div');
         widget.id = 'armosa-widget';
+        widget.classList.add('hidden');
         widget.innerHTML = `
             <div class="armosa-header">
+                <button class="close-btn" id="close-widget" title="Close">✕</button>
                 <div class="armosa-logo">🤖</div>
                 <div class="armosa-title">Ask Armosa</div>
                 <div class="mode-buttons">
@@ -598,12 +682,10 @@ class ArmosChatWidget {
             <div class="armosa-messages" id="armosa-messages"></div>
 
             <div class="armosa-input-container">
-                <div class="input-row">
-                    <button class="action-btn" id="file-btn" title="Attach file">📎</button>
-                    <input type="file" id="file-input" style="display: none;">
-                    <textarea id="armosa-input" placeholder="Type your message..." rows="1"></textarea>
-                    <button class="action-btn" id="voice-btn" title="Voice message">🎤</button>
-                </div>
+                <input type="file" id="file-input" style="display: none;">
+                <button class="action-btn" id="file-btn" title="Attach file">📎</button>
+                <textarea id="armosa-input" placeholder="Type your message..." rows="1"></textarea>
+                <button class="action-btn" id="voice-btn" title="Voice message">🎤</button>
                 <button class="send-btn" id="send-btn">➤</button>
             </div>
         `;
@@ -611,9 +693,22 @@ class ArmosChatWidget {
         document.body.appendChild(widget);
         this.widget = widget;
         this.messagesContainer = widget.querySelector('#armosa-messages');
+        this.isOpen = false;
+    }
+
+    toggleWidget() {
+        this.isOpen = !this.isOpen;
+        this.widget.classList.toggle('hidden', !this.isOpen);
+        this.fab.classList.toggle('hidden', this.isOpen);
     }
 
     attachEventListeners() {
+        // FAB click to open
+        this.fab.addEventListener('click', () => this.toggleWidget());
+
+        // Close button
+        this.widget.querySelector('#close-widget').addEventListener('click', () => this.toggleWidget());
+
         // Mode buttons
         this.widget.querySelectorAll('.mode-btn').forEach(btn => {
             btn.addEventListener('click', (e) => this.switchMode(e.target.closest('.mode-btn').dataset.mode));
@@ -674,7 +769,7 @@ class ArmosChatWidget {
         if (!preview) {
             preview = document.createElement('div');
             preview.className = 'file-preview';
-            this.widget.querySelector('.armosa-input-container').insertBefore(preview, this.widget.querySelector('.input-row'));
+            this.widget.querySelector('.armosa-input-container').insertBefore(preview, this.widget.querySelector('#file-btn'));
         }
         
         preview.innerHTML = `
