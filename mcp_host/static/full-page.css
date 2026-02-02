@@ -63,7 +63,12 @@ body {
     0% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
     100% { background-position: 0% 50%; }
-}white);
+}
+
+.chat-container {
+    width: 100%;
+    max-width: 900px;
+    background: var(--white);
     border-radius: 20px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     display: flex;
@@ -73,12 +78,6 @@ body {
     border-image: linear-gradient(135deg, var(--primary) 0%, var(--accent-gold) 50%, var(--secondary) 100%) 1;
     height: calc(100vh - 40px);
     max-height: 800px;
-    background: var(--light);
-    border-radius: 20px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
 }
 
 /* Header */
@@ -87,6 +86,8 @@ body {
     color: white;
     padding: 16px 24px;
     display: flex;
+    justify-content: space-between;
+    align-items: center;
     position: relative;
     overflow: hidden;
 }
@@ -106,14 +107,13 @@ body {
     0% { left: -100%; }
     100% { left: 100%; }
 }
-    justify-content: space-between;
-    align-items: center;
-}
 
 .header-left {
     display: flex;
     align-items: center;
     gap: 12px;
+    position: relative;
+    z-index: 1;
 }
 
 .logo svg {
@@ -124,6 +124,24 @@ body {
     font-size: 20px;
     font-weight: 600;
 }
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: relative;
+    z-index: 1;
+}
+
+.mode-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s;
     backdrop-filter: blur(10px);
 }
 
@@ -138,28 +156,7 @@ body {
     color: var(--primary);
     border-color: var(--white);
     font-weight: 600;
-    box-shadow: 0 4px 12px rgba(255, 255, 255, 0.3)
-}
-
-.mode-btn {
-    background: rgba(255, 255, 255, 0.2);
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    color: white;
-    padding: 8px 16px;
-    border-radius: 20px;
-    cursor: pointer;
-    font-size: 14px;
-    transition: all 0.3s;
-}
-
-.mode-btn:hover {
-    background: rgba(255, 255, 255, 0.3);
-}
-
-.mode-btn.active {
-    background: white;
-    color: var(--secondary);
-    border-color: white;
+    box-shadow: 0 4px 12px rgba(255, 255, 255, 0.3);
 }
 
 .widget-link {
@@ -229,7 +226,7 @@ button.logout-btn {
 }
 
 button.logout-btn:hover {
-    background: #ef4444;35deg, var(--primary-light) 0%, var(--secondary-light) 50%, var(--gold-light)
+    background: #ef4444;
     border-color: #ef4444;
 }
 
