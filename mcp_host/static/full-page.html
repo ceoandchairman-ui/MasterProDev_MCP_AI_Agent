@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MasterProDev AI Agent</title>
     <link rel="stylesheet" href="/static/full-page.css">
+    <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
     <!-- Three.js for 3D Avatar -->
     <script type="importmap">
     {
@@ -33,12 +34,20 @@
             </div>
             <div class="header-right">
                 <div class="mode-toggle">
-                    <button class="mode-btn" data-mode="text" title="Text Chat">💬 Text</button>
-                    <button class="mode-btn" data-mode="voice" title="Voice Chat">🎙️ Voice</button>
-                    <button class="mode-btn active" data-mode="avatar" title="3D Avatar">🧑 Avatar</button>
+                    <button class="mode-btn" data-mode="text" title="Text Chat">
+                        <iconify-icon icon="mdi:message-text" style="font-size: 16px;"></iconify-icon> Text
+                    </button>
+                    <button class="mode-btn" data-mode="voice" title="Voice Chat">
+                        <iconify-icon icon="mdi:microphone" style="font-size: 16px;"></iconify-icon> Voice
+                    </button>
+                    <button class="mode-btn active" data-mode="avatar" title="3D Avatar">
+                        <iconify-icon icon="mdi:account" style="font-size: 16px;"></iconify-icon> Avatar
+                    </button>
                 </div>
                 <div class="user-menu">
-                    <span class="user-info" id="user-info">👤 Guest</span>
+                    <span class="user-info" id="user-info">
+                        <iconify-icon icon="mdi:account-circle" style="font-size: 16px;"></iconify-icon> Guest
+                    </span>
                     <a href="/login" class="auth-btn login-btn" id="header-login" style="display: none;">Login</a>
                     <button class="auth-btn logout-btn" id="header-logout">Logout</button>
                 </div>
@@ -54,7 +63,7 @@
         <!-- Simple Avatar Container (for voice mode) -->
         <div class="avatar-container" id="avatar-container">
             <div class="avatar" id="avatar">
-                <span class="avatar-emoji">🤖</span>
+                <iconify-icon icon="mdi:robot" style="font-size: 32px; color: #00C896;"></iconify-icon>
             </div>
             <div class="avatar-status" id="avatar-status">Ready to listen</div>
         </div>
@@ -69,15 +78,17 @@
         <div class="chat-messages" id="chat-messages">
             <!-- Welcome Message -->
             <div class="message bot">
-                <div class="message-avatar">🤖</div>
+                <div class="message-avatar">
+                    <iconify-icon icon="mdi:robot" style="font-size: 20px; color: #00C896;"></iconify-icon>
+                </div>
                 <div class="message-content">
                     <p>Hi! I'm your AI assistant. I can help you with:</p>
                     <ul>
-                        <li>📅 Calendar management</li>
-                        <li>📧 Email operations</li>
-                        <li>📄 Document analysis (PDF, Word, Images)</li>
-                        <li>🎙️ Voice conversations</li>
-                        <li>💡 Knowledge queries</li>
+                        <li><iconify-icon icon="mdi:calendar" style="color: #00C896;"></iconify-icon> Calendar management</li>
+                        <li><iconify-icon icon="mdi:email" style="color: #FFB800;"></iconify-icon> Email operations</li>
+                        <li><iconify-icon icon="mdi:file-document" style="color: #2563EB;"></iconify-icon> Document analysis (PDF, Word, Images)</li>
+                        <li><iconify-icon icon="mdi:microphone" style="color: #00C896;"></iconify-icon> Voice conversations</li>
+                        <li><iconify-icon icon="mdi:lightbulb" style="color: #FFB800;"></iconify-icon> Knowledge queries</li>
                     </ul>
                     <p>How can I help you today?</p>
                     <div class="message-time">Just now</div>
@@ -97,6 +108,8 @@
         <!-- Input Area -->
         <div class="chat-input-container">
             <!-- File Preview -->
+                    <iconify-icon icon="mdi:paperclip" style="color: #FFB800;"></iconify-icon> file.pdf
+                
             <div class="file-preview" id="file-preview">
                 <span id="file-name">📎 file.pdf</span>
                 <button class="remove-file" id="remove-file">×</button>

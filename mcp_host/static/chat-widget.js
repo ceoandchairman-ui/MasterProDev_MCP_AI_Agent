@@ -111,7 +111,7 @@
             widget.id = 'mpd-chat-widget';
             widget.innerHTML = `
                 <button id="mpd-chat-button" class="mpd-chat-btn" title="Chat with AI">
-                    <span>💬</span>
+                    <iconify-icon icon="mdi:message-text" style="font-size: 24px;"></iconify-icon>
                 </button>
                 <div id="mpd-chat-window" class="mpd-chat-window">
                     <!-- Header -->
@@ -121,8 +121,12 @@
                         </div>
                         <div class="mpd-header-right">
                             <div class="mpd-mode-toggle">
-                                <button class="mpd-mode-btn active" data-mode="avatar" title="3D Avatar">🧑</button>
-                                <button class="mpd-mode-btn" data-mode="text" title="Text">💬</button>
+                                <button class="mpd-mode-btn active" data-mode="avatar" title="3D Avatar">
+                                    <iconify-icon icon="mdi:account" style="font-size: 14px;"></iconify-icon>
+                                </button>
+                                <button class="mpd-mode-btn" data-mode="text" title="Text">
+                                    <iconify-icon icon="mdi:message-text" style="font-size: 14px;"></iconify-icon>
+                                </button>
                             </div>
                             <button id="mpd-chat-close" class="mpd-close-btn">×</button>
                         </div>
@@ -147,7 +151,9 @@
                     
                     <!-- File Preview -->
                     <div id="mpd-file-preview" class="mpd-file-preview" style="display:none;">
-                        <span id="mpd-file-name">📎 file.pdf</span>
+                        <span id="mpd-file-name">
+                            <iconify-icon icon="mdi:paperclip" style="color: #FFB800;"></iconify-icon> file.pdf
+                        </span>
                         <button id="mpd-remove-file" class="mpd-remove-file">×</button>
                     </div>
                     
@@ -157,10 +163,10 @@
                         
                         <div class="mpd-action-buttons">
                             <button id="mpd-attach-btn" class="mpd-action-btn" title="Attach file">
-                                📎
+                                <iconify-icon icon="mdi:paperclip" style="font-size: 16px; color: #FFB800;"></iconify-icon>
                             </button>
                             <button id="mpd-voice-btn" class="mpd-action-btn" title="Record voice">
-                                🎙️
+                                <iconify-icon icon="mdi:microphone" style="font-size: 16px; color: #2563EB;"></iconify-icon>
                             </button>
                         </div>
                         
@@ -242,12 +248,20 @@
                 }
             });
             
-            // Update container visibility
+            // Update container visibility with genie effect
             const avatarContainer = document.getElementById('mpd-avatar-3d-container');
             if (mode === 'avatar') {
                 avatarContainer.style.display = 'flex';
+                // Trigger genie pop-out animation
+                setTimeout(() => {
+                    avatarContainer.classList.add('active');
+                    avatarContainer.classList.add('idle');
+                }, 50);
             } else {
-                avatarContainer.style.display = 'none';
+                avatarContainer.classList.remove('active', 'idle', 'speaking');
+                setTimeout(() => {
+                    avatarContainer.style.display = 'none';
+                }, 800);
             }
         },
 
@@ -258,16 +272,18 @@
             const welcomeDiv = document.createElement('div');
             welcomeDiv.className = 'mpd-message mpd-message-bot mpd-welcome';
             welcomeDiv.innerHTML = `
-                <div class="mpd-message-avatar">🤖</div>
+                <div class="mpd-message-avatar">
+                    <iconify-icon icon="mdi:robot" style="font-size: 20px; color: #00C896;"></iconify-icon>
+                </div>
                 <div class="mpd-message-content">
                     <p><strong>Hi! I'm your AI assistant.</strong></p>
                     <p>I can help you with:</p>
                     <ul>
-                        <li>📅 Calendar management</li>
-                        <li>📧 Email operations</li>
-                        <li>📄 Document analysis</li>
-                        <li>🎙️ Voice conversations</li>
-                        <li>💡 Knowledge queries</li>
+                        <li><iconify-icon icon="mdi:calendar" style="color: #00C896;"></iconify-icon> Calendar management</li>
+                        <li><iconify-icon icon="mdi:email" style="color: #FFB800;"></iconify-icon> Email operations</li>
+                        <li><iconify-icon icon="mdi:file-document" style="color: #2563EB;"></iconify-icon> Document analysis</li>
+                        <li><iconify-icon icon="mdi:microphone" style="color: #00C896;"></iconify-icon> Voice conversations</li>
+                        <li><iconify-icon icon="mdi:lightbulb" style="color: #FFB800;"></iconify-icon> Knowledge queries</li>
                     </ul>
                     <p>How can I help you today?</p>
                     <div class="mpd-message-time">${this.getTimeString()}</div>
@@ -506,7 +522,9 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `mpd-message mpd-message-${sender}`;
             
-            const senderAvatar = sender === 'bot' ? '🤖' : '👤';
+            const senderAvatar = sender === 'bot' 
+                ? '<iconify-icon icon="mdi:robot" style="font-size: 20px; color: #00C896;"></iconify-icon>' 
+                : '<iconify-icon icon="mdi:account-circle" style="font-size: 20px; color: #2563EB;"></iconify-icon>';
             const timeString = this.getTimeString();
             
             messageDiv.innerHTML = `
@@ -519,6 +537,30 @@
             
             messagesContainer.appendChild(messageDiv);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            
+            // Trigger speaking animation for bot messages
+            if (sender === 'bot' && state.currentMode === 'avatar') {
+                this.triggerSpeakingAnimation(text);
+            }
+        },
+        
+        triggerSpeakingAnimation: function(text) {
+            const avatarContainer = document.getElementById('mpd-avatar-3d-container');
+            if (!avatarContainer || !avatarContainer.classList.contains('active')) return;
+            
+            // Switch to speaking state
+            avatarContainer.classList.remove('idle');
+            avatarContainer.classList.add('speaking');
+            
+            // Duration based on text length (roughly 100ms per word)
+            const wordCount = text.split(' ').length;
+            const duration = Math.max(2000, wordCount * 150);
+            
+            // Return to idle after speaking
+            setTimeout(() => {
+                avatarContainer.classList.remove('speaking');
+                avatarContainer.classList.add('idle');
+            }, duration);
         }
     };
 

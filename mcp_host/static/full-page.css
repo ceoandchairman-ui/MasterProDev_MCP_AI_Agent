@@ -1,12 +1,24 @@
 /* Full Page Chat Styles - Brand Kit (Green, Gold, Blue) */
 :root {
+    /* Brand Colors */
     --primary: #00C896;
     --secondary: #2563EB;
     --accent-gold: #FFB800;
-    --dark: #1a1a1a;
-    --light: #ffffff;
+    
+    /* Brand Color Shades */
+    --primary-light: #33D9AD;
+    --primary-dark: #009977;
+    --secondary-light: #5B8EFF;
+    --secondary-dark: #1E4FBD;
+    --gold-light: #FFD666;
+    --gold-dark: #CC9300;
+    
+    /* Grayscale */
+    --black: #000000;
+    --white: #ffffff;
     --gray: #f5f5f5;
     --gray-dark: #e5e5e5;
+    --gray-darker: #1a1a1a;
 }
 
 * {
@@ -15,9 +27,31 @@
     box-sizing: border-box;
 }
 
+/* Iconify Icon Styling */
+iconify-icon {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.message-avatar iconify-icon {
+    display: block;
+}
+
+.mode-btn iconify-icon,
+.action-btn iconify-icon {
+    transition: all 0.2s;
+}
+
+.mode-btn:hover iconify-icon,
+.action-btn:hover iconify-icon {
+    transform: scale(1.1);
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--accent-gold) 50%, var(--secondary) 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, var(--accent-gold) 40%, var(--secondary) 80%, var(--primary-dark) 100%);
+    background-size: 400% 400%;
+    animation: gradientShift 15s ease infinite;
     min-height: 100vh;
     display: flex;
     justify-content: center;
@@ -25,10 +59,18 @@ body {
     padding: 20px;
 }
 
-/* Chat Container */
-.chat-container {
-    width: 100%;
-    max-width: 900px;
+@keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}white);
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 3px solid;
+    border-image: linear-gradient(135deg, var(--primary) 0%, var(--accent-gold) 50%, var(--secondary) 100%) 1;
     height: calc(100vh - 40px);
     max-height: 800px;
     background: var(--light);
@@ -45,6 +87,25 @@ body {
     color: white;
     padding: 16px 24px;
     display: flex;
+    position: relative;
+    overflow: hidden;
+}
+
+.chat-header::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: shimmer 3s infinite;
+}
+
+@keyframes shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
     justify-content: space-between;
     align-items: center;
 }
@@ -63,16 +124,21 @@ body {
     font-size: 20px;
     font-weight: 600;
 }
-
-.header-right {
-    display: flex;
-    align-items: center;
-    gap: 16px;
+    backdrop-filter: blur(10px);
 }
 
-.mode-toggle {
-    display: flex;
-    gap: 8px;
+.mode-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.mode-btn.active {
+    background: var(--white);
+    color: var(--primary);
+    border-color: var(--white);
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(255, 255, 255, 0.3)
 }
 
 .mode-btn {
@@ -163,7 +229,7 @@ button.logout-btn {
 }
 
 button.logout-btn:hover {
-    background: #ef4444;
+    background: #ef4444;35deg, var(--primary-light) 0%, var(--secondary-light) 50%, var(--gold-light)
     border-color: #ef4444;
 }
 
@@ -187,7 +253,7 @@ button.logout-btn:hover {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+    background: linear-gradient(135deg, var(--primary-light) 0%, var(--secondary-light) 50%, var(--gold-light) 100%);
     position: relative;
     min-height: 300px;
 }
@@ -280,7 +346,7 @@ button.logout-btn:hover {
     flex: 1;
     overflow-y: auto;
     padding: 20px;
-    background: var(--gray);
+    background: linear-gradient(180deg, var(--gray) 0%, var(--white) 100%);
 }
 
 .message {
@@ -313,13 +379,15 @@ button.logout-btn:hover {
     max-width: 70%;
     padding: 12px 16px;
     border-radius: 16px;
-    background: white;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    background: var(--white);
+    border: 2px solid var(--gray-dark);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .message.user .message-content {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: var(--white);
+    box-shadow: 0 4px 12px rgba(0, 200, 150, 0.3);
 }
 
 .message-content p {
@@ -383,8 +451,9 @@ button.logout-btn:hover {
 
 /* Input Area */
 .chat-input-container {
-    background: white;
-    border-top: 1px solid var(--gray-dark);
+    background: var(--white);
+    border-top: 3px solid;
+    border-image: linear-gradient(90deg, var(--primary) 0%, var(--accent-gold) 50%, var(--secondary) 100%) 1;
     padding: 16px 20px;
 }
 
@@ -423,8 +492,8 @@ button.logout-btn:hover {
 }
 
 .action-btn {
-    background: var(--gray);
-    border: none;
+    background: linear-gradient(135deg, var(--gray) 0%, var(--white) 100%);
+    border: 2px solid var(--gray-dark);
     width: 44px;
     height: 44px;
     border-radius: 50%;
@@ -432,14 +501,17 @@ button.logout-btn:hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: all 0.3s;
     flex-shrink: 0;
-    color: #666;
+    color: var(--gray-darker);
 }
 
 .action-btn:hover {
-    background: var(--gray-dark);
-    color: var(--primary);
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    border-color: var(--primary);
+    color: var(--white);
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0, 200, 150, 0.3);
 }
 
 .action-btn.recording {
@@ -462,16 +534,18 @@ button.logout-btn:hover {
     resize: none;
     max-height: 120px;
     font-family: inherit;
-    transition: border-color 0.2s;
+    transition: all 0.3s;
     outline: none;
 }
 
 #chat-input:focus {
     border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(0, 200, 150, 0.15);
+    background: linear-gradient(135deg, rgba(0, 200, 150, 0.02) 0%, rgba(37, 99, 235, 0.02) 100%);
 }
 
 .send-btn {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, var(--accent-gold) 50%, var(--secondary) 100%);
     border: none;
     width: 44px;
     height: 44px;
@@ -480,14 +554,19 @@ button.logout-btn:hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: all 0.3s;
     flex-shrink: 0;
-    color: white;
+    color: var(--white);
+    box-shadow: 0 4px 12px rgba(0, 200, 150, 0.3);
 }
 
 .send-btn:hover {
-    transform: scale(1.05);
-    box-shadow: 0 4px 15px rgba(0, 200, 150, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 200, 150, 0.4);
+}
+
+.send-btn:active {
+    transform: translateY(0);
 }
 
 .send-btn:disabled {
