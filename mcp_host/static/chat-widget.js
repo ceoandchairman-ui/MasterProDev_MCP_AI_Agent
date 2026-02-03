@@ -46,10 +46,11 @@ class ArmosChatWidget {
         style.id = styleId;
         style.textContent = `
             /* ============================================================
-               ARMOSA CHAT WIDGET - GEOMETRIC DESIGN SYSTEM
+               ARMOSA CHAT WIDGET - PREMIUM AI-NATIVE DESIGN SYSTEM
+               Visual Language: ChatGPT / Cursor / Copilot tier
                Frame: 360×720 (1:2 ratio), border-radius: 28px
-               Gradient: #7F5CFF (purple) → #4ED1C1 (teal)
-               All strokes: 1px black, consistent throughout
+               Colors: Blue #2563EB → Green #00C896, Gold #FFB800
+               Strokes: Soft charcoal rgba(0,0,0,0.1), shadows over borders
                ============================================================ */
 
             /* Scoped Reset */
@@ -71,18 +72,22 @@ class ArmosChatWidget {
                 width: 56px;
                 height: 56px;
                 border-radius: 50%;
-                background: linear-gradient(180deg, #7F5CFF 0%, #4ED1C1 100%);
-                border: 2px solid black;
+                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%);
+                border: none;
                 cursor: pointer;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 z-index: 999998;
                 transition: all 0.3s ease;
+                box-shadow: 0 4px 16px rgba(0, 200, 150, 0.35),
+                            0 2px 4px rgba(0, 0, 0, 0.1);
             }
 
             #armosa-fab:hover {
                 transform: scale(1.08);
+                box-shadow: 0 6px 24px rgba(0, 200, 150, 0.45),
+                            0 4px 8px rgba(0, 0, 0, 0.12);
             }
 
             #armosa-fab.hidden {
@@ -92,7 +97,7 @@ class ArmosChatWidget {
             }
 
             /* ===================== WIDGET OUTER FRAME ===================== */
-            /* Geometric Frame: 360×720, ratio 1:2, border-radius: 28px */
+            /* Premium frame with gradient border glow effect */
             #armosa-widget {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 position: fixed;
@@ -100,16 +105,19 @@ class ArmosChatWidget {
                 right: 24px;
                 width: 360px;
                 height: 720px;
-                background: linear-gradient(180deg, #7F5CFF 0%, #4ED1C1 100%);
+                background: white;
                 border-radius: 28px;
-                border: 3px solid black;
-                padding: 16px;
+                padding: 3px;
                 display: flex;
                 flex-direction: column;
-                gap: 16px;
                 z-index: 999999;
                 transition: all 0.3s ease;
                 transform-origin: bottom right;
+                /* Gradient border effect */
+                background: linear-gradient(180deg, #2563EB 0%, #00C896 100%);
+                box-shadow: 0 8px 32px rgba(0, 200, 150, 0.2),
+                            0 4px 16px rgba(37, 99, 235, 0.15),
+                            0 2px 8px rgba(0, 0, 0, 0.08);
             }
 
             #armosa-widget.hidden {
@@ -118,34 +126,54 @@ class ArmosChatWidget {
                 pointer-events: none;
             }
 
-            /* ===================== HEADER ZONE ===================== */
-            /* 328×64px, border-radius: 20px, white fill, 1px black stroke */
-            .armosa-header {
-                width: 328px;
-                height: 64px;
+            /* Inner container - white background */
+            .widget-inner {
+                flex: 1;
                 background: white;
-                border-radius: 20px;
-                border: 1px solid black;
+                border-radius: 25px;
                 display: flex;
-                align-items: center;
-                padding: 0 12px;
-                gap: 10px;
-                position: relative;
-                flex-shrink: 0;
+                flex-direction: column;
+                gap: 12px;
+                padding: 12px;
+                overflow: hidden;
             }
 
-            /* Close button - top right of header */
+            /* ===================== HEADER ZONE ===================== */
+            /* Two-row header: Logo+Title on top, Mode buttons below */
+            .armosa-header {
+                width: 100%;
+                background: white;
+                border-radius: 16px;
+                border: none;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 16px;
+                gap: 12px;
+                position: relative;
+                flex-shrink: 0;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+            }
+
+            /* Top row: Logo + Title */
+            .header-top {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+
+            /* Close button - subtle, top right */
             .close-btn {
                 position: absolute;
-                top: 8px;
-                right: 8px;
-                width: 20px;
-                height: 20px;
+                top: 12px;
+                right: 12px;
+                width: 24px;
+                height: 24px;
                 border-radius: 50%;
-                background: white;
-                border: 1px solid black;
-                color: black;
-                font-size: 12px;
+                background: transparent;
+                border: none;
+                color: #9CA3AF;
+                font-size: 14px;
                 cursor: pointer;
                 display: flex;
                 align-items: center;
@@ -154,87 +182,84 @@ class ArmosChatWidget {
             }
 
             .close-btn:hover {
-                background: #f0f0f0;
+                background: rgba(0, 0, 0, 0.05);
+                color: #1F2937;
             }
 
-            /* Avatar circle - radius 12px (24px diameter) */
+            /* Avatar - gradient filled */
             .armosa-logo {
-                width: 24px;
-                height: 24px;
-                background: white;
+                width: 36px;
+                height: 36px;
+                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%);
                 border-radius: 50%;
-                border: 1px solid black;
+                border: none;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                font-size: 12px;
+                font-size: 16px;
+                font-weight: 600;
+                color: white;
                 flex-shrink: 0;
             }
 
-            /* Title pill - 160×32px, border-radius: 16px */
+            /* Title - clean text */
             .armosa-title {
-                width: 160px;
-                height: 32px;
-                background: white;
-                border-radius: 16px;
-                border: 1px solid black;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 14px;
+                font-size: 17px;
                 font-weight: 600;
-                color: black;
+                color: #1F2937;
             }
 
-            /* Mode Buttons - 72×24px each, border-radius: 12px */
+            /* Mode Buttons - centered below */
             .mode-buttons {
                 display: flex;
-                gap: 8px;
-                margin-left: auto;
-                margin-right: 24px;
+                gap: 4px;
+                background: #F3F4F6;
+                border-radius: 10px;
+                padding: 3px;
             }
 
             .mode-btn {
-                width: 36px;
-                height: 24px;
-                border-radius: 12px;
-                background: white;
-                border: 1px solid black;
-                color: black;
+                width: 32px;
+                height: 28px;
+                border-radius: 8px;
+                background: transparent;
+                border: none;
+                color: #6B7280;
                 cursor: pointer;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                font-size: 12px;
+                font-size: 14px;
                 transition: all 0.2s;
             }
 
             .mode-btn:hover {
-                background: #f5f5f5;
+                color: #1F2937;
             }
 
             .mode-btn.active {
-                background: linear-gradient(180deg, #7F5CFF 0%, #4ED1C1 100%);
-                color: white;
+                background: white;
+                color: #00C896;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
             }
 
             .mode-btn-icon {
                 font-size: 14px;
             }
 
-            /* ===================== CENTRAL REGION (CHAT AREA) ===================== */
-            /* 328px wide, fills vertical space, border-radius: 16px */
+            /* ===================== CHAT AREA ===================== */
+            /* Clean, no border, subtle inner feel */
             .armosa-messages {
-                width: 328px;
+                width: 100%;
                 flex: 1;
-                background: white;
+                background: #FAFAFA;
                 border-radius: 16px;
-                border: 1px solid black;
+                border: none;
                 overflow-y: auto;
-                padding: 12px;
+                padding: 16px;
                 display: flex;
                 flex-direction: column;
-                gap: 10px;
+                gap: 16px;
             }
 
             .armosa-messages::-webkit-scrollbar {
@@ -246,15 +271,17 @@ class ArmosChatWidget {
             }
 
             .armosa-messages::-webkit-scrollbar-thumb {
-                background: #ccc;
+                background: rgba(0, 0, 0, 0.15);
                 border-radius: 2px;
             }
 
-            /* Message Container */
+            /* ===================== MESSAGE BUBBLES ===================== */
+            /* Smart bubbling with proper visual hierarchy */
+            
             .message-group {
                 display: flex;
-                gap: 8px;
-                animation: slideIn 0.25s ease;
+                gap: 10px;
+                animation: slideIn 0.3s ease;
             }
 
             @keyframes slideIn {
@@ -266,147 +293,161 @@ class ArmosChatWidget {
                 flex-direction: row-reverse;
             }
 
+            /* Avatar - bot only shows avatar */
             .message-avatar {
-                width: 24px;
-                height: 24px;
+                width: 28px;
+                height: 28px;
                 border-radius: 50%;
-                background: linear-gradient(180deg, #7F5CFF 0%, #4ED1C1 100%);
-                border: 1px solid black;
+                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%);
+                border: none;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 color: white;
                 font-size: 12px;
                 flex-shrink: 0;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             }
 
             .message-group.user .message-avatar {
-                background: #4ED1C1;
+                background: linear-gradient(135deg, #00C896 0%, #059669 100%);
             }
 
             /* Chat Bubble */
             .message-bubble {
-                max-width: 75%;
+                max-width: 80%;
             }
 
+            /* Bot Message - light, breathable */
             .bot-message-content {
                 background: white;
-                border: 1px solid black;
-                border-radius: 12px;
-                padding: 10px;
-                font-size: 13px;
-                line-height: 1.4;
+                border: none;
+                border-radius: 4px 18px 18px 18px;
+                padding: 12px 16px;
+                font-size: 14px;
+                line-height: 1.5;
+                color: #1F2937;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
             }
 
+            /* User Message - solid, confident */
             .user-message-content {
-                background: linear-gradient(180deg, #7F5CFF 0%, #4ED1C1 100%);
-                border: 1px solid black;
-                border-radius: 12px;
-                padding: 10px;
+                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%);
+                border: none;
+                border-radius: 18px 4px 18px 18px;
+                padding: 12px 16px;
                 color: white;
-                font-size: 13px;
-                line-height: 1.4;
+                font-size: 14px;
+                line-height: 1.5;
+                box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
             }
 
             .message-text {
-                line-height: 1.4;
-                font-size: 13px;
+                line-height: 1.5;
+                font-size: 14px;
             }
 
-            /* Code Block */
+            /* Code Block - refined dark theme */
             .code-block {
-                background: #1e1e1e;
-                border-radius: 8px;
-                border: 1px solid black;
-                padding: 10px;
+                background: #1E1E1E;
+                border-radius: 12px;
+                border: none;
+                padding: 12px;
                 overflow-x: auto;
-                margin-top: 6px;
+                margin-top: 8px;
+                box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
             }
 
             .code-header {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                margin-bottom: 6px;
+                margin-bottom: 8px;
                 font-size: 11px;
-                color: #888;
+                color: #9CA3AF;
             }
 
             .code-language {
                 font-weight: 600;
-                color: #4ED1C1;
+                color: #00C896;
             }
 
             .code-copy-btn {
-                background: transparent;
-                border: 1px solid #4ED1C1;
-                color: #4ED1C1;
-                padding: 2px 6px;
-                border-radius: 4px;
+                background: rgba(0, 200, 150, 0.15);
+                border: none;
+                color: #00C896;
+                padding: 4px 10px;
+                border-radius: 6px;
                 cursor: pointer;
-                font-size: 10px;
+                font-size: 11px;
                 transition: all 0.2s;
             }
 
             .code-copy-btn:hover {
-                background: rgba(78, 209, 193, 0.2);
+                background: rgba(0, 200, 150, 0.25);
             }
 
             .code-content {
-                font-family: 'Courier New', monospace;
+                font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
                 font-size: 12px;
-                color: #d4d4d4;
+                color: #E5E7EB;
                 white-space: pre-wrap;
                 word-break: break-all;
+                line-height: 1.5;
             }
 
-            /* Recommendation Block */
+            /* Recommendation Block - left accent style */
             .recommendation-block {
-                background: rgba(127, 92, 255, 0.1);
-                border-left: 3px solid #7F5CFF;
-                border-radius: 6px;
-                padding: 10px;
-                margin-top: 6px;
+                background: rgba(0, 200, 150, 0.06);
+                border-left: 3px solid #00C896;
+                border-radius: 0 12px 12px 0;
+                padding: 12px 14px;
+                margin-top: 8px;
             }
 
             .recommendation-label {
                 font-weight: 600;
-                color: #7F5CFF;
+                color: #00C896;
                 font-size: 12px;
-                margin-bottom: 4px;
+                margin-bottom: 6px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
             }
 
             .recommendation-content {
-                font-size: 12px;
-                color: #333;
-                line-height: 1.4;
+                font-size: 13px;
+                color: #374151;
+                line-height: 1.5;
             }
 
             .recommendation-list {
                 list-style: none;
                 padding-left: 0;
-                margin-top: 6px;
+                margin-top: 8px;
             }
 
             .recommendation-list li {
-                padding: 3px 0 3px 16px;
+                padding: 4px 0 4px 18px;
                 position: relative;
-                font-size: 12px;
+                font-size: 13px;
+                color: #374151;
             }
 
             .recommendation-list li:before {
                 content: "→";
                 position: absolute;
                 left: 0;
-                color: #7F5CFF;
+                color: #00C896;
+                font-weight: 500;
             }
 
             /* List Block */
             .list-block {
-                background: rgba(0, 0, 0, 0.03);
-                border-radius: 6px;
-                padding: 10px;
-                margin-top: 6px;
+                background: rgba(0, 0, 0, 0.02);
+                border-radius: 10px;
+                padding: 12px;
+                margin-top: 8px;
             }
 
             .list-block ul {
@@ -416,46 +457,54 @@ class ArmosChatWidget {
             }
 
             .list-block li {
-                padding: 3px 0 3px 16px;
+                padding: 4px 0 4px 18px;
                 position: relative;
-                font-size: 12px;
+                font-size: 13px;
+                color: #374151;
             }
 
             .list-block li:before {
                 content: "•";
                 position: absolute;
                 left: 4px;
-                color: #4ED1C1;
+                color: #00C896;
+                font-weight: bold;
             }
 
-            /* Link */
+            /* Links */
             .message-link {
-                color: #7F5CFF;
+                color: #2563EB;
                 text-decoration: none;
-                border-bottom: 1px dashed #7F5CFF;
+                border-bottom: 1px solid rgba(37, 99, 235, 0.3);
+                transition: all 0.2s;
+            }
+
+            .message-link:hover {
+                border-bottom-color: #2563EB;
             }
 
             .user-message-content .message-link {
                 color: white;
-                border-bottom-color: white;
+                border-bottom-color: rgba(255, 255, 255, 0.5);
             }
 
             /* Typing Indicator */
             .typing-indicator {
                 display: flex;
-                gap: 4px;
-                padding: 10px;
+                gap: 5px;
+                padding: 12px 16px;
                 background: white;
-                border-radius: 12px;
-                border: 1px solid black;
+                border-radius: 4px 18px 18px 18px;
+                border: none;
                 width: fit-content;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
             }
 
             .typing-dot {
-                width: 6px;
-                height: 6px;
+                width: 7px;
+                height: 7px;
                 border-radius: 50%;
-                background: #7F5CFF;
+                background: linear-gradient(135deg, #2563EB, #00C896);
                 animation: typing 1.4s infinite;
             }
 
@@ -463,110 +512,123 @@ class ArmosChatWidget {
             .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
             @keyframes typing {
-                0%, 60%, 100% { transform: translateY(0); }
-                30% { transform: translateY(-6px); }
+                0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+                30% { transform: translateY(-6px); opacity: 1; }
             }
 
-            /* ===================== INPUT BAR (BOTTOM) ===================== */
-            /* 328×48px, border-radius: 24px (pill), 1px black stroke */
+            /* ===================== INPUT BAR ===================== */
+            /* Clean pill, subtle border, premium feel */
             .armosa-input-container {
-                width: 328px;
-                height: 48px;
+                width: 100%;
+                height: 52px;
                 background: white;
-                border-radius: 24px;
-                border: 1px solid black;
+                border-radius: 26px;
+                border: 1px solid rgba(0, 0, 0, 0.08);
                 display: flex;
                 align-items: center;
-                padding: 0 8px;
-                gap: 6px;
+                padding: 0 8px 0 16px;
+                gap: 8px;
                 flex-shrink: 0;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+                transition: all 0.2s;
             }
 
-            /* Circle buttons - radius 10px (20px diameter) */
+            .armosa-input-container:focus-within {
+                border-color: rgba(0, 200, 150, 0.4);
+                box-shadow: 0 0 0 3px rgba(0, 200, 150, 0.1);
+            }
+
+            /* Action buttons - subtle, icon-based */
             .action-btn {
-                width: 20px;
-                height: 20px;
+                width: 32px;
+                height: 32px;
                 border-radius: 50%;
-                background: white;
-                border: 1px solid black;
+                background: transparent;
+                border: none;
                 cursor: pointer;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                font-size: 10px;
+                font-size: 16px;
+                color: #9CA3AF;
                 transition: all 0.2s;
                 flex-shrink: 0;
             }
 
             .action-btn:hover {
-                background: #f5f5f5;
+                background: rgba(0, 0, 0, 0.05);
+                color: #1F2937;
             }
 
             .action-btn.recording {
-                background: #ef4444;
+                background: #EF4444;
                 color: white;
-                border-color: #ef4444;
                 animation: recordPulse 1s infinite;
             }
 
             @keyframes recordPulse {
-                0%, 100% { transform: scale(1); }
-                50% { transform: scale(1.1); }
+                0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+                50% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
             }
 
-            /* Text input - flexible width, 32px height */
+            /* Text input - minimal, clean */
             #armosa-input {
                 flex: 1;
-                height: 32px;
-                border: 1px solid black;
-                border-radius: 16px;
-                padding: 0 12px;
-                font-size: 12px;
+                height: 36px;
+                border: none;
+                background: transparent;
+                padding: 0 8px;
+                font-size: 14px;
                 font-family: inherit;
                 outline: none;
-                resize: none;
+                color: #1F2937;
             }
 
-            #armosa-input:focus {
-                border-color: #7F5CFF;
+            #armosa-input::placeholder {
+                color: #9CA3AF;
             }
 
-            /* Send button - radius 14px (28px diameter), yellow fill */
+            /* Send button - golden accent, premium */
             .send-btn {
-                width: 28px;
-                height: 28px;
+                width: 36px;
+                height: 36px;
                 border-radius: 50%;
-                background: #FFD700;
-                border: 1px solid black;
+                background: linear-gradient(135deg, #FFB800 0%, #FF9500 100%);
+                border: none;
                 cursor: pointer;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                color: black;
-                font-size: 12px;
+                color: white;
+                font-size: 14px;
                 transition: all 0.2s;
                 flex-shrink: 0;
+                box-shadow: 0 2px 8px rgba(255, 184, 0, 0.35);
             }
 
             .send-btn:hover:not(:disabled) {
-                background: #FFC400;
+                transform: scale(1.08);
+                box-shadow: 0 4px 12px rgba(255, 184, 0, 0.45);
             }
 
             .send-btn:disabled {
-                opacity: 0.5;
+                opacity: 0.4;
                 cursor: not-allowed;
+                transform: none;
+                box-shadow: none;
             }
 
             /* File Preview */
             .file-preview {
                 display: none;
-                padding: 6px 10px;
-                background: #f5f5f5;
-                border-radius: 6px;
-                border: 1px solid black;
-                font-size: 11px;
+                padding: 8px 12px;
+                background: #F3F4F6;
+                border-radius: 10px;
+                border: none;
+                font-size: 12px;
                 align-items: center;
-                gap: 6px;
+                gap: 8px;
+                margin-bottom: 8px;
             }
 
             .file-preview.active {
@@ -576,9 +638,14 @@ class ArmosChatWidget {
             .remove-file-btn {
                 background: none;
                 border: none;
-                color: #ef4444;
+                color: #EF4444;
                 cursor: pointer;
-                font-size: 14px;
+                font-size: 16px;
+                transition: all 0.2s;
+            }
+
+            .remove-file-btn:hover {
+                transform: scale(1.1);
             }
 
             /* ===================== RESPONSIVE ===================== */
@@ -589,7 +656,11 @@ class ArmosChatWidget {
                     border-radius: 0;
                     bottom: 0;
                     right: 0;
-                    padding: 8px;
+                    padding: 0;
+                }
+
+                .widget-inner {
+                    border-radius: 0;
                 }
 
                 .armosa-header,
@@ -599,19 +670,19 @@ class ArmosChatWidget {
                 }
             }
 
-            /* Syntax Highlighting */
-            .code-keyword { color: #569cd6; }
-            .code-string { color: #ce9178; }
-            .code-number { color: #b5cea8; }
-            .code-function { color: #dcdcaa; }
-            .code-comment { color: #6a9955; }
+            /* Syntax Highlighting - refined */
+            .code-keyword { color: #569CD6; }
+            .code-string { color: #CE9178; }
+            .code-number { color: #B5CEA8; }
+            .code-function { color: #DCDCAA; }
+            .code-comment { color: #6A9955; font-style: italic; }
         `;
         
         document.head.appendChild(style);
     }
 
     createWidget() {
-        // Create FAB (Floating Action Button) - 56px circle with gradient
+        // Create FAB (Floating Action Button) - premium gradient with shadow
         const fab = document.createElement('button');
         fab.id = 'armosa-fab';
         fab.innerHTML = `
@@ -623,36 +694,45 @@ class ArmosChatWidget {
         document.body.appendChild(fab);
         this.fab = fab;
 
-        // Create Widget (hidden by default) - 360×720 geometric frame
+        // Create Widget (hidden by default) - premium AI-native design
         const widget = document.createElement('div');
         widget.id = 'armosa-widget';
         widget.classList.add('hidden');
         widget.innerHTML = `
-            <!-- HEADER: 328×64px, border-radius: 20px -->
-            <div class="armosa-header">
-                <button class="close-btn" id="close-widget" title="Close">✕</button>
-                <div class="armosa-logo">A</div>
-                <div class="armosa-title">Ask Armosa</div>
-                <div class="mode-buttons">
-                    <button class="mode-btn active" data-mode="chat" title="Chat">
-                        <span class="mode-btn-icon">💬</span>
-                    </button>
-                    <button class="mode-btn" data-mode="avatar" title="Avatar">
-                        <span class="mode-btn-icon">👤</span>
+            <!-- Inner container for white background -->
+            <div class="widget-inner">
+                <!-- HEADER: Two-row layout -->
+                <div class="armosa-header">
+                    <button class="close-btn" id="close-widget" title="Close">✕</button>
+                    <div class="header-top">
+                        <div class="armosa-logo">A</div>
+                        <div class="armosa-title">Ask Armosa</div>
+                    </div>
+                    <div class="mode-buttons">
+                        <button class="mode-btn active" data-mode="chat" title="Chat">
+                            <span class="mode-btn-icon">💬</span>
+                        </button>
+                        <button class="mode-btn" data-mode="avatar" title="Avatar">
+                            <span class="mode-btn-icon">👤</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- CHAT AREA: Clean, scrollable -->
+                <div class="armosa-messages" id="armosa-messages"></div>
+
+                <!-- INPUT BAR: Premium pill -->
+                <div class="armosa-input-container">
+                    <input type="file" id="file-input" style="display: none;">
+                    <button class="action-btn" id="file-btn" title="Attach file">📎</button>
+                    <input type="text" id="armosa-input" placeholder="Ask anything...">
+                    <button class="action-btn" id="voice-btn" title="Voice input">🎤</button>
+                    <button class="send-btn" id="send-btn" title="Send">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                        </svg>
                     </button>
                 </div>
-            </div>
-
-            <!-- CENTRAL REGION: 328px wide, fills space -->
-            <div class="armosa-messages" id="armosa-messages"></div>
-
-            <!-- INPUT BAR: 328×48px, pill shape -->
-            <div class="armosa-input-container">
-                <input type="file" id="file-input" style="display: none;">
-                <button class="action-btn" id="file-btn" title="Attach">+</button>
-                <input type="text" id="armosa-input" placeholder="Type your message...">
-                <button class="action-btn" id="voice-btn" title="Voice">🎤</button>
-                <button class="send-btn" id="send-btn" title="Send">➤</button>
             </div>
         `;
         
