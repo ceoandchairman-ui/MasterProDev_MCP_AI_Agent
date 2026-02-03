@@ -155,7 +155,7 @@ class ArmosChatWidget {
             /* Full height flex container */
             #armosa-widget .widget-inner {
                 flex: 1 !important;
-                background: #FFFFFF !important;
+                background: linear-gradient(135deg, #2563EB 0%, #FFB800 50%, #00C896 100%) !important;
                 border-radius: 0 !important;
                 display: flex !important;
                 flex-direction: column !important;
@@ -171,7 +171,7 @@ class ArmosChatWidget {
                 width: 100% !important;
                 background: #FFFFFF !important;
                 border-radius: 16px !important;
-                border: 1px solid rgba(0, 0, 0, 0.08) !important;
+                border: 2px solid #0000 !important;
                 display: flex !important;
                 flex-direction: column !important;
                 align-items: center !important;
@@ -292,7 +292,7 @@ class ArmosChatWidget {
                 flex: 1 !important;
                 background: #FFFFFF !important;
                 border-radius: 0 !important;
-                border: none !important;
+                border: 1px solid black !important;
                 overflow-y: auto !important;
                 overflow-x: hidden !important;
                 padding: 24px !important;
