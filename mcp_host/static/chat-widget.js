@@ -87,7 +87,7 @@ class ArmosChatWidget {
             #armosa-fab {
                 all: unset !important;
                 position: fixed !important;
-                bottom: 160px !important;
+                bottom: 24px !important;
                 right: 24px !important;
                 width: 56px !important;
                 height: 56px !important;
@@ -128,7 +128,7 @@ class ArmosChatWidget {
                 all: unset !important;
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
                 position: fixed !important;
-                bottom: 160px !important;
+                bottom: 24px !important;
                 right: 24px !important;
                 width: 360px !important;
                 height: 720px !important;
@@ -140,13 +140,14 @@ class ArmosChatWidget {
                 transition: transform 0.3s ease, opacity 0.3s ease !important;
                 transform-origin: bottom right !important;
                 background: #FFFFFF !important;
-                border: 1px solid rgba(0, 0, 0, 0.1) !important;
+                border: 2px solid transparent !important;
+                border-image: linear-gradient(135deg, #2563EB, #FFB800, #00C896) 1 !important;
                 box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
                 overflow: hidden !important;
             }
 
             #armosa-widget.hidden {
-                transform: translateY(16px) scale(0.98) !important;
+                transform: scale(0) !important;
                 opacity: 0 !important;
                 pointer-events: none !important;
             }
@@ -171,7 +172,7 @@ class ArmosChatWidget {
                 width: 100% !important;
                 background: #FFFFFF !important;
                 border-radius: 16px !important;
-                border: 2px solid #0000 !important;
+                border: 2px solid rgba(17, 24, 39, 0.12) !important;
                 display: flex !important;
                 flex-direction: column !important;
                 align-items: center !important;
@@ -291,8 +292,9 @@ class ArmosChatWidget {
                 width: 100% !important;
                 flex: 1 !important;
                 background: #FFFFFF !important;
-                border-radius: 15% !important;
-                border: 1px solid black !important;
+                border-radius: 12px !important;
+                border: 1px solid rgba(17, 24, 39, 0.10) !important;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
                 overflow-y: auto !important;
                 overflow-x: hidden !important;
                 padding: 24px !important;

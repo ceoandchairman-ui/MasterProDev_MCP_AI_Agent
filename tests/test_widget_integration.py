@@ -1,8 +1,3 @@
-"""
-Integration test for chat widget with FastAPI backend.
-Tests FormData submission to /chat endpoint and response parsing.
-"""
-
 import pytest
 import asyncio
 from httpx import AsyncClient, Client
