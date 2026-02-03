@@ -166,20 +166,20 @@ class ArmosChatWidget {
             }
 
             /* ==================== HEADER ==================== */
-            /* Match full-page: clean white, border-bottom */
+            /* Elevated card - pops out from the plate */
             #armosa-widget .armosa-header {
                 width: 100% !important;
                 background: #FFFFFF !important;
-                border-radius: 0 !important;
-                border: none !important;
-                border-bottom: 1px solid #e8e8e8 !important;
+                border-radius: 16px !important;
+                border: 1px solid rgba(0, 0, 0, 0.08) !important;
                 display: flex !important;
                 flex-direction: column !important;
                 align-items: center !important;
-                padding: 12px 16px !important;
+                padding: 16px !important;
                 gap: 12px !important;
                 position: relative !important;
                 flex-shrink: 0 !important;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
             }
 
             /* Row 1: Logo + Title */
@@ -627,53 +627,50 @@ class ArmosChatWidget {
             }
 
             /* ==================== INPUT BAR ==================== */
-            /* Match full-page: row layout with gap */
+            /* Elevated pill - pops out from the plate */
             #armosa-widget .armosa-input-container {
                 width: 100% !important;
                 display: flex !important;
-                align-items: flex-end !important;
-                padding: 0 !important;
-                gap: 10px !important;
+                align-items: center !important;
+                padding: 10px 12px !important;
+                gap: 8px !important;
                 flex-shrink: 0 !important;
-                background: transparent !important;
-                border: none !important;
-                border-top: 1px solid #e8e8e8 !important;
-                padding: 16px 20px !important;
+                background: #FFFFFF !important;
+                border: 1px solid rgba(0, 0, 0, 0.08) !important;
+                border-radius: 26px !important;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
             }
 
-            /* Text Input: Match full-page - standalone with border */
+            /* Text Input: Clean inside the pill */
             #armosa-widget #armosa-input {
                 all: unset !important;
                 flex: 1 !important;
-                min-height: 40px !important;
-                border: 1px solid #e5e5e5 !important;
-                border-radius: 12px !important;
-                padding: 10px 16px !important;
+                min-height: 36px !important;
+                border: none !important;
+                border-radius: 0 !important;
+                padding: 0 8px !important;
                 font-size: 14px !important;
                 font-family: inherit !important;
-                background: #fafafa !important;
+                background: transparent !important;
                 color: #1F2937 !important;
-                transition: all 0.15s ease !important;
             }
 
             #armosa-widget #armosa-input:focus {
-                border-color: #00C896 !important;
-                background: #FFFFFF !important;
-                box-shadow: 0 0 0 2px rgba(0, 200, 150, 0.1) !important;
+                outline: none !important;
             }
 
             #armosa-widget #armosa-input::placeholder {
                 color: #9CA3AF !important;
             }
 
-            /* Action Buttons: Match full-page exactly - 40x40, border, transparent */
+            /* Action Buttons: Clean circles inside the pill */
             #armosa-widget .action-btn {
                 all: unset !important;
-                width: 40px !important;
-                height: 40px !important;
-                border-radius: 10px !important;
+                width: 36px !important;
+                height: 36px !important;
+                border-radius: 50% !important;
                 background: transparent !important;
-                border: 1px solid #e5e5e5 !important;
+                border: none !important;
                 cursor: pointer !important;
                 display: flex !important;
                 align-items: center !important;
@@ -685,7 +682,6 @@ class ArmosChatWidget {
 
             #armosa-widget .action-btn:hover {
                 background: #f4f4f5 !important;
-                border-color: #d4d4d8 !important;
                 color: #00C896 !important;
             }
 
@@ -704,32 +700,14 @@ class ArmosChatWidget {
                 50% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
             }
 
-            /* Text Input: Clean, minimal */
-            #armosa-widget #armosa-input {
-                all: unset !important;
-                flex: 1 !important;
-                height: 36px !important;
-                border: none !important;
-                background: transparent !important;
-                padding: 0 8px !important;
-                font-size: 14px !important;
-                font-family: inherit !important;
-                outline: none !important;
-                color: #1F2937 !important;
-            }
-
-            #armosa-widget #armosa-input::placeholder {
-                color: #9CA3AF !important;
-            }
-
-            /* Send Button: Match full-page - 40x40, primary green */
+            /* Send Button: Circle with primary color */
             #armosa-widget .send-btn {
                 all: unset !important;
-                width: 40px !important;
-                height: 40px !important;
-                min-width: 40px !important;
-                min-height: 40px !important;
-                border-radius: 10px !important;
+                width: 36px !important;
+                height: 36px !important;
+                min-width: 36px !important;
+                min-height: 36px !important;
+                border-radius: 50% !important;
                 background: #00C896 !important;
                 border: none !important;
                 cursor: pointer !important;
@@ -743,6 +721,7 @@ class ArmosChatWidget {
 
             #armosa-widget .send-btn:hover:not(:disabled) {
                 background: #009977 !important;
+                transform: scale(1.05) !important;
             }
 
             #armosa-widget .send-btn:disabled {
