@@ -161,12 +161,12 @@ class ArmosChatWidget {
             }
 
             /* ==================== HEADER CARD ==================== */
-            /* Rectangle: 100% × auto, 16px radius, centered content */
+            /* Clean white header with subtle bottom border */
             #armosa-widget .armosa-header {
                 width: 100% !important;
                 background: #FFFFFF !important;
                 border-radius: 16px !important;
-                border: none !important;
+                border: 1px solid rgba(0, 0, 0, 0.04) !important;
                 display: flex !important;
                 flex-direction: column !important;
                 align-items: center !important;
@@ -174,7 +174,7 @@ class ArmosChatWidget {
                 gap: 12px !important;
                 position: relative !important;
                 flex-shrink: 0 !important;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+                box-shadow: none !important;
             }
 
             /* Row 1: Logo + Title */
@@ -282,13 +282,13 @@ class ArmosChatWidget {
             }
 
             /* ==================== CHAT MESSAGES AREA ==================== */
-            /* Rectangle: 100% × flex, 16px radius, light gray bg */
+            /* Rectangle: 100% × flex, 16px radius, PURE WHITE bg */
             #armosa-widget .armosa-messages {
                 width: 100% !important;
                 flex: 1 !important;
-                background: #FAFAFA !important;
+                background: #FFFFFF !important;
                 border-radius: 16px !important;
-                border: none !important;
+                border: 1px solid rgba(0, 0, 0, 0.04) !important;
                 overflow-y: auto !important;
                 overflow-x: hidden !important;
                 padding: 16px !important;
@@ -359,34 +359,75 @@ class ArmosChatWidget {
                 border: none !important;
             }
 
-            /* Bot Message: White bg, asymmetric radius (4px top-left pointer) */
+            /* Bot Message: Soft gray bg for contrast, asymmetric radius */
             #armosa-widget .bot-message-content {
-                background: #FFFFFF !important;
+                background: #F8FAFC !important;
                 border: none !important;
                 border-radius: 4px 18px 18px 18px !important;
-                padding: 12px 16px !important;
+                padding: 14px 18px !important;
                 font-size: 14px !important;
-                line-height: 1.5 !important;
+                line-height: 1.6 !important;
                 color: #1F2937 !important;
-                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
             }
 
-            /* User Message: Gradient bg, asymmetric radius (4px top-right pointer) */
+            /* Bot message text styling */
+            #armosa-widget .bot-message-content strong,
+            #armosa-widget .bot-message-content b {
+                color: #00C896 !important;
+                font-weight: 600 !important;
+            }
+
+            #armosa-widget .bot-message-content em,
+            #armosa-widget .bot-message-content i {
+                color: #2563EB !important;
+                font-style: italic !important;
+            }
+
+            /* User Message: Brand gradient bg, asymmetric radius (4px top-right pointer) */
             #armosa-widget .user-message-content {
                 background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
                 border: none !important;
                 border-radius: 18px 4px 18px 18px !important;
-                padding: 12px 16px !important;
+                padding: 14px 18px !important;
                 color: #FFFFFF !important;
                 font-size: 14px !important;
-                line-height: 1.5 !important;
-                box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important;
+                line-height: 1.6 !important;
+                box-shadow: 0 3px 12px rgba(0, 200, 150, 0.25),
+                            0 1px 4px rgba(37, 99, 235, 0.15) !important;
+            }
+
+            /* User message link styling */
+            #armosa-widget .user-message-content a {
+                color: #FFFFFF !important;
+                text-decoration: underline !important;
+                text-decoration-color: rgba(255, 255, 255, 0.5) !important;
+            }
+
+            #armosa-widget .user-message-content a:hover {
+                text-decoration-color: #FFFFFF !important;
             }
 
             #armosa-widget .message-text {
-                line-height: 1.5 !important;
+                line-height: 1.6 !important;
                 font-size: 14px !important;
                 border: none !important;
+                word-wrap: break-word !important;
+            }
+
+            /* Inline code in messages */
+            #armosa-widget .message-text code {
+                background: rgba(0, 200, 150, 0.1) !important;
+                color: #059669 !important;
+                padding: 2px 6px !important;
+                border-radius: 4px !important;
+                font-family: 'SF Mono', 'Consolas', monospace !important;
+                font-size: 13px !important;
+            }
+
+            #armosa-widget .user-message-content code {
+                background: rgba(255, 255, 255, 0.2) !important;
+                color: #FFFFFF !important;
             }
 
             /* Code Block: Dark theme, 12px radius */
@@ -491,13 +532,14 @@ class ArmosChatWidget {
                 font-weight: 500 !important;
             }
 
-            /* List Block */
+            /* List Block: Clean with green bullet points */
             #armosa-widget .list-block {
-                background: rgba(0, 0, 0, 0.02) !important;
+                background: rgba(0, 200, 150, 0.03) !important;
                 border-radius: 10px !important;
-                padding: 12px !important;
+                padding: 12px 16px !important;
                 margin-top: 8px !important;
                 border: none !important;
+                border-left: 2px solid rgba(0, 200, 150, 0.3) !important;
             }
 
             #armosa-widget .list-block ul {
@@ -508,11 +550,12 @@ class ArmosChatWidget {
             }
 
             #armosa-widget .list-block li {
-                padding: 4px 0 4px 18px !important;
+                padding: 6px 0 6px 20px !important;
                 position: relative !important;
                 font-size: 13px !important;
                 color: #374151 !important;
                 border: none !important;
+                line-height: 1.5 !important;
             }
 
             #armosa-widget .list-block li:before {
@@ -521,9 +564,10 @@ class ArmosChatWidget {
                 left: 4px !important;
                 color: #00C896 !important;
                 font-weight: bold !important;
+                font-size: 16px !important;
             }
 
-            /* Links */
+            /* Links: Blue brand color with hover effect */
             #armosa-widget .message-link {
                 color: #2563EB !important;
                 text-decoration: none !important;
