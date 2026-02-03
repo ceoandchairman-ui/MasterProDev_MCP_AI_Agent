@@ -87,7 +87,7 @@ class ArmosChatWidget {
             #armosa-fab {
                 all: unset !important;
                 position: fixed !important;
-                bottom: 24px !important;
+                bottom: 160px !important;
                 right: 24px !important;
                 width: 56px !important;
                 height: 56px !important;
@@ -128,7 +128,7 @@ class ArmosChatWidget {
                 all: unset !important;
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
                 position: fixed !important;
-                bottom: 24px !important;
+                bottom: 160px !important;
                 right: 24px !important;
                 width: 360px !important;
                 height: 720px !important;
@@ -146,7 +146,7 @@ class ArmosChatWidget {
             }
 
             #armosa-widget.hidden {
-                transform: scale(0) !important;
+                transform: translateY(16px) scale(0.98) !important;
                 opacity: 0 !important;
                 pointer-events: none !important;
             }
@@ -291,7 +291,7 @@ class ArmosChatWidget {
                 width: 100% !important;
                 flex: 1 !important;
                 background: #FFFFFF !important;
-                border-radius: 0 !important;
+                border-radius: 15% !important;
                 border: 1px solid black !important;
                 overflow-y: auto !important;
                 overflow-x: hidden !important;
