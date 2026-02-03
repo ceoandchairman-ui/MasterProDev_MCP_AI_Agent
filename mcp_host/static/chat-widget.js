@@ -161,12 +161,12 @@ class ArmosChatWidget {
             }
 
             /* ==================== HEADER CARD ==================== */
-            /* Clean white header with subtle bottom border */
+            /* Clean white header, no border, subtle shadow */
             #armosa-widget .armosa-header {
                 width: 100% !important;
                 background: #FFFFFF !important;
                 border-radius: 16px !important;
-                border: 1px solid rgba(0, 0, 0, 0.04) !important;
+                border: none !important;
                 display: flex !important;
                 flex-direction: column !important;
                 align-items: center !important;
@@ -174,7 +174,7 @@ class ArmosChatWidget {
                 gap: 12px !important;
                 position: relative !important;
                 flex-shrink: 0 !important;
-                box-shadow: none !important;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
             }
 
             /* Row 1: Logo + Title */
@@ -288,13 +288,14 @@ class ArmosChatWidget {
                 flex: 1 !important;
                 background: #FFFFFF !important;
                 border-radius: 16px !important;
-                border: 1px solid rgba(0, 0, 0, 0.04) !important;
+                border: none !important;
                 overflow-y: auto !important;
                 overflow-x: hidden !important;
                 padding: 16px !important;
                 display: flex !important;
                 flex-direction: column !important;
                 gap: 16px !important;
+                box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.03) !important;
             }
 
             #armosa-widget .armosa-messages::-webkit-scrollbar {
@@ -359,16 +360,16 @@ class ArmosChatWidget {
                 border: none !important;
             }
 
-            /* Bot Message: Soft gray bg for contrast, asymmetric radius */
+            /* Bot Message: Soft off-white bg, asymmetric radius (pointer on top-left) */
             #armosa-widget .bot-message-content {
-                background: #F8FAFC !important;
-                border: none !important;
+                background: #F9FAFB !important;
+                border: 1px solid rgba(0, 0, 0, 0.04) !important;
                 border-radius: 4px 18px 18px 18px !important;
                 padding: 14px 18px !important;
                 font-size: 14px !important;
                 line-height: 1.6 !important;
-                color: #1F2937 !important;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+                color: #374151 !important;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
             }
 
             /* Bot message text styling */
@@ -393,8 +394,9 @@ class ArmosChatWidget {
                 color: #FFFFFF !important;
                 font-size: 14px !important;
                 line-height: 1.6 !important;
-                box-shadow: 0 3px 12px rgba(0, 200, 150, 0.25),
-                            0 1px 4px rgba(37, 99, 235, 0.15) !important;
+                box-shadow: 0 4px 14px rgba(0, 200, 150, 0.3),
+                            0 2px 6px rgba(37, 99, 235, 0.2) !important;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) !important;
             }
 
             /* User message link styling */
