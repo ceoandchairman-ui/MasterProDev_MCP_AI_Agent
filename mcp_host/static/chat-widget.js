@@ -6,8 +6,12 @@
 
 class ArmosChatWidget {
     constructor(config = {}) {
+        // Get base URL from current location (works for all deployments)
+        const API_URL = window.location.origin;
+        
         this.config = {
-            apiUrl: config.apiUrl || '/api/chat',
+            apiUrl: config.apiUrl || `${API_URL}/chat`,
+            voiceUrl: config.voiceUrl || `${API_URL}/voice`,
             containerId: config.containerId || 'armosa-widget-container',
             theme: config.theme || 'light',
             position: config.position || 'bottom-right',
@@ -15,7 +19,8 @@ class ArmosChatWidget {
         };
         
         this.messages = [];
-        this.currentMode = 'chat'; // 'chat' or 'avatar'
+        this.conversationId = null;  // Track conversation for context
+        this.currentMode = 'chat'; // 'chat', 'voice', or 'avatar'
         this.isRecording = false;
         this.mediaRecorder = null;
         this.audioChunks = [];
@@ -161,10 +166,10 @@ class ArmosChatWidget {
             }
 
             /* ==================== HEADER CARD ==================== */
-            /* Clean white header, no border, subtle shadow */
+            /* Elevated header - pops out from the plate */
             #armosa-widget .armosa-header {
                 width: 100% !important;
-                background: #FFFFFF !important;
+                background: linear-gradient(180deg, #FFFFFF 0%, #FAFBFC 100%) !important;
                 border-radius: 16px !important;
                 border: none !important;
                 display: flex !important;
@@ -174,7 +179,9 @@ class ArmosChatWidget {
                 gap: 12px !important;
                 position: relative !important;
                 flex-shrink: 0 !important;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08),
+                            0 2px 4px rgba(0, 0, 0, 0.04),
+                            0 0 0 1px rgba(0, 0, 0, 0.02) !important;
             }
 
             /* Row 1: Logo + Title */
@@ -239,14 +246,16 @@ class ArmosChatWidget {
             }
 
             /* ==================== MODE BUTTONS CONTAINER ==================== */
-            /* Pill container: gray background, 10px radius */
+            /* Elevated pill container - highlighted from plate */
             #armosa-widget .mode-buttons {
                 display: flex !important;
                 gap: 4px !important;
-                background: #F3F4F6 !important;
+                background: linear-gradient(180deg, #F3F4F6 0%, #E9EAED 100%) !important;
                 border-radius: 10px !important;
                 padding: 3px !important;
                 border: none !important;
+                box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06),
+                            0 1px 0 rgba(255, 255, 255, 0.8) !important;
             }
 
             /* Mode Button: 32×28px, 8px radius */
@@ -268,12 +277,14 @@ class ArmosChatWidget {
 
             #armosa-widget .mode-btn:hover {
                 color: #1F2937 !important;
+                background: rgba(255, 255, 255, 0.5) !important;
             }
 
             #armosa-widget .mode-btn.active {
                 background: #FFFFFF !important;
                 color: #00C896 !important;
-                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1),
+                            0 1px 2px rgba(0, 0, 0, 0.06) !important;
             }
 
             #armosa-widget .mode-btn-icon {
@@ -282,11 +293,11 @@ class ArmosChatWidget {
             }
 
             /* ==================== CHAT MESSAGES AREA ==================== */
-            /* Rectangle: 100% × flex, 16px radius, PURE WHITE bg */
+            /* Chat plane - clean white with subtle depth */
             #armosa-widget .armosa-messages {
                 width: 100% !important;
                 flex: 1 !important;
-                background: #FFFFFF !important;
+                background: linear-gradient(180deg, #FFFFFF 0%, #FCFDFD 100%) !important;
                 border-radius: 16px !important;
                 border: none !important;
                 overflow-y: auto !important;
@@ -295,7 +306,8 @@ class ArmosChatWidget {
                 display: flex !important;
                 flex-direction: column !important;
                 gap: 16px !important;
-                box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02),
+                            inset 0 0 0 1px rgba(0, 0, 0, 0.02) !important;
             }
 
             #armosa-widget .armosa-messages::-webkit-scrollbar {
@@ -415,6 +427,19 @@ class ArmosChatWidget {
                 font-size: 14px !important;
                 border: none !important;
                 word-wrap: break-word !important;
+            }
+
+            /* Timestamp styling */
+            #armosa-widget .message-time {
+                font-size: 10px !important;
+                color: #9CA3AF !important;
+                margin-top: 6px !important;
+                text-align: right !important;
+                opacity: 0.7 !important;
+            }
+
+            #armosa-widget .message-group.user .message-time {
+                color: rgba(255, 255, 255, 0.7) !important;
             }
 
             /* Inline code in messages */
@@ -617,25 +642,29 @@ class ArmosChatWidget {
             }
 
             /* ==================== INPUT BAR ==================== */
-            /* Pill: 100% × 52px, 26px radius (height/2), subtle border */
+            /* Elevated pill - pops out from the plate */
             #armosa-widget .armosa-input-container {
                 width: 100% !important;
                 height: 52px !important;
-                background: #FFFFFF !important;
+                background: linear-gradient(180deg, #FFFFFF 0%, #FAFBFC 100%) !important;
                 border-radius: 26px !important;
-                border: 1px solid rgba(0, 0, 0, 0.08) !important;
+                border: 1px solid rgba(0, 0, 0, 0.06) !important;
                 display: flex !important;
                 align-items: center !important;
                 padding: 0 8px 0 16px !important;
                 gap: 8px !important;
                 flex-shrink: 0 !important;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08),
+                            0 2px 4px rgba(0, 0, 0, 0.04),
+                            0 0 0 1px rgba(0, 0, 0, 0.02) !important;
                 transition: all 0.2s ease !important;
             }
 
             #armosa-widget .armosa-input-container:focus-within {
-                border-color: rgba(0, 200, 150, 0.4) !important;
-                box-shadow: 0 0 0 3px rgba(0, 200, 150, 0.1) !important;
+                border-color: rgba(0, 200, 150, 0.5) !important;
+                box-shadow: 0 4px 16px rgba(0, 200, 150, 0.15),
+                            0 2px 4px rgba(0, 0, 0, 0.04),
+                            0 0 0 3px rgba(0, 200, 150, 0.1) !important;
             }
 
             /* Action Buttons: 32×32px circles */
@@ -983,62 +1012,146 @@ class ArmosChatWidget {
     stopRecording() {
         if (this.mediaRecorder) {
             this.mediaRecorder.stop();
+            // Stop all tracks to release microphone
+            this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
         }
     }
 
     sendAudioMessage(audioBlob) {
         const formData = new FormData();
-        formData.append('audio', audioBlob, 'message.wav');
+        // Use 'audio' field name with webm format (like full-page)
+        formData.append('audio', audioBlob, 'recording.webm');
         
-        this.addUserMessage('[🎤 Voice message]');
         this.showTypingIndicator();
         
-        fetch(`${this.config.apiUrl}/audio`, {
+        // Use correct /voice endpoint (same as full-page)
+        fetch(this.config.voiceUrl, {
             method: 'POST',
             body: formData
         })
-        .then(r => r.json())
-        .then(data => {
-            this.removeTypingIndicator();
-            this.addBotMessage(data.response);
+        .then(async response => {
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || `Voice request failed (${response.status})`);
+            }
+            
+            // Check content type - could be audio or JSON
+            const contentType = response.headers.get('Content-Type');
+            
+            if (contentType && contentType.includes('application/json')) {
+                // Server returned JSON - use browser TTS fallback
+                const data = await response.json();
+                
+                // Show user transcription
+                if (data.transcription) {
+                    this.addUserMessage(`🎤 "${data.transcription}"`);
+                }
+                
+                // Show and optionally speak bot response
+                if (data.response) {
+                    this.addBotMessage(data.response);
+                    
+                    // Use browser TTS if available
+                    if (data.use_browser_tts && 'speechSynthesis' in window) {
+                        this.speakText(data.response);
+                    }
+                }
+            } else {
+                // Server returned audio
+                const audioResponse = await response.blob();
+                const transcription = response.headers.get('X-Transcription');
+                const responseText = response.headers.get('X-Response-Text');
+                const decodedResponseText = responseText ? decodeURIComponent(responseText) : '';
+                
+                // Show user transcription
+                if (transcription) {
+                    this.addUserMessage(`🎤 "${transcription}"`);
+                }
+                
+                // Show bot response text
+                if (decodedResponseText) {
+                    this.addBotMessage(decodedResponseText);
+                }
+                
+                // Play audio response
+                const audioUrl = URL.createObjectURL(audioResponse);
+                const audio = new Audio(audioUrl);
+                audio.play();
+                audio.onended = () => URL.revokeObjectURL(audioUrl);
+            }
         })
         .catch(err => {
-            this.removeTypingIndicator();
             this.addBotMessage('Sorry, there was an error processing your voice message.');
-            console.error(err);
+            console.error('Voice error:', err);
+        })
+        .finally(() => {
+            this.removeTypingIndicator();
         });
+    }
+    
+    // Browser TTS for voice responses
+    speakText(text) {
+        if ('speechSynthesis' in window) {
+            speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            utterance.rate = 1.0;
+            speechSynthesis.speak(utterance);
+        }
     }
 
     sendMessage() {
         const input = this.widget.querySelector('#armosa-input');
         const message = input.value.trim();
 
-        if (!message) return;
+        if (!message && !this.selectedFile) return;
 
-        // Add user message
-        this.addUserMessage(message);
+        // Show what user typed with file attachment indicator
+        const displayMessage = this.selectedFile ? `${message}\n📎 ${this.selectedFile.name}` : message;
+        this.addUserMessage(displayMessage || 'Please analyze this file');
+        
         input.value = '';
         input.style.height = 'auto';
-        this.removeFile();
 
         // Show typing indicator
         this.showTypingIndicator();
 
+        // Use FormData like full-page (backend expects multipart/form-data)
+        const formData = new FormData();
+        formData.append('message', message || 'Please analyze this file');
+        if (this.conversationId) {
+            formData.append('conversation_id', this.conversationId);
+        }
+        if (this.selectedFile) {
+            formData.append('file', this.selectedFile);
+        }
+
         // Send to API
         fetch(this.config.apiUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message, mode: this.currentMode })
+            body: formData  // No Content-Type header - browser sets it with boundary
         })
-        .then(r => r.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Request failed (${response.status})`);
+            }
+            return response.json();
+        })
         .then(data => {
             this.removeTypingIndicator();
+            // Store conversation ID for context continuity
+            if (data.conversation_id) {
+                this.conversationId = data.conversation_id;
+            }
             this.addBotMessage(data.response);
         })
         .catch(err => {
             this.removeTypingIndicator();
             this.addBotMessage('Sorry, I encountered an error. Please try again.');
-            console.error(err);
+            console.error('Chat error:', err);
+        })
+        .finally(() => {
+            this.removeFile();
         });
     }
 
@@ -1070,6 +1183,14 @@ class ArmosChatWidget {
         const bubble = document.createElement('div');
         bubble.className = 'message-bubble';
         bubble.innerHTML = this.parseMessage(content, role);
+        
+        // Add timestamp
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const timestamp = document.createElement('div');
+        timestamp.className = 'message-time';
+        timestamp.textContent = time;
+        bubble.appendChild(timestamp);
+        
         group.appendChild(bubble);
 
         return group;
