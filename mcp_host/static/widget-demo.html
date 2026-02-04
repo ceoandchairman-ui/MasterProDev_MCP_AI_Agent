@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Armosa Chat Widget Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .demo-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 60px 20px;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(90deg, #2563EB, #FFB800, #00C896);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .subtitle {
+            font-size: 1.25rem;
+            color: #a0a0a0;
+            margin-bottom: 3rem;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 3rem;
+        }
+        
+        .feature-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            text-align: left;
+        }
+        
+        .feature-card h3 {
+            color: #00C896;
+            margin-bottom: 8px;
+        }
+        
+        .feature-card p {
+            color: #888;
+            font-size: 14px;
+        }
+        
+        .cta {
+            font-size: 1.1rem;
+            color: #FFB800;
+            margin-top: 2rem;
+        }
+        
+        .arrow {
+            display: inline-block;
+            animation: bounce 1s infinite;
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(10px); }
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <h1>Armosa Chat Widget</h1>
+        <p class="subtitle">
+            Experience the "Mobile App" edition of Armosa — a premium AI assistant 
+            with voice chat, file uploads, and smart markdown parsing.
+        </p>
+        
+        <div class="features">
+            <div class="feature-card">
+                <h3>💬 Smart Chat</h3>
+                <p>Real-time AI conversations with markdown support and code highlighting</p>
+            </div>
+            <div class="feature-card">
+                <h3>🎤 Voice Mode</h3>
+                <p>Hold to record voice messages with automatic transcription</p>
+            </div>
+            <div class="feature-card">
+                <h3>📎 File Uploads</h3>
+                <p>Attach images, PDFs, documents for AI analysis</p>
+            </div>
+            <div class="feature-card">
+                <h3>🔐 Authentication</h3>
+                <p>Built-in login with token persistence across sessions</p>
+            </div>
+        </div>
+        
+        <p class="cta">
+            Click the chat button <span class="arrow">→</span>
+        </p>
+    </div>
+    
+    <!-- Load the Armosa Chat Widget -->
+    <script src="chat-widget.js"></script>
+    <script>
+        // Widget auto-initializes, but you can also configure it:
+        // window.armosaWidget = new ArmosaChatWidget({
+        //     apiUrl: '/chat',
+        //     voiceUrl: '/voice',
+        //     loginUrl: '/login'
+        // });
+    </script>
+</body>
+</html>

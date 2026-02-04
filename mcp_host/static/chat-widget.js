@@ -965,17 +965,25 @@ class ArmosaChatWidget {
     }
 
     createWidget() {
-        // Load Iconify
-        if (!document.querySelector('script[src*="iconify"]')) {
-            const script = document.createElement('script');
-            script.src = 'https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js';
-            document.head.appendChild(script);
-        }
+        // Load Iconify with callback
+        const loadIconify = () => {
+            return new Promise((resolve) => {
+                if (window.Iconify || document.querySelector('script[src*="iconify"]')) {
+                    resolve();
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = 'https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js';
+                script.onload = () => resolve();
+                script.onerror = () => resolve(); // Continue even if icons fail
+                document.head.appendChild(script);
+            });
+        };
 
         // FAB
         const fab = document.createElement('button');
         fab.id = 'armosa-fab';
-        fab.innerHTML = `<iconify-icon icon="mdi:chat" style="font-size: 26px; color: white;"></iconify-icon>`;
+        fab.innerHTML = `<iconify-icon icon="mdi:chat" style="font-size: 26px; color: white;"></iconify-icon><span style="display:none;">💬</span>`;
         fab.title = 'Chat with Armosa';
         document.body.appendChild(fab);
         this.fab = fab;
