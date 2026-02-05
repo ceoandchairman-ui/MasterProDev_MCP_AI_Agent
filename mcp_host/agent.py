@@ -249,12 +249,14 @@ class MCPAgent:
                 
                 # If the output is a dict with 'status': 'pending_auth', handle authorization flow
                 if isinstance(run.get("output"), dict) and run["output"].get("status") == "pending_auth":
+                    auth_url = run["output"].get("auth_url")
                     return {
-                        "response": "Please authorize the required service to continue. Check the logs for the authorization URL.",
+                        "response": "Please authorize the required service to continue.",
                         "tool_calls": [],
                         "execution_time": execution_time,
                         "success": True,
                         "pending_auth": True,
+                        "auth_url": auth_url,
                         "llm_provider": self.llm_manager.get_active_provider_info(),
                     }
 

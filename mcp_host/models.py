@@ -54,6 +54,8 @@ class ChatResponse(BaseModel):
     tool_used: Optional[str] = None
     context: Optional[List[str]] = None
     conversation_id: str
+    pending_auth: Optional[bool] = False
+    auth_url: Optional[str] = None
 
 
 class ConversationResponse(BaseModel):

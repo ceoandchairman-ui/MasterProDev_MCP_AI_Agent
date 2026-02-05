@@ -1271,6 +1271,12 @@ class ArmosaChatWidget {
             this.removeTypingIndicator();
             if (data.conversation_id) this.conversationId = data.conversation_id;
             this.addBotMessage(data.response);
+            
+            // Handle pending authentication
+            if (data.pending_auth && data.auth_url) {
+                const authMsg = `🔐 **Authorization Required**\n\nPlease [click here to authorize](${data.auth_url}) access to your external account.`;
+                this.addBotMessage(authMsg);
+            }
         })
         .catch(err => {
             this.removeTypingIndicator();

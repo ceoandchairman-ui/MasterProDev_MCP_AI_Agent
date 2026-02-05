@@ -769,7 +769,9 @@ async def chat(
     
     return ChatResponse(
         response=response_text,
-        conversation_id=conv_id
+        conversation_id=conv_id,
+        pending_auth=agent_result.get("pending_auth", False),
+        auth_url=agent_result.get("auth_url")
     )
 
 
