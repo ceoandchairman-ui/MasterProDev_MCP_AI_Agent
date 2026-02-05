@@ -1,9 +1,11 @@
 import weaviate
+from weaviate.classes.init import Auth
 from mcp_host.config import settings
 import logging
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from typing import List, Dict, Any, Optional
 import json
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -272,9 +274,6 @@ class RAGService:
             "summary": summary_text,
             "context": "\n---\n".join([r['text'] for r in results])
         }
-
-# Singleton instance
-rag_service = RAGService()
 
 # Singleton instance
 rag_service = RAGService()
