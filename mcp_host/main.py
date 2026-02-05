@@ -736,11 +736,18 @@ async def chat(
         conversation_history = await state_manager.get_conversation_history(session_id)
     
     # Process message through LangChain agent
-    agent_result = await mcp_agent.process_message(
-        message=full_message,
-        session_id=session_id,
-        conversation_history=conversation_history
-    )
+    try:
+        agent_result = await mcp_agent.process_message(
+            message=full_message,
+            session_id=session_id,
+            conversation_history=conversation_history
+        )
+    except Exception as e:
+        logger.error(f"❌ Agent processing error: {e}", exc_info=True)
+        return ChatResponse(
+            response=f"I'm having trouble processing your request right now. Please try again later.",
+            conversation_id=conv_id
+        )
     
     # Log full result for analytics/debugging
     logger.info(f"🔍 Agent execution: tool_calls={len(agent_result.get('tool_calls', []))}, "
@@ -752,9 +759,13 @@ async def chat(
     response_text = agent_result.get("response", "I couldn't process that request.")
     
     # Save conversation for ALL users (guests save to Redis only, authenticated to PostgreSQL too)
-    await state_manager.save_conversation_turn(
-        session_id, user_id, conv_id, full_message, response_text
-    )
+    try:
+        await state_manager.save_conversation_turn(
+            session_id, user_id, conv_id, full_message, response_text
+        )
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to save conversation: {e}")
+        # Don't fail the request if conversation save fails
     
     return ChatResponse(
         response=response_text,
