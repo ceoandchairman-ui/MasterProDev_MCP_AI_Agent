@@ -452,7 +452,7 @@ async def voice_chat(
 @app.get("/voice-chat")
 async def voice_chat_page():
     """Serve voice chat UI with avatar (now unified in chat-widget)"""
-    return FileResponse(str(STATIC_DIR / "chat-widget.html"))
+    return FileResponse(str(STATIC_DIR / "widget-demo.html"))
 
 
 @app.get("/evaluation")
@@ -806,13 +806,13 @@ async def chat_page():
 @app.get("/widget")
 async def widget_page():
     """Serve embeddable chat widget"""
-    return FileResponse(str(STATIC_DIR / "chat-widget.html"))
+    return FileResponse(str(STATIC_DIR / "widget-demo.html"))
 
 
 @app.get("/embed")
 async def embed_page():
     """Serve embeddable chat widget (alias)"""
-    return FileResponse(str(STATIC_DIR / "chat-widget.html"))
+    return FileResponse(str(STATIC_DIR / "widget-demo.html"))
 
 
 if __name__ == "__main__":
