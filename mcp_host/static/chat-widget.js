@@ -83,20 +83,8 @@ class ArmosaChatWidget {
     }
     
     updateAuthUI() {
-        const loginBtn = this.widget.querySelector('#auth-login-btn');
-        const userInfo = this.widget.querySelector('#auth-user-info');
-        const userEmail = this.widget.querySelector('#auth-user-email');
-        
-        if (this.authToken && this.userEmail) {
-            // Logged in
-            loginBtn.style.display = 'none';
-            userInfo.style.display = 'flex';
-            userEmail.textContent = this.userEmail.split('@')[0];
-        } else {
-            // Guest
-            loginBtn.style.display = 'flex';
-            userInfo.style.display = 'none';
-        }
+        // Auth UI removed by request
+        return;
     }
     
     showLoginModal() {
@@ -984,7 +972,7 @@ class ArmosaChatWidget {
         document.body.appendChild(fab);
         this.fab = fab;
 
-        // Widget
+        
         const widget = document.createElement('div');
         widget.id = 'armosa-widget';
         widget.classList.add('hidden');
@@ -999,25 +987,17 @@ class ArmosaChatWidget {
                         <span class="armosa-title">Armosa</span>
                     </div>
                     <div class="header-right">
-                        <!-- Auth UI -->
-                        <button class="auth-login-btn" id="auth-login-btn" title="Sign In">
-                            <iconify-icon icon="mdi:login" style="font-size: 14px;"></iconify-icon>
-                            <span>Sign In</span>
-                        </button>
-                        <div class="auth-user-info" id="auth-user-info" style="display: none;">
-                            <iconify-icon icon="mdi:account-circle" style="font-size: 16px; color: #00C896;"></iconify-icon>
-                            <span class="auth-user-email" id="auth-user-email"></span>
-                            <button class="auth-logout-btn" id="auth-logout-btn" title="Sign Out">
-                                <iconify-icon icon="mdi:logout" style="font-size: 14px;"></iconify-icon>
-                            </button>
+                        <!-- User Avatar (Visual Placeholder) -->
+                        <div class="header-icon-btn" title="Guest User" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin-right: 8px;">
+                            <iconify-icon icon="mdi:account-circle" style="font-size: 24px; color: rgba(255,255,255,0.8);"></iconify-icon>
                         </div>
                         
-                        <button class="mode-btn active" data-mode="chat" title="Chat">
-                            <iconify-icon icon="mdi:chat-outline" style="font-size: 18px;"></iconify-icon>
-                        </button>
-                        <button class="mode-btn" data-mode="voice" title="Voice">
-                            <iconify-icon icon="mdi:microphone-outline" style="font-size: 18px;"></iconify-icon>
-                        </button>
+                        <!-- Chat Mode (Visual Only) -->
+                        <div class="mode-indicator" title="Chat Mode" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;">
+                            <iconify-icon icon="mdi:chat-outline" style="font-size: 20px; color: white;"></iconify-icon>
+                        </div>
+
+                        <!-- Close Button -->
                         <button class="close-btn" id="close-widget" title="Close">
                             <iconify-icon icon="mdi:close" style="font-size: 18px;"></iconify-icon>
                         </button>
@@ -1092,20 +1072,6 @@ class ArmosaChatWidget {
         fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
 
         this.widget.querySelector('#voice-btn').addEventListener('click', () => this.toggleRecording());
-        
-        // Auth event listeners
-        this.widget.querySelector('#auth-login-btn').addEventListener('click', () => this.showLoginModal());
-        this.widget.querySelector('#auth-logout-btn').addEventListener('click', () => this.performLogout());
-        this.widget.querySelector('#login-submit').addEventListener('click', () => this.performLogin());
-        this.widget.querySelector('#login-cancel').addEventListener('click', () => this.hideLoginModal());
-        
-        // Login form keyboard support
-        this.widget.querySelector('#login-password').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                this.performLogin();
-            }
-        });
     }
 
     switchMode(mode) {
