@@ -340,11 +340,18 @@ class ArmosaChatWidget {
                 border-radius: 20px !important;
                 border: 2px solid rgba(37, 99, 235, 0.15) !important;
                 display: flex !important;
-                align-items: center !important;
-                justify-content: space-between !important;
+                flex-direction: column !important;
                 padding: 12px 16px !important;
                 flex-shrink: 0 !important;
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+                gap: 12px !important;
+            }
+
+            #armosa-widget .header-row-top {
+                display: flex !important;
+                align-items: center !important;
+                justify-content: space-between !important;
+                width: 100% !important;
             }
 
             #armosa-widget .header-left {
@@ -376,32 +383,7 @@ class ArmosaChatWidget {
             #armosa-widget .header-right {
                 display: flex !important;
                 align-items: center !important;
-                gap: 6px !important;
-            }
-
-            #armosa-widget .mode-btn {
-                all: unset !important;
-                width: 36px !important;
-                height: 36px !important;
-                border-radius: 10px !important;
-                background: #F4F4F5 !important;
-                cursor: pointer !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                color: #71717A !important;
-                transition: all 0.2s ease !important;
-            }
-
-            #armosa-widget .mode-btn:hover {
-                background: #E4E4E7 !important;
-                color: #2563EB !important;
-            }
-
-            #armosa-widget .mode-btn.active {
-                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
-                color: #FFFFFF !important;
-                box-shadow: 0 2px 8px rgba(0, 200, 150, 0.3) !important;
+                justify-content: flex-end !important;
             }
 
             #armosa-widget .close-btn {
@@ -421,6 +403,42 @@ class ArmosaChatWidget {
             #armosa-widget .close-btn:hover {
                 background: #FEE2E2 !important;
                 color: #EF4444 !important;
+            }
+
+            #armosa-widget .header-row-bottom {
+                display: flex !important;
+                width: 100% !important;
+                background: #F4F4F5 !important;
+                border-radius: 12px !important;
+                padding: 4px !important;
+                gap: 4px !important;
+            }
+
+            #armosa-widget .tab-btn {
+                all: unset !important;
+                flex: 1 !important;
+                padding: 8px !important;
+                text-align: center !important;
+                border-radius: 8px !important;
+                font-size: 13px !important;
+                font-weight: 600 !important;
+                color: #71717A !important;
+                cursor: pointer !important;
+                transition: all 0.2s ease !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 6px !important;
+            }
+
+            #armosa-widget .tab-btn.active {
+                background: white !important;
+                color: #2563EB !important;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
+            }
+
+            #armosa-widget .tab-btn:hover:not(.active) {
+                background: rgba(0,0,0,0.04) !important;
             }
 
             /* ==================== AUTH UI ELEMENTS ==================== */
@@ -980,26 +998,30 @@ class ArmosaChatWidget {
             <div class="widget-inner">
                 <!-- HEADER ISLAND -->
                 <div class="armosa-header">
-                    <div class="header-left">
-                        <div class="armosa-logo">
-                            <iconify-icon icon="mdi:robot-happy-outline" style="font-size: 22px; color: white;"></iconify-icon>
+                    <!-- Top Row: Logo, Title, Close -->
+                    <div class="header-row-top">
+                        <div class="header-left">
+                            <div class="armosa-logo">
+                                <iconify-icon icon="mdi:robot-happy-outline" style="font-size: 22px; color: white;"></iconify-icon>
+                            </div>
+                            <span class="armosa-title">Armosa</span>
                         </div>
-                        <span class="armosa-title">Armosa</span>
+                        <div class="header-right">
+                             <button class="close-btn" id="close-widget" title="Close">
+                                <iconify-icon icon="mdi:close" style="font-size: 18px;"></iconify-icon>
+                            </button>
+                        </div>
                     </div>
-                    <div class="header-right">
-                        <!-- User Avatar (Visual Placeholder) -->
-                        <div class="header-icon-btn" title="Guest User" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin-right: 8px;">
-                            <iconify-icon icon="mdi:account-circle" style="font-size: 24px; color: rgba(255,255,255,0.8);"></iconify-icon>
-                        </div>
-                        
-                        <!-- Chat Mode (Visual Only) -->
-                        <div class="mode-indicator" title="Chat Mode" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;">
-                            <iconify-icon icon="mdi:chat-outline" style="font-size: 20px; color: white;"></iconify-icon>
-                        </div>
-
-                        <!-- Close Button -->
-                        <button class="close-btn" id="close-widget" title="Close">
-                            <iconify-icon icon="mdi:close" style="font-size: 18px;"></iconify-icon>
+                    
+                    <!-- Bottom Row: Navigation Tabs -->
+                    <div class="header-row-bottom">
+                        <button class="tab-btn active" data-mode="chat" title="Chat Mode">
+                             <iconify-icon icon="mdi:chat-outline" style="font-size: 16px;"></iconify-icon>
+                             Chat
+                        </button>
+                        <button class="tab-btn" data-mode="voice" title="Voice Mode">
+                             <iconify-icon icon="mdi:microphone-outline" style="font-size: 16px;"></iconify-icon>
+                             Voice
                         </button>
                     </div>
                 </div>
@@ -1052,8 +1074,8 @@ class ArmosaChatWidget {
         this.fab.addEventListener('click', () => this.toggleWidget());
         this.widget.querySelector('#close-widget').addEventListener('click', () => this.toggleWidget());
 
-        this.widget.querySelectorAll('.mode-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => this.switchMode(e.target.closest('.mode-btn').dataset.mode));
+        this.widget.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => this.switchMode(e.target.closest('.tab-btn').dataset.mode));
         });
 
         const input = this.widget.querySelector('#armosa-input');
@@ -1076,7 +1098,7 @@ class ArmosaChatWidget {
 
     switchMode(mode) {
         this.currentMode = mode;
-        this.widget.querySelectorAll('.mode-btn').forEach(btn => {
+        this.widget.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
     }
