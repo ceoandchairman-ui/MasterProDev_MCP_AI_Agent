@@ -14,6 +14,7 @@ import logging
 import uuid
 import httpx
 import os
+import asyncio
 from typing import Optional
 from pathlib import Path
 
@@ -45,7 +46,11 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting MCP Host...")
     await state_manager.initialize()
-    rag_service.initialize()
+    
+    # Initialize RAG service in background to avoid blocking startup
+    # This prevents Railway deployment timeouts if Weaviate is slow to start
+    asyncio.create_task(rag_service.initialize_async())
+    
     await mcp_agent.initialize()
     logger.info("MCP Host started successfully")
     yield

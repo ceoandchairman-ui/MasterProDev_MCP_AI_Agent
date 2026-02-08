@@ -6,6 +6,7 @@ from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from typing import List, Dict, Any, Optional
 import json
 import os
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -16,14 +17,20 @@ class RAGService:
         self.hf_api_key = settings.HUGGINGFACE_API_KEY
         self.embedding_model = settings.EMBEDDING_MODEL
      
-    def initialize(self):
-        """Initializes the Weaviate client and embeddings."""
+    def _sync_connect(self):
+        """
+        Synchronous connection logic to be run in a background thread.
+        This ensures we don't block the main asyncio loop during startup.
+        """
         if not self.embedding_model:
             logger.error("Embedding model is not configured. RAG service will be disabled.")
             return
+
+        # 1. Connect to Weaviate
         try:
-            # 1. Initialize Weaviate client with timeout to prevent hanging on startup
             logger.info(f"Connecting to Weaviate at {settings.WEAVIATE_HOST}:{settings.WEAVIATE_PORT}...")
+            
+            # Use short timeout (5s) + skip_init_checks to be fast
             self.client = weaviate.connect_to_custom(
                 http_host=settings.WEAVIATE_HOST,
                 http_port=settings.WEAVIATE_PORT,
@@ -32,11 +39,23 @@ class RAGService:
                 grpc_port=settings.WEAVIATE_GRPC_PORT,
                 grpc_secure=False,
                 additional_config=AdditionalConfig(
-                    timeout=Timeout(init=10, query=30, insert=60)
+                    timeout=Timeout(init=5, query=30, insert=60),
+                    skip_init_checks=True
                 )
             )
-            logger.info("✓ Successfully connected to Weaviate.")
 
+            # Check liveness
+            if self.client.is_live():
+                logger.info("✓ Successfully connected to Weaviate.")
+            else:
+                logger.warning("⚠️ Connected to Weaviate object, but service is not live yet.")
+
+        except Exception as e:
+            logger.error(f"⚠️ Initial connection to Weaviate failed: {e}")
+            logger.warning("Continuing without RAG. Search will be unavailable.")
+            self.client = None
+
+        try:
             # 2. Initialize embeddings with retry logic and 1024-dim models
             logger.info(f"Initializing embeddings with model {self.embedding_model}...")
             
@@ -128,6 +147,18 @@ class RAGService:
             logger.error(f"Failed to initialize RAG service: {e}", exc_info=True)
             self.client = None
             self.embeddings = None
+
+    async def initialize(self):
+        """Deprecated: Use initialize_async instead."""
+        await self.initialize_async()
+
+    async def initialize_async(self):
+        """
+        Initializes the Weaviate client and embeddings in a background thread.
+        This is non-blocking and safe for startup.
+        """
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._sync_connect)
 
     def _rerank_results(self, query: str, results: List[Dict[str, Any]], top_k: int = 3) -> List[Dict[str, Any]]:
         """
