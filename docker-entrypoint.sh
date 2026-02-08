@@ -19,20 +19,14 @@ fi
 
 # Wait for Weaviate to be available (separate Railway service)
 if [ -n "$WEAVIATE_HOST" ]; then
-  echo "⏳ Waiting for Weaviate at $WEAVIATE_HOST..."
-  for i in {1..60}; do
-    if curl -s "http://$WEAVIATE_HOST:8080/v1/.well-known/ready" > /dev/null 2>&1; then
-      echo "   ✓ Weaviate is ready"
-      break
-    fi
-    sleep 2
-  done
+  # Removed blocking wait loop to allow "Fail Soft" startup
+  # Python app will handle connection asynchronously in background
   
-  # Run seeder to populate Weaviate
+  # Run seeder to populate Weaviate (attempt only if ready, or skip - ideally should be async too)
+  # For now, we skip blocking seeding to ensure fast startup. 
+  # Seeding should be a separate job or triggered manually if Weaviate isn't ready instantly.
   if [ -d "/app/Company_Documents" ] && [ "$(ls -A /app/Company_Documents)" ]; then
-    echo "📚 Running seeder to populate Weaviate..."
-    python seed.py 2>&1 | tee /app/logs/seeder.log
-    echo "   ✓ Seeding complete"
+    echo "📚 Seeder skipped to prevent startup blocking (run manually if needed)..."
   else
     echo "⚠️  No Company_Documents found - skipping seeding"
   fi
