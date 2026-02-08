@@ -817,6 +817,110 @@ class ArmosaChatWidget {
                 color: #00C896 !important;
             }
 
+            /* ==================== AVATAR VIEW ==================== */
+            #armosa-widget .avatar-view {
+                flex: 1 !important;
+                display: none !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                justify-content: center !important;
+                background: #FFFFFF !important;
+                border-radius: 20px !important;
+                border: 2px solid rgba(0, 200, 150, 0.12) !important;
+                padding: 20px !important;
+                position: relative !important;
+                overflow: hidden !important;
+            }
+
+            #armosa-widget .avatar-view.active {
+                display: flex !important;
+            }
+
+            #armosa-widget .avatar-circle {
+                width: 120px !important;
+                height: 120px !important;
+                border-radius: 50% !important;
+                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
+                box-shadow: 0 10px 30px rgba(37, 99, 235, 0.3) !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                position: relative !important;
+                z-index: 2 !important;
+                transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+            }
+            
+            #armosa-widget .avatar-circle iconify-icon {
+                font-size: 64px !important;
+                color: white !important;
+                filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2)) !important;
+            }
+
+            /* Animations for states */
+            #armosa-widget .avatar-circle.listening {
+                transform: scale(1.1) !important;
+                box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7) !important;
+                animation: listeningPulse 1.5s infinite !important;
+            }
+
+            #armosa-widget .avatar-circle.speaking {
+                animation: speakingBounce 0.5s infinite alternate !important;
+            }
+            
+            #armosa-widget .avatar-circle.thinking {
+                animation: thinkingSpin 2s infinite linear !important;
+                background: linear-gradient(135deg, #FFB800 0%, #FF8A00 100%) !important;
+            }
+
+            @keyframes listeningPulse {
+                0% {
+                    transform: scale(1);
+                    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+                }
+                70% {
+                    transform: scale(1.1);
+                    box-shadow: 0 0 0 20px rgba(37, 99, 235, 0);
+                }
+                100% {
+                    transform: scale(1);
+                    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+                }
+            }
+
+            @keyframes speakingBounce {
+                from { transform: scale(1); }
+                to { transform: scale(1.05); }
+            }
+            
+            @keyframes thinkingSpin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+
+            #armosa-widget .avatar-status-text {
+                margin-top: 24px !important;
+                font-size: 14px !important;
+                font-weight: 600 !important;
+                color: #71717A !important;
+                text-align: center !important;
+                min-height: 20px !important;
+            }
+
+            /* Waveforms behind avatar */
+            #armosa-widget .avatar-wave {
+                position: absolute !important;
+                top: 50% !important;
+                left: 50% !important;
+                transform: translate(-50%, -50%) !important;
+                border-radius: 50% !important;
+                border: 2px solid rgba(37, 99, 235, 0.1) !important;
+                z-index: 1 !important;
+            }
+
+            #armosa-widget .avatar-wave:nth-child(1) { width: 160px; height: 160px; animation-delay: 0s; }
+            #armosa-widget .avatar-wave:nth-child(2) { width: 200px; height: 200px; animation-delay: 0.2s; }
+            #armosa-widget .avatar-wave:nth-child(3) { width: 240px; height: 240px; animation-delay: 0.4s; }
+
             /* ==================== TYPING INDICATOR ==================== */
             #armosa-widget .typing-indicator {
                 display: flex !important;
@@ -1019,18 +1123,29 @@ class ArmosaChatWidget {
                              <iconify-icon icon="mdi:chat-outline" style="font-size: 16px;"></iconify-icon>
                              Chat
                         </button>
-                        <button class="tab-btn" data-mode="voice" title="Voice Mode">
-                             <iconify-icon icon="mdi:microphone-outline" style="font-size: 16px;"></iconify-icon>
-                             Voice
+                        <button class="tab-btn" data-mode="avatar" title="Avatar Mode">
+                             <iconify-icon icon="mdi:face-man-shimmer-outline" style="font-size: 16px;"></iconify-icon>
+                             Avatar
                         </button>
                     </div>
                 </div>
 
-                <!-- CHAT ISLAND -->
+                <!-- CHAT ISLAND (Default View) -->
                 <div class="armosa-messages" id="armosa-messages"></div>
 
+                <!-- AVATAR ISLAND (Hidden by default) -->
+                <div class="avatar-view" id="armosa-avatar-view">
+                    <div class="avatar-wave"></div>
+                    <div class="avatar-wave"></div>
+                    <div class="avatar-wave"></div>
+                    <div class="avatar-circle" id="avatar-circle">
+                         <iconify-icon icon="mdi:robot-happy" style="font-size: 64px;"></iconify-icon>
+                    </div>
+                    <div class="avatar-status-text" id="avatar-status-text">I'm listening...</div>
+                </div>
+
                 <!-- INPUT ISLAND -->
-                <div class="armosa-input-container">
+                <div class="armosa-input-container" id="armosa-input-container">
                     <input type="file" id="file-input" accept="audio/*,video/*,image/*,.pdf,.docx,.doc,.txt" style="display: none;">
                     <button class="action-btn" id="file-btn" title="Attach file">
                         <iconify-icon icon="mdi:paperclip" style="font-size: 20px;"></iconify-icon>
@@ -1061,7 +1176,17 @@ class ArmosaChatWidget {
         document.body.appendChild(widget);
         this.widget = widget;
         this.messagesContainer = widget.querySelector('#armosa-messages');
+        
+        // Avatar View Elements
+        this.avatarView = widget.querySelector('#armosa-avatar-view');
+        this.avatarCircle = widget.querySelector('#avatar-circle');
+        this.avatarStatusText = widget.querySelector('#avatar-status-text');
+        this.inputContainer = widget.querySelector('#armosa-input-container'); // Capture input container
+        
         this.isOpen = false;
+        
+        // Default state
+        this.setAvatarState('idle');
     }
 
     toggleWidget() {
@@ -1098,9 +1223,46 @@ class ArmosaChatWidget {
 
     switchMode(mode) {
         this.currentMode = mode;
+        
+        // Update Tabs
         this.widget.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
+
+        // Update Views
+        if (mode === 'avatar') {
+            this.messagesContainer.style.display = 'none';
+            this.inputContainer.style.opacity = '0'; // Hide input but keep layout or just hide
+            this.inputContainer.style.display = 'none';
+            this.avatarView.classList.add('active');
+            
+            // Auto-start listening if switching to avatar mode? 
+            // Better to let user click the big avatar to start.
+            this.setAvatarState('idle');
+            this.avatarCircle.onclick = () => this.toggleRecording();
+            this.avatarStatusText.textContent = "Tap to speak";
+        } else {
+            this.messagesContainer.style.display = 'flex';
+            this.inputContainer.style.display = 'flex';
+            this.inputContainer.style.opacity = '1';
+            this.avatarView.classList.remove('active');
+            this.stopRecording(); // detailed stop
+        }
+    }
+
+    setAvatarState(state) {
+        // States: 'idle', 'listening', 'thinking', 'speaking'
+        this.avatarCircle.classList.remove('idle', 'listening', 'thinking', 'speaking');
+        this.avatarCircle.classList.add(state);
+        
+        const statusMap = {
+            'idle': 'Tap to speak',
+            'listening': 'Listening...',
+            'thinking': 'Thinking...',
+            'speaking': 'Speaking...'
+        };
+        
+        this.avatarStatusText.textContent = statusMap[state] || 'Ready';
     }
 
     handleFileSelect(e) {
@@ -1152,11 +1314,15 @@ class ArmosaChatWidget {
                 this.mediaRecorder.onstart = () => {
                     this.isRecording = true;
                     this.widget.querySelector('#voice-btn').classList.add('recording');
+                    if (this.currentMode === 'avatar') {
+                        this.setAvatarState('listening');
+                    }
                 };
 
                 this.mediaRecorder.onstop = () => {
                     this.isRecording = false;
                     this.widget.querySelector('#voice-btn').classList.remove('recording');
+                    // State change happens in sendAudioMessage
                     const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
                     this.sendAudioMessage(audioBlob);
                 };
@@ -1178,6 +1344,7 @@ class ArmosaChatWidget {
         formData.append('audio', audioBlob, 'recording.webm');
         
         this.showTypingIndicator();
+        if (this.currentMode === 'avatar') this.setAvatarState('thinking');
         
         fetch(this.config.voiceUrl, {
             method: 'POST',
@@ -1196,6 +1363,9 @@ class ArmosaChatWidget {
                     this.addBotMessage(data.response);
                     if (data.use_browser_tts && 'speechSynthesis' in window) {
                         this.speakText(data.response);
+                    } else {
+                        // Text only response in avatar mode?
+                         if (this.currentMode === 'avatar') this.setAvatarState('idle');
                     }
                 }
             } else {
@@ -1208,13 +1378,20 @@ class ArmosaChatWidget {
                 
                 const audioUrl = URL.createObjectURL(audioResponse);
                 const audio = new Audio(audioUrl);
+                
+                if (this.currentMode === 'avatar') this.setAvatarState('speaking');
+                
                 audio.play();
-                audio.onended = () => URL.revokeObjectURL(audioUrl);
+                audio.onended = () => {
+                    URL.revokeObjectURL(audioUrl);
+                    if (this.currentMode === 'avatar') this.setAvatarState('idle');
+                };
             }
         })
         .catch(err => {
             this.addBotMessage('Sorry, there was an error processing your voice message.');
             console.error('Voice error:', err);
+            if (this.currentMode === 'avatar') this.setAvatarState('idle');
         })
         .finally(() => this.removeTypingIndicator());
     }
@@ -1225,6 +1402,15 @@ class ArmosaChatWidget {
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'en-US';
             utterance.rate = 1.0;
+            
+            utterance.onstart = () => {
+                 if (this.currentMode === 'avatar') this.setAvatarState('speaking');
+            };
+            
+            utterance.onend = () => {
+                 if (this.currentMode === 'avatar') this.setAvatarState('idle');
+            };
+            
             speechSynthesis.speak(utterance);
         }
     }
