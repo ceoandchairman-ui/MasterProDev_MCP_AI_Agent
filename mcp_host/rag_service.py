@@ -1,5 +1,5 @@
 import weaviate
-from weaviate.classes.init import Auth
+from weaviate.classes.init import Auth, AdditionalConfig, Timeout
 from mcp_host.config import settings
 import logging
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
@@ -22,11 +22,18 @@ class RAGService:
             logger.error("Embedding model is not configured. RAG service will be disabled.")
             return
         try:
-            # 1. Initialize Weaviate client
-            self.client = weaviate.connect_to_local(
-                host=settings.WEAVIATE_HOST,
-                port=settings.WEAVIATE_PORT,
+            # 1. Initialize Weaviate client with timeout to prevent hanging on startup
+            logger.info(f"Connecting to Weaviate at {settings.WEAVIATE_HOST}:{settings.WEAVIATE_PORT}...")
+            self.client = weaviate.connect_to_custom(
+                http_host=settings.WEAVIATE_HOST,
+                http_port=settings.WEAVIATE_PORT,
+                http_secure=False,
+                grpc_host=settings.WEAVIATE_HOST,
                 grpc_port=settings.WEAVIATE_GRPC_PORT,
+                grpc_secure=False,
+                additional_config=AdditionalConfig(
+                    timeout=Timeout(init=10, query=30, insert=60)
+                )
             )
             logger.info("✓ Successfully connected to Weaviate.")
 
