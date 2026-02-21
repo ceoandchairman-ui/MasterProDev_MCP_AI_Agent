@@ -1,5 +1,5 @@
 /**
- * Armosa Chat Widget v4.1
+ * MasterProDev Chat Widget v4.2
  * "Mobile App" Edition - Smartphone UI Aesthetic
  * 
  * Design Philosophy:
@@ -206,7 +206,7 @@ class ArmosaChatWidget {
         if (wasLoggedIn && this.userEmail) {
             this.addBotMessage(`Welcome back, ${this.userEmail.split('@')[0]}! 👋 How can I help you today?`);
         } else {
-            this.addBotMessage('Hello! I\'m Armosa. How can I help you today?');
+            this.addBotMessage('Hi! I\'m your AI assistant. I can help you with:\n\n• **Calendar management** 📅\n• **Email operations** 📧\n• **Document analysis** 📄\n• **Voice conversations** 🎙️\n\nHow can I help you today?');
         }
     }
     
@@ -1089,8 +1089,8 @@ class ArmosaChatWidget {
         // FAB
         const fab = document.createElement('button');
         fab.id = 'armosa-fab';
-        fab.innerHTML = `<iconify-icon icon="mdi:chat" style="font-size: 26px; color: white;"></iconify-icon>`;
-        fab.title = 'Chat with Armosa';
+        fab.innerHTML = `<iconify-icon icon="mdi:chat-processing-outline" style="font-size: 28px; color: white;"></iconify-icon>`;
+        fab.title = 'Chat with MasterProDev AI';
         document.body.appendChild(fab);
         this.fab = fab;
 
@@ -1108,7 +1108,7 @@ class ArmosaChatWidget {
                             <div class="armosa-logo">
                                 <iconify-icon icon="mdi:robot-happy-outline" style="font-size: 22px; color: white;"></iconify-icon>
                             </div>
-                            <span class="armosa-title">Armosa</span>
+                            <span class="armosa-title">MasterProDev</span>
                         </div>
                         <div class="header-right">
                              <button class="close-btn" id="close-widget" title="Close">
@@ -1596,9 +1596,29 @@ class ArmosaChatWidget {
 }
 
 // Auto-initialize
-document.addEventListener('DOMContentLoaded', () => {
-    window.armosaChatWidget = new ArmosaChatWidget();
-});
+function initializeArmosaWidget() {
+    if (!window.armosaChatWidget) {
+        window.armosaChatWidget = new ArmosaChatWidget();
+    }
+}
+
+// Handle various loading scenarios
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeArmosaWidget);
+} else {
+    // DOMContentLoaded has already fired
+    initializeArmosaWidget();
+}     window.armosaChatWidget = new ArmosaChatWidget();
+    }
+}
+
+// Handle various loading scenarios
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeArmosaWidget);
+} else {
+    // DOMContentLoaded has already fired
+    initializeArmosaWidget();
+}
 
 // ES Module export
 if (typeof module !== 'undefined' && module.exports) {

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Armosa Chat Widget Demo</title>
+    <title>MasterProDev Chat Widget Demo</title>
     <style>
         * {
             margin: 0;
@@ -13,9 +13,17 @@
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            background: linear-gradient(135deg, #00C896 0%, #2563EB 50%, #FFB800 100%);
             min-height: 100vh;
             color: white;
+            background-size: 200% 200%;
+            animation: gradientShift 15s ease infinite;
+        }
+
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
         }
         
         .demo-container {
@@ -28,15 +36,14 @@
         h1 {
             font-size: 3rem;
             margin-bottom: 1rem;
-            background: linear-gradient(90deg, #2563EB, #FFB800, #00C896);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: #FFFFFF;
+            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            font-weight: 800;
         }
         
         .subtitle {
             font-size: 1.25rem;
-            color: #a0a0a0;
+            color: rgba(255, 255, 255, 0.9);
             margin-bottom: 3rem;
         }
         
