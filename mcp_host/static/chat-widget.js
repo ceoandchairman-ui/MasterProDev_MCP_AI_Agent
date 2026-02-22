@@ -659,18 +659,8 @@ class ArmosaChatWidget {
         style.id = styleId;
         style.textContent = `
             /* ============================================================
-               ARMOSA CHAT WIDGET v4.0 - "MOBILE APP" EDITION
-               ============================================================
-               
-               BRAND COLORS:
-               - Blue:  #2563EB (Primary Accent)
-               - Gold:  #FFB800 (Highlight)
-               - Green: #00C896 (Action/Success)
-               
-               SMARTPHONE METAPHOR:
-               - Widget = Phone Chassis (rounded, gradient bezel)
-               - Background = Mobile Wallpaper (gradient)
-               - Components = Floating App Cards (islands)
+               ARMOSA CHAT WIDGET v5.0 - "PRODUCT" EDITION
+               Clean, minimal, ChatGPT/Anthropic-inspired design language.
                ============================================================ */
 
             /* ==================== HARD RESET ==================== */
@@ -692,25 +682,23 @@ class ArmosaChatWidget {
                 position: fixed !important;
                 bottom: 24px !important;
                 right: 24px !important;
-                width: 60px !important;
-                height: 60px !important;
+                width: 52px !important;
+                height: 52px !important;
                 border-radius: 50% !important;
-                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
-                border: 3px solid #FFB800 !important;
+                background: #00C896 !important;
                 cursor: pointer !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
                 z-index: 999998 !important;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                box-shadow: 0 4px 20px rgba(0, 200, 150, 0.4),
-                            0 2px 8px rgba(0, 0, 0, 0.15) !important;
+                transition: all 0.2s ease !important;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18) !important;
             }
 
             #armosa-fab:hover {
-                transform: scale(1.1) rotate(10deg) !important;
-                box-shadow: 0 6px 28px rgba(0, 200, 150, 0.5),
-                            0 4px 12px rgba(0, 0, 0, 0.2) !important;
+                background: #009977 !important;
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22) !important;
+                transform: scale(1.05) !important;
             }
 
             #armosa-fab.hidden {
@@ -719,64 +707,55 @@ class ArmosaChatWidget {
                 pointer-events: none !important;
             }
 
-            /* ==================== WIDGET - THE "SMARTPHONE" ==================== */
+            /* ==================== WIDGET ==================== */
             #armosa-widget {
                 all: unset !important;
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif !important;
                 position: fixed !important;
-                bottom: 24px !important;
+                bottom: 84px !important;
                 right: 24px !important;
                 width: 380px !important;
-                height: 680px !important;
-                border-radius: 32px !important;
+                height: 660px !important;
+                border-radius: 16px !important;
                 display: flex !important;
                 flex-direction: column !important;
                 z-index: 999999 !important;
-                transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
                 transform-origin: bottom right !important;
-                
-                /* Gradient "Bezel" Border */
-                background: linear-gradient(135deg, #2563EB 0%, #FFB800 50%, #00C896 100%) !important;
-                padding: 3px !important;
-                
-                box-shadow: 
-                    0 25px 60px -12px rgba(0, 0, 0, 0.35),
-                    0 0 0 1px rgba(255, 255, 255, 0.1) inset !important;
+                background: #ffffff !important;
+                border: 1px solid rgba(0, 0, 0, 0.1) !important;
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
                 overflow: hidden !important;
             }
 
             #armosa-widget.hidden {
-                transform: translateY(20px) scale(0.95) !important;
+                transform: translateY(12px) scale(0.97) !important;
                 opacity: 0 !important;
                 pointer-events: none !important;
             }
 
-            /* ==================== INNER CONTAINER - "PHONE SCREEN" ==================== */
+            /* ==================== INNER CONTAINER ==================== */
             #armosa-widget .widget-inner {
                 flex: 1 !important;
-                background: linear-gradient(180deg, 
-                    rgba(37, 99, 235, 0.08) 0%, 
-                    rgba(255, 184, 0, 0.05) 50%, 
-                    rgba(0, 200, 150, 0.08) 100%) !important;
-                border-radius: 29px !important;
+                background: #ffffff !important;
+                border-radius: 0 !important;
                 display: flex !important;
                 flex-direction: column !important;
-                gap: 12px !important;
-                padding: 12px !important;
+                gap: 0 !important;
+                padding: 0 !important;
                 overflow: hidden !important;
             }
 
-            /* ==================== HEADER ISLAND ==================== */
+            /* ==================== HEADER ==================== */
             #armosa-widget .armosa-header {
-                background: #FFFFFF !important;
-                border-radius: 20px !important;
-                border: 2px solid rgba(37, 99, 235, 0.15) !important;
+                background: #ffffff !important;
+                border-radius: 0 !important;
+                border-bottom: 1px solid #e8e8e8 !important;
                 display: flex !important;
                 flex-direction: column !important;
-                padding: 12px 16px !important;
+                padding: 12px 16px 10px !important;
                 flex-shrink: 0 !important;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
-                gap: 12px !important;
+                gap: 10px !important;
             }
 
             #armosa-widget .header-row-top {
@@ -793,23 +772,20 @@ class ArmosaChatWidget {
             }
 
             #armosa-widget .armosa-logo {
-                width: 36px !important;
-                height: 36px !important;
-                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
-                border-radius: 10px !important;
+                width: 32px !important;
+                height: 32px !important;
+                background: #00C896 !important;
+                border-radius: 8px !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                box-shadow: 0 2px 8px rgba(0, 200, 150, 0.3) !important;
             }
 
             #armosa-widget .armosa-title {
-                font-size: 16px !important;
-                font-weight: 700 !important;
-                background: linear-gradient(90deg, #2563EB, #00C896) !important;
-                -webkit-background-clip: text !important;
-                -webkit-text-fill-color: transparent !important;
-                background-clip: text !important;
+                font-size: 15px !important;
+                font-weight: 600 !important;
+                color: #202123 !important;
+                letter-spacing: -0.01em !important;
             }
 
             #armosa-widget .header-right {
@@ -820,57 +796,57 @@ class ArmosaChatWidget {
 
             #armosa-widget .close-btn {
                 all: unset !important;
-                width: 36px !important;
-                height: 36px !important;
-                border-radius: 10px !important;
+                width: 32px !important;
+                height: 32px !important;
+                border-radius: 8px !important;
                 background: transparent !important;
                 cursor: pointer !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                color: #71717A !important;
-                transition: all 0.2s ease !important;
+                color: #71717a !important;
+                transition: all 0.15s ease !important;
             }
 
             #armosa-widget .close-btn:hover {
-                background: #FEE2E2 !important;
-                color: #EF4444 !important;
+                background: #f4f4f5 !important;
+                color: #18181b !important;
             }
 
             #armosa-widget .header-row-bottom {
                 display: flex !important;
                 width: 100% !important;
-                background: #F4F4F5 !important;
-                border-radius: 12px !important;
-                padding: 4px !important;
-                gap: 4px !important;
+                background: #f4f4f5 !important;
+                border-radius: 10px !important;
+                padding: 3px !important;
+                gap: 2px !important;
             }
 
             #armosa-widget .tab-btn {
                 all: unset !important;
                 flex: 1 !important;
-                padding: 8px !important;
+                padding: 7px 8px !important;
                 text-align: center !important;
                 border-radius: 8px !important;
                 font-size: 13px !important;
-                font-weight: 600 !important;
-                color: #71717A !important;
+                font-weight: 500 !important;
+                color: #71717a !important;
                 cursor: pointer !important;
-                transition: all 0.2s ease !important;
+                transition: all 0.15s ease !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                gap: 6px !important;
+                gap: 5px !important;
             }
 
             #armosa-widget .tab-btn.active {
-                background: white !important;
-                color: #2563EB !important;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
+                background: #ffffff !important;
+                color: #00C896 !important;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
             }
 
             #armosa-widget .tab-btn:hover:not(.active) {
-                background: rgba(0,0,0,0.04) !important;
+                color: #3f3f46 !important;
             }
 
             /* ==================== AUTH UI ELEMENTS ==================== */
@@ -878,7 +854,7 @@ class ArmosaChatWidget {
                 all: unset !important;
                 padding: 6px 12px !important;
                 border-radius: 8px !important;
-                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
+                background: #00C896 !important;
                 color: white !important;
                 font-size: 12px !important;
                 font-weight: 600 !important;
@@ -886,28 +862,28 @@ class ArmosaChatWidget {
                 display: flex !important;
                 align-items: center !important;
                 gap: 4px !important;
-                transition: all 0.2s ease !important;
+                transition: background 0.15s ease !important;
             }
 
             #armosa-widget .auth-login-btn:hover {
-                transform: scale(1.05) !important;
-                box-shadow: 0 2px 8px rgba(0, 200, 150, 0.3) !important;
+                background: #009977 !important;
+            }
             }
 
             #armosa-widget .auth-user-info {
                 display: flex !important;
                 align-items: center !important;
                 gap: 6px !important;
-                padding: 4px 10px !important;
-                background: rgba(0, 200, 150, 0.1) !important;
-                border-radius: 8px !important;
-                border: 1px solid rgba(0, 200, 150, 0.2) !important;
+                padding: 4px 8px !important;
+                background: #f4f4f5 !important;
+                border-radius: 20px !important;
+                border: none !important;
             }
 
             #armosa-widget .auth-user-email {
                 font-size: 12px !important;
-                font-weight: 600 !important;
-                color: #2563EB !important;
+                font-weight: 500 !important;
+                color: #3f3f46 !important;
                 max-width: 80px !important;
                 overflow: hidden !important;
                 text-overflow: ellipsis !important;
@@ -924,13 +900,12 @@ class ArmosaChatWidget {
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                color: #71717A !important;
-                transition: all 0.2s ease !important;
+                color: #a1a1aa !important;
+                transition: all 0.15s ease !important;
             }
 
             #armosa-widget .auth-logout-btn:hover {
-                background: #FEE2E2 !important;
-                color: #EF4444 !important;
+                color: #ef4444 !important;
             }
 
             /* ==================== LOGIN MODAL ==================== */
@@ -940,7 +915,7 @@ class ArmosaChatWidget {
                 left: 0 !important;
                 right: 0 !important;
                 bottom: 0 !important;
-                background: rgba(0, 0, 0, 0.5) !important;
+                background: rgba(0, 0, 0, 0.45) !important;
                 backdrop-filter: blur(4px) !important;
                 display: flex !important;
                 align-items: center !important;
@@ -948,8 +923,8 @@ class ArmosaChatWidget {
                 z-index: 100 !important;
                 opacity: 0 !important;
                 pointer-events: none !important;
-                transition: opacity 0.3s ease !important;
-                border-radius: 28px !important;
+                transition: opacity 0.2s ease !important;
+                border-radius: 15px !important;
             }
 
             #armosa-login-modal.visible {
@@ -959,114 +934,109 @@ class ArmosaChatWidget {
 
             #armosa-login-modal .login-card {
                 background: white !important;
-                border-radius: 20px !important;
-                padding: 28px !important;
+                border-radius: 16px !important;
+                padding: 24px !important;
                 width: 85% !important;
                 max-width: 300px !important;
                 box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important;
-                border: 2px solid rgba(0, 200, 150, 0.15) !important;
+                border: 1px solid rgba(0,0,0,0.08) !important;
             }
 
             #armosa-login-modal .login-title {
-                font-size: 20px !important;
-                font-weight: 700 !important;
+                font-size: 18px !important;
+                font-weight: 600 !important;
                 text-align: center !important;
                 margin-bottom: 20px !important;
-                background: linear-gradient(90deg, #2563EB, #00C896) !important;
-                -webkit-background-clip: text !important;
-                -webkit-text-fill-color: transparent !important;
-                background-clip: text !important;
+                color: #18181b !important;
             }
 
             #armosa-login-modal .login-input {
                 all: unset !important;
                 width: 100% !important;
-                padding: 12px 14px !important;
-                border: 2px solid #E4E4E7 !important;
-                border-radius: 12px !important;
+                padding: 10px 14px !important;
+                border: 1px solid #e5e5e5 !important;
+                border-radius: 10px !important;
                 font-size: 14px !important;
-                background: #FAFAFA !important;
-                margin-bottom: 12px !important;
+                background: #fafafa !important;
+                margin-bottom: 10px !important;
                 box-sizing: border-box !important;
-                transition: border-color 0.2s ease !important;
+                transition: border-color 0.15s ease !important;
             }
 
             #armosa-login-modal .login-input:focus {
-                border-color: #2563EB !important;
+                border-color: #00C896 !important;
                 background: white !important;
+                box-shadow: 0 0 0 2px rgba(0,200,150,0.1) !important;
             }
 
             #armosa-login-modal .login-input::placeholder {
-                color: #A1A1AA !important;
+                color: #a1a1aa !important;
             }
 
             #armosa-login-modal .login-error {
-                color: #EF4444 !important;
+                color: #ef4444 !important;
                 font-size: 12px !important;
                 text-align: center !important;
-                margin-bottom: 12px !important;
+                margin-bottom: 10px !important;
                 min-height: 16px !important;
             }
 
             #armosa-login-modal .login-submit {
                 all: unset !important;
                 width: 100% !important;
-                padding: 12px !important;
-                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
+                padding: 10px !important;
+                background: #00C896 !important;
                 color: white !important;
                 font-size: 14px !important;
                 font-weight: 600 !important;
                 text-align: center !important;
-                border-radius: 12px !important;
+                border-radius: 10px !important;
                 cursor: pointer !important;
                 box-sizing: border-box !important;
-                transition: all 0.2s ease !important;
+                transition: background 0.15s ease !important;
             }
 
             #armosa-login-modal .login-submit:hover:not(:disabled) {
-                transform: translateY(-2px) !important;
-                box-shadow: 0 4px 16px rgba(0, 200, 150, 0.4) !important;
+                background: #009977 !important;
             }
 
             #armosa-login-modal .login-submit:disabled {
-                opacity: 0.7 !important;
+                opacity: 0.6 !important;
                 cursor: not-allowed !important;
             }
 
             #armosa-login-modal .login-cancel {
                 all: unset !important;
                 width: 100% !important;
-                padding: 10px !important;
+                padding: 8px !important;
                 text-align: center !important;
                 font-size: 13px !important;
-                color: #71717A !important;
+                color: #71717a !important;
                 cursor: pointer !important;
-                margin-top: 8px !important;
+                margin-top: 6px !important;
                 box-sizing: border-box !important;
             }
 
             #armosa-login-modal .login-cancel:hover {
-                color: #2563EB !important;
-                text-decoration: underline !important;
+                color: #00C896 !important;
             }
 
-            /* ==================== CHAT ISLAND (MESSAGES PLANE) ==================== */
+            /* ==================== MESSAGES ==================== */
             #armosa-widget .armosa-messages {
                 flex: 1 !important;
-                background: #FFFFFF !important;
-                border-radius: 20px !important;
-                border: 2px solid rgba(0, 200, 150, 0.12) !important;
+                background: #ffffff !important;
+                border-radius: 0 !important;
+                border: none !important;
                 overflow-y: auto !important;
                 overflow-x: hidden !important;
-                padding: 16px !important;
+                padding: 20px 16px !important;
                 display: flex !important;
                 flex-direction: column !important;
-                gap: 12px !important;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06) !important;
+                gap: 16px !important;
             }
 
             #armosa-widget .armosa-messages::-webkit-scrollbar {
-                width: 6px !important;
+                width: 4px !important;
             }
 
             #armosa-widget .armosa-messages::-webkit-scrollbar-track {
@@ -1074,8 +1044,8 @@ class ArmosaChatWidget {
             }
 
             #armosa-widget .armosa-messages::-webkit-scrollbar-thumb {
-                background: linear-gradient(180deg, #2563EB, #00C896) !important;
-                border-radius: 3px !important;
+                background: #d4d4d8 !important;
+                border-radius: 2px !important;
             }
 
             /* ==================== MESSAGE BUBBLES ==================== */
@@ -1098,13 +1068,12 @@ class ArmosaChatWidget {
                 width: 36px !important;
                 height: 36px !important;
                 min-width: 36px !important;
-                border-radius: 12px !important;
-                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
+                border-radius: 50% !important;
+                background: #00C896 !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
                 flex-shrink: 0 !important;
-                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1) !important;
             }
 
             #armosa-widget .message-group.user .message-avatar {
@@ -1119,29 +1088,29 @@ class ArmosaChatWidget {
             }
 
             #armosa-widget .bot-message-content {
-                background: #F4F4F5 !important;
-                border: 1px solid #E4E4E7 !important;
-                border-radius: 18px 18px 18px 4px !important;
-                padding: 12px 16px !important;
+                background: #f4f4f5 !important;
+                border: none !important;
+                border-radius: 18px !important;
+                padding: 10px 14px !important;
                 font-size: 14px !important;
                 line-height: 1.6 !important;
-                color: #18181B !important;
+                color: #18181b !important;
             }
 
             #armosa-widget .bot-message-content strong {
-                color: #00C896 !important;
+                color: #18181b !important;
                 font-weight: 600 !important;
             }
 
             #armosa-widget .bot-message-content em {
-                color: #2563EB !important;
+                color: #18181b !important;
             }
 
             #armosa-widget .user-message-content {
-                background: linear-gradient(135deg, #00C896 0%, #2563EB 100%) !important;
-                border-radius: 18px 18px 4px 18px !important;
-                padding: 12px 16px !important;
-                color: #FFFFFF !important;
+                background: #00C896 !important;
+                border-radius: 18px !important;
+                padding: 10px 14px !important;
+                color: #ffffff !important;
                 font-size: 14px !important;
                 line-height: 1.6 !important;
             }
@@ -1256,9 +1225,9 @@ class ArmosaChatWidget {
                 flex-direction: column !important;
                 align-items: center !important;
                 justify-content: center !important;
-                background: linear-gradient(180deg, #f0f4ff 0%, #e8fdf5 100%) !important;
-                border-radius: 20px !important;
-                border: 2px solid rgba(37, 99, 235, 0.12) !important;
+                background: #fafafa !important;
+                border-radius: 0 !important;
+                border: none !important;
                 gap: 20px !important;
             }
 
@@ -1267,33 +1236,33 @@ class ArmosaChatWidget {
             }
 
             #armosa-widget .voice-orb {
-                width: 100px !important;
-                height: 100px !important;
+                width: 96px !important;
+                height: 96px !important;
                 border-radius: 50% !important;
-                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
+                background: #00C896 !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
                 cursor: pointer !important;
-                box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35) !important;
-                transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+                box-shadow: 0 4px 20px rgba(0, 200, 150, 0.3) !important;
+                transition: transform 0.15s ease, box-shadow 0.15s ease !important;
                 animation: voiceFloat 3s ease-in-out infinite !important;
             }
 
             #armosa-widget .voice-orb:hover {
-                transform: scale(1.08) !important;
-                box-shadow: 0 12px 32px rgba(37, 99, 235, 0.45) !important;
+                transform: scale(1.06) !important;
+                box-shadow: 0 6px 24px rgba(0, 200, 150, 0.4) !important;
             }
 
             #armosa-widget .voice-orb.listening {
                 animation: voicePulse 1s ease-in-out infinite !important;
-                background: linear-gradient(135deg, #EF4444 0%, #FF8A00 100%) !important;
+                background: #ef4444 !important;
                 box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7) !important;
             }
 
             #armosa-widget .voice-orb.speaking {
                 animation: voiceBounce 0.5s ease-in-out infinite alternate !important;
-                background: linear-gradient(135deg, #00C896 0%, #2563EB 100%) !important;
+                background: #00C896 !important;
             }
 
             @keyframes voiceFloat {
@@ -1326,9 +1295,9 @@ class ArmosaChatWidget {
                 flex-direction: column !important;
                 align-items: center !important;
                 justify-content: center !important;
-                background: #FFFFFF !important;
-                border-radius: 20px !important;
-                border: 2px solid rgba(0, 200, 150, 0.12) !important;
+                background: #fafafa !important;
+                border-radius: 0 !important;
+                border: none !important;
                 padding: 20px !important;
                 position: relative !important;
                 overflow: hidden !important;
@@ -1364,17 +1333,17 @@ class ArmosaChatWidget {
             }
 
             #armosa-widget .avatar-circle {
-                width: 120px !important;
-                height: 120px !important;
+                width: 110px !important;
+                height: 110px !important;
                 border-radius: 50% !important;
-                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
-                box-shadow: 0 10px 30px rgba(37, 99, 235, 0.3) !important;
+                background: #00C896 !important;
+                box-shadow: 0 4px 20px rgba(0, 200, 150, 0.3) !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
                 position: relative !important;
                 z-index: 2 !important;
-                transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+                transition: transform 0.2s ease !important;
             }
             
             #armosa-widget .avatar-circle iconify-icon {
@@ -1386,7 +1355,7 @@ class ArmosaChatWidget {
             /* Animations for states */
             #armosa-widget .avatar-circle.listening {
                 transform: scale(1.1) !important;
-                box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7) !important;
+                box-shadow: 0 0 0 0 rgba(0, 200, 150, 0.6) !important;
                 animation: listeningPulse 1.5s infinite !important;
             }
 
@@ -1402,15 +1371,15 @@ class ArmosaChatWidget {
             @keyframes listeningPulse {
                 0% {
                     transform: scale(1);
-                    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+                    box-shadow: 0 0 0 0 rgba(0, 200, 150, 0.6);
                 }
                 70% {
                     transform: scale(1.1);
-                    box-shadow: 0 0 0 20px rgba(37, 99, 235, 0);
+                    box-shadow: 0 0 0 20px rgba(0, 200, 150, 0);
                 }
                 100% {
                     transform: scale(1);
-                    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+                    box-shadow: 0 0 0 0 rgba(0, 200, 150, 0);
                 }
             }
 
@@ -1440,7 +1409,7 @@ class ArmosaChatWidget {
                 left: 50% !important;
                 transform: translate(-50%, -50%) !important;
                 border-radius: 50% !important;
-                border: 2px solid rgba(37, 99, 235, 0.1) !important;
+                border: 2px solid rgba(0, 200, 150, 0.12) !important;
                 z-index: 1 !important;
             }
 
@@ -1451,18 +1420,19 @@ class ArmosaChatWidget {
             /* ==================== TYPING INDICATOR ==================== */
             #armosa-widget .typing-indicator {
                 display: flex !important;
-                gap: 5px !important;
-                padding: 12px 16px !important;
-                background: #F4F4F5 !important;
-                border-radius: 18px 18px 18px 4px !important;
+                gap: 4px !important;
+                padding: 10px 14px !important;
+                background: #f4f4f5 !important;
+                border-radius: 18px !important;
                 width: fit-content !important;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
             }
 
             #armosa-widget .typing-dot {
-                width: 8px !important;
-                height: 8px !important;
+                width: 7px !important;
+                height: 7px !important;
                 border-radius: 50% !important;
-                background: linear-gradient(135deg, #2563EB, #00C896) !important;
+                background: #00C896 !important;
                 animation: typingBounce 1.4s infinite !important;
             }
 
@@ -1474,42 +1444,44 @@ class ArmosaChatWidget {
                 30% { transform: translateY(-8px); opacity: 1; }
             }
 
-            /* ==================== INPUT ISLAND ==================== */
+            /* ==================== INPUT AREA ==================== */
             #armosa-widget .armosa-input-container {
-                background: #FFFFFF !important;
-                border-radius: 20px !important;
-                border: 2px solid rgba(255, 184, 0, 0.15) !important;
+                background: #ffffff !important;
+                border-radius: 0 !important;
+                border-top: 1px solid #e8e8e8 !important;
                 display: flex !important;
                 align-items: center !important;
-                padding: 8px 12px !important;
+                padding: 12px 16px !important;
                 gap: 8px !important;
                 flex-shrink: 0 !important;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
             }
 
             #armosa-widget .action-btn {
                 all: unset !important;
-                width: 40px !important;
-                height: 40px !important;
-                border-radius: 12px !important;
-                background: #F4F4F5 !important;
+                width: 36px !important;
+                height: 36px !important;
+                border-radius: 8px !important;
+                background: transparent !important;
+                border: 1px solid #e5e5e5 !important;
                 cursor: pointer !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                color: #71717A !important;
-                transition: all 0.2s ease !important;
+                color: #71717a !important;
+                transition: all 0.15s ease !important;
                 flex-shrink: 0 !important;
             }
 
             #armosa-widget .action-btn:hover {
-                background: #E4E4E7 !important;
-                color: #2563EB !important;
+                background: #f4f4f5 !important;
+                border-color: #d4d4d8 !important;
+                color: #00C896 !important;
             }
 
             #armosa-widget .action-btn.recording {
-                background: #EF4444 !important;
-                color: #FFFFFF !important;
+                background: #ef4444 !important;
+                border-color: #ef4444 !important;
+                color: #ffffff !important;
                 animation: recordPulse 1s infinite !important;
             }
 
@@ -1521,36 +1493,45 @@ class ArmosaChatWidget {
             #armosa-widget #armosa-input {
                 all: unset !important;
                 flex: 1 !important;
-                min-height: 40px !important;
-                padding: 0 12px !important;
+                min-height: 36px !important;
+                max-height: 120px !important;
+                padding: 8px 12px !important;
                 font-size: 14px !important;
-                color: #18181B !important;
-                background: transparent !important;
+                color: #18181b !important;
+                background: #fafafa !important;
+                border: 1px solid #e5e5e5 !important;
+                border-radius: 10px !important;
+                transition: border-color 0.15s ease, background 0.15s ease !important;
+                resize: none !important;
+            }
+
+            #armosa-widget #armosa-input:focus {
+                border-color: #00C896 !important;
+                background: #ffffff !important;
+                box-shadow: 0 0 0 2px rgba(0, 200, 150, 0.1) !important;
             }
 
             #armosa-widget #armosa-input::placeholder {
-                color: #A1A1AA !important;
+                color: #a1a1aa !important;
             }
 
             #armosa-widget .send-btn {
                 all: unset !important;
-                width: 44px !important;
-                height: 44px !important;
-                border-radius: 14px !important;
-                background: linear-gradient(135deg, #00C896 0%, #2563EB 100%) !important;
+                width: 36px !important;
+                height: 36px !important;
+                border-radius: 8px !important;
+                background: #00C896 !important;
                 cursor: pointer !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                color: #FFFFFF !important;
-                transition: all 0.2s ease !important;
+                color: #ffffff !important;
+                transition: all 0.15s ease !important;
                 flex-shrink: 0 !important;
-                box-shadow: 0 4px 12px rgba(0, 200, 150, 0.35) !important;
             }
 
             #armosa-widget .send-btn:hover:not(:disabled) {
-                transform: scale(1.05) !important;
-                box-shadow: 0 6px 16px rgba(0, 200, 150, 0.45) !important;
+                background: #009977 !important;
             }
 
             #armosa-widget .send-btn:disabled {
@@ -1561,13 +1542,13 @@ class ArmosaChatWidget {
             /* ==================== FILE PREVIEW ==================== */
             #armosa-widget .file-preview {
                 display: none !important;
-                background: rgba(37, 99, 235, 0.08) !important;
-                border: 1px solid rgba(37, 99, 235, 0.2) !important;
+                background: #f4f4f5 !important;
+                border: 1px solid #e5e5e5 !important;
                 border-radius: 10px !important;
                 padding: 8px 12px !important;
                 margin-bottom: 8px !important;
                 font-size: 12px !important;
-                color: #2563EB !important;
+                color: #3f3f46 !important;
                 align-items: center !important;
                 gap: 8px !important;
             }
@@ -1596,8 +1577,7 @@ class ArmosaChatWidget {
                 display: flex !important;
                 align-items: center !important;
                 gap: 6px !important;
-                background: rgba(0, 200, 150, 0.08) !important;
-                border: 1px solid rgba(0, 200, 150, 0.2) !important;
+                background: #f4f4f5 !important;
                 border-radius: 20px !important;
                 padding: 4px 10px 4px 4px !important;
             }
@@ -1606,7 +1586,7 @@ class ArmosaChatWidget {
                 width: 24px !important;
                 height: 24px !important;
                 border-radius: 50% !important;
-                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
+                background: #00C896 !important;
                 color: white !important;
                 font-size: 11px !important;
                 font-weight: 700 !important;
@@ -1618,8 +1598,8 @@ class ArmosaChatWidget {
 
             #armosa-widget .armosa-user-name {
                 font-size: 12px !important;
-                font-weight: 600 !important;
-                color: #2563EB !important;
+                font-weight: 500 !important;
+                color: #3f3f46 !important;
                 max-width: 70px !important;
                 overflow: hidden !important;
                 text-overflow: ellipsis !important;
@@ -1646,16 +1626,16 @@ class ArmosaChatWidget {
                 gap: 4px !important;
                 padding: 5px 10px !important;
                 border-radius: 20px !important;
-                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
+                background: #00C896 !important;
                 color: white !important;
                 font-size: 12px !important;
                 font-weight: 600 !important;
                 cursor: pointer !important;
-                transition: opacity 0.2s ease !important;
+                transition: background 0.15s ease !important;
             }
 
             #armosa-widget .armosa-login-btn:hover {
-                opacity: 0.85 !important;
+                background: #009977 !important;
             }
 
             /* ==================== AVATAR SELECTOR ==================== */
@@ -1665,21 +1645,22 @@ class ArmosaChatWidget {
 
             #armosa-widget .avatar-selector-toggle {
                 all: unset !important;
-                width: 30px !important;
-                height: 30px !important;
+                width: 32px !important;
+                height: 32px !important;
                 border-radius: 8px !important;
-                background: rgba(37, 99, 235, 0.08) !important;
-                color: #2563EB !important;
+                background: transparent !important;
+                color: #71717a !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
                 cursor: pointer !important;
                 font-size: 18px !important;
-                transition: background 0.2s ease !important;
+                transition: background 0.15s ease !important;
             }
 
             #armosa-widget .avatar-selector-toggle:hover {
-                background: rgba(37, 99, 235, 0.15) !important;
+                background: #f4f4f5 !important;
+                color: #18181b !important;
             }
 
             #armosa-widget .avatar-selector-dropdown {
@@ -1687,15 +1668,15 @@ class ArmosaChatWidget {
                 position: absolute !important;
                 top: calc(100% + 6px) !important;
                 right: 0 !important;
-                background: #FFFFFF !important;
-                border: 1px solid rgba(37, 99, 235, 0.15) !important;
+                background: #ffffff !important;
+                border: 1px solid #e5e5e5 !important;
                 border-radius: 12px !important;
-                padding: 6px !important;
-                box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+                padding: 4px !important;
+                box-shadow: 0 4px 24px rgba(0,0,0,0.12) !important;
                 z-index: 9999 !important;
                 min-width: 160px !important;
                 flex-direction: column !important;
-                gap: 2px !important;
+                gap: 1px !important;
             }
 
             #armosa-widget .avatar-selector-dropdown.open {
@@ -1712,19 +1693,18 @@ class ArmosaChatWidget {
                 cursor: pointer !important;
                 transition: background 0.15s ease !important;
                 font-size: 13px !important;
-                color: #18181B !important;
+                color: #18181b !important;
                 width: 100% !important;
                 box-sizing: border-box !important;
             }
 
             #armosa-widget .avatar-option:hover {
-                background: rgba(37, 99, 235, 0.07) !important;
+                background: #f4f4f5 !important;
             }
 
             #armosa-widget .avatar-option.selected {
-                background: rgba(37, 99, 235, 0.1) !important;
-                font-weight: 600 !important;
-                color: #2563EB !important;
+                background: rgba(0, 200, 150, 0.08) !important;
+                border-left: 2px solid #00C896 !important;
             }
 
             #armosa-widget .avatar-option-thumb {
@@ -1734,7 +1714,7 @@ class ArmosaChatWidget {
 
             #armosa-widget .avatar-option-check {
                 margin-left: auto !important;
-                color: #2563EB !important;
+                color: #00C896 !important;
                 display: none !important;
             }
 
@@ -1750,19 +1730,10 @@ class ArmosaChatWidget {
                     border-radius: 0 !important;
                     bottom: 0 !important;
                     right: 0 !important;
-                    padding: 0 !important;
                 }
 
                 #armosa-widget .widget-inner {
                     border-radius: 0 !important;
-                    gap: 8px !important;
-                    padding: 8px !important;
-                }
-
-                #armosa-widget .armosa-header,
-                #armosa-widget .armosa-messages,
-                #armosa-widget .armosa-input-container {
-                    border-radius: 16px !important;
                 }
             }
         `;
