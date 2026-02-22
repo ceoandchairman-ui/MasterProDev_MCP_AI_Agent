@@ -46,7 +46,32 @@ class ArmosaChatWidget {
         this.mediaRecorder = null;
         this.audioChunks = [];
         this.selectedFile = null;
-        
+
+        // Avatar customization
+        this.currentAvatarId = localStorage.getItem('armosa_selected_avatar') || 'bot';
+        this.AVATAR_GALLERY = [
+            { id: 'bot',     name: 'AI Assistant',   thumbnail: '🤖', icon: 'mdi:robot-happy',         url: null },
+            { id: 'woman',   name: 'Business Woman', thumbnail: '👩\u200d💼', icon: 'mdi:face-woman-outline', url: 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes&textureAtlas=1024' },
+            { id: 'man',     name: 'Business Man',   thumbnail: '👨\u200d💼', icon: 'mdi:face-man-outline',   url: null },
+            { id: 'support', name: 'Support Agent',  thumbnail: '🧑\u200d💻', icon: 'mdi:face-agent',         url: null },
+        ];
+
+        // Three.js 3D Avatar state (lazy-loaded when avatar tab first opened)
+        this.three = {
+            loaded: false,
+            scene: null, camera: null, renderer: null,
+            avatar: null, mixer: null, clock: null,
+            mouthMorphTarget: null, visemeInfluences: {},
+            animFrameId: null
+        };
+
+        // Lip-sync state
+        this.lipSync = {
+            interval: null,
+            targetViseme: 'viseme_sil',
+            blendFactor: 0
+        };
+
         // Auth state
         this.authToken = null;
         this.userEmail = null;
@@ -83,8 +108,31 @@ class ArmosaChatWidget {
     }
     
     updateAuthUI() {
-        // Auth UI removed by request
-        return;
+        const statusEl = this.widget && this.widget.querySelector('#armosa-user-status');
+        if (!statusEl) return;
+
+        if (this.authToken && this.userEmail) {
+            const initials = this.userEmail.charAt(0).toUpperCase();
+            const displayName = this.userEmail.split('@')[0];
+            statusEl.innerHTML = `
+                <div class="armosa-user-badge">
+                    <div class="armosa-user-avatar">${initials}</div>
+                    <span class="armosa-user-name">${displayName}</span>
+                    <button class="armosa-logout-btn" title="Sign out">
+                        <iconify-icon icon="mdi:logout-variant" style="font-size: 14px;"></iconify-icon>
+                    </button>
+                </div>
+            `;
+            statusEl.querySelector('.armosa-logout-btn').addEventListener('click', () => this.performLogout());
+        } else {
+            statusEl.innerHTML = `
+                <button class="armosa-login-btn" title="Sign in">
+                    <iconify-icon icon="mdi:login-variant" style="font-size: 14px;"></iconify-icon>
+                    <span>Sign in</span>
+                </button>
+            `;
+            statusEl.querySelector('.armosa-login-btn').addEventListener('click', () => this.showLoginModal());
+        }
     }
     
     showLoginModal() {
@@ -196,6 +244,7 @@ class ArmosaChatWidget {
         
         this.injectStyles();
         this.createWidget();
+        this.populateAvatarSelector();
         this.attachEventListeners();
         
         // Load saved auth state and update UI
@@ -215,6 +264,389 @@ class ArmosaChatWidget {
             const script = document.createElement('script');
             script.src = 'https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js';
             document.head.appendChild(script);
+        }
+    }
+
+    // ==================== AVATAR CUSTOMIZATION ====================
+
+    populateAvatarSelector() {
+        const dropdown = this.widget && this.widget.querySelector('#avatar-selector-dropdown');
+        const toggle   = this.widget && this.widget.querySelector('#avatar-selector-toggle');
+        if (!dropdown || !toggle) return;
+
+        // Build option buttons
+        dropdown.innerHTML = '';
+        this.AVATAR_GALLERY.forEach(avatar => {
+            const btn = document.createElement('button');
+            btn.className = 'avatar-option' + (avatar.id === this.currentAvatarId ? ' selected' : '');
+            btn.dataset.avatarId = avatar.id;
+            btn.innerHTML = `
+                <span class="avatar-option-thumb">${avatar.thumbnail}</span>
+                <span class="avatar-option-name">${avatar.name}</span>
+                <iconify-icon class="avatar-option-check" icon="mdi:check-bold" style="font-size:14px;"></iconify-icon>
+            `;
+            btn.addEventListener('click', () => {
+                this.selectAvatar(avatar.id);
+                dropdown.classList.remove('open');
+            });
+            dropdown.appendChild(btn);
+        });
+
+        // Toggle open/close
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdown.classList.toggle('open');
+        });
+
+        // Close on outside click
+        document.addEventListener('click', (e) => {
+            if (!dropdown.contains(e.target) && e.target !== toggle) {
+                dropdown.classList.remove('open');
+            }
+        });
+
+        // Apply currently saved avatar icon on init
+        this.selectAvatar(this.currentAvatarId);
+    }
+
+    selectAvatar(id) {
+        const entry = this.AVATAR_GALLERY.find(a => a.id === id);
+        if (!entry) return;
+
+        this.currentAvatarId = id;
+        localStorage.setItem('armosa_selected_avatar', id);
+
+        // Update 2D fallback avatar-circle icon
+        const circle = this.widget && this.widget.querySelector('#avatar-circle iconify-icon');
+        if (circle) circle.setAttribute('icon', entry.icon);
+
+        // Refresh selected state in dropdown
+        const dropdown = this.widget && this.widget.querySelector('#avatar-selector-dropdown');
+        if (dropdown) {
+            dropdown.querySelectorAll('.avatar-option').forEach(opt => {
+                opt.classList.toggle('selected', opt.dataset.avatarId === id);
+            });
+        }
+
+        // If 3D is already running, hot-swap the model
+        if (this.three.loaded && this.three.scene) {
+            this.load3DAvatarModel(id);
+        }
+    }
+
+    // ==================== 3D AVATAR ====================
+
+    loadThreeJS() {
+        return new Promise((resolve, reject) => {
+            if (window.THREE && window.THREE.GLTFLoader) { resolve(); return; }
+            const baseUrl = 'https://cdn.jsdelivr.net/npm/three@0.128.0';
+
+            const load = (src) => new Promise((res, rej) => {
+                const s = document.createElement('script');
+                s.src = src;
+                s.onload = res;
+                s.onerror = rej;
+                document.head.appendChild(s);
+            });
+
+            load(`${baseUrl}/build/three.min.js`)
+                .then(() => load(`${baseUrl}/examples/js/loaders/GLTFLoader.js`))
+                .then(resolve)
+                .catch(reject);
+        });
+    }
+
+    async init3DAvatar() {
+        if (this.three.loaded) return;
+
+        const statusEl = this.widget && this.widget.querySelector('#avatar-status-text');
+        if (statusEl) statusEl.textContent = 'Loading 3D engine...';
+
+        try {
+            await this.loadThreeJS();
+        } catch (e) {
+            console.warn('ArmosaWidget: Three.js failed to load, using 2D fallback.', e);
+            if (statusEl) statusEl.textContent = 'Tap to speak';
+            return;
+        }
+
+        const T = window.THREE;
+        const container = this.avatarView;
+        const canvas = this.widget.querySelector('#armosa-avatar-canvas');
+        if (!container || !canvas) return;
+
+        // Scene
+        this.three.scene = new T.Scene();
+        this.three.scene.background = new T.Color(0xEFF6FF);
+
+        // Camera
+        const w = container.clientWidth || 300;
+        const h = container.clientHeight || 300;
+        this.three.camera = new T.PerspectiveCamera(45, w / h, 0.1, 100);
+        this.three.camera.position.set(0, 1.5, 2.2);
+
+        // Renderer
+        this.three.renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true });
+        this.three.renderer.setSize(w, h);
+        this.three.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        if (T.sRGBEncoding) this.three.renderer.outputEncoding = T.sRGBEncoding;
+
+        // Lighting
+        this.three.scene.add(new T.AmbientLight(0xffffff, 0.6));
+        const dir = new T.DirectionalLight(0xffffff, 0.8);
+        dir.position.set(5, 10, 7.5);
+        this.three.scene.add(dir);
+        const fill = new T.DirectionalLight(0x00C896, 0.3);
+        fill.position.set(-5, 5, -5);
+        this.three.scene.add(fill);
+
+        this.three.clock = new T.Clock();
+        this.three.loaded = true;
+
+        // Show canvas, hide 2D circle
+        canvas.style.display = 'block';
+        const circle2D = this.widget.querySelector('#avatar-circle');
+        if (circle2D) circle2D.style.display = 'none';
+
+        // Resize observer
+        if (window.ResizeObserver) {
+            new ResizeObserver(() => this.onAvatar3DResize()).observe(container);
+        }
+
+        // Load the selected avatar model
+        this.load3DAvatarModel(this.currentAvatarId);
+
+        // Start render loop
+        this.animate3D();
+    }
+
+    load3DAvatarModel(avatarId) {
+        const T = window.THREE;
+        if (!T || !this.three.scene) return;
+
+        const entry = this.AVATAR_GALLERY.find(a => a.id === avatarId) || this.AVATAR_GALLERY[0];
+        const statusEl = this.widget && this.widget.querySelector('#avatar-status-text');
+
+        // Remove previous avatar
+        if (this.three.avatar) {
+            this.three.scene.remove(this.three.avatar);
+            this.three.avatar = null;
+            this.three.mixer = null;
+            this.three.mouthMorphTarget = null;
+            this.three.visemeInfluences = {};
+        }
+
+        if (entry.url) {
+            // Load GLTF/GLB from ReadyPlayerMe
+            if (statusEl) statusEl.textContent = `Loading ${entry.name}...`;
+
+            const loader = new T.GLTFLoader();
+            loader.load(
+                entry.url,
+                (gltf) => {
+                    this.three.avatar = gltf.scene;
+                    this.three.avatar.position.set(0, 0, 0);
+                    this.three.scene.add(this.three.avatar);
+
+                    // Find morph targets for lip sync (Feature #6)
+                    this.three.avatar.traverse((child) => {
+                        if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
+                            this.three.mouthMorphTarget = child;
+                            const VISEME_NAMES = [
+                                'viseme_sil','viseme_PP','viseme_FF','viseme_TH','viseme_DD',
+                                'viseme_kk','viseme_CH','viseme_SS','viseme_nn','viseme_RR',
+                                'viseme_aa','viseme_E','viseme_I','viseme_O','viseme_U'
+                            ];
+                            VISEME_NAMES.forEach(name => {
+                                if (child.morphTargetDictionary[name] !== undefined) {
+                                    this.three.visemeInfluences[name] = child.morphTargetDictionary[name];
+                                }
+                            });
+                        }
+                    });
+
+                    // Play idle animation if available
+                    if (gltf.animations && gltf.animations.length > 0) {
+                        this.three.mixer = new T.AnimationMixer(this.three.avatar);
+                        this.three.mixer.clipAction(gltf.animations[0]).play();
+                    }
+
+                    if (statusEl) statusEl.textContent = 'Tap to speak';
+                },
+                (progress) => {
+                    if (progress.total && statusEl) {
+                        const pct = Math.round((progress.loaded / progress.total) * 100);
+                        statusEl.textContent = `Loading ${entry.name}... ${pct}%`;
+                    }
+                },
+                (err) => {
+                    console.warn('ArmosaWidget: Failed to load GLB:', err);
+                    this.createFallback3DAvatar(entry);
+                    if (statusEl) statusEl.textContent = 'Tap to speak';
+                }
+            );
+        } else {
+            // No URL — create a geometric fallback shape
+            this.createFallback3DAvatar(entry);
+            if (statusEl) statusEl.textContent = 'Tap to speak';
+        }
+    }
+
+    createFallback3DAvatar(entry) {
+        const T = window.THREE;
+        if (!T || !this.three.scene) return;
+
+        // Head sphere
+        const headGeo = new T.SphereGeometry(0.35, 32, 32);
+        const headMat = new T.MeshStandardMaterial({ color: 0x2563EB });
+        const head = new T.Mesh(headGeo, headMat);
+        head.position.set(0, 1.6, 0);
+
+        // Body cylinder
+        const bodyGeo = new T.CylinderGeometry(0.22, 0.28, 0.75, 32);
+        const bodyMat = new T.MeshStandardMaterial({ color: 0x00C896 });
+        const body = new T.Mesh(bodyGeo, bodyMat);
+        body.position.set(0, 1.0, 0);
+
+        const group = new T.Group();
+        group.add(head);
+        group.add(body);
+        group.position.set(0, -0.3, 0);
+
+        this.three.avatar = group;
+        this.three.scene.add(group);
+    }
+
+    animate3D() {
+        if (!this.three.loaded) return;
+
+        this.three.animFrameId = requestAnimationFrame(() => this.animate3D());
+
+        const delta = this.three.clock ? this.three.clock.getDelta() : 0.016;
+
+        if (this.three.mixer) this.three.mixer.update(delta);
+
+        // Viseme-based lip sync
+        const mt = this.three.mouthMorphTarget;
+        const vi = this.three.visemeInfluences;
+        if (mt && Object.keys(vi).length > 0) {
+            this.lipSync.blendFactor = Math.min(this.lipSync.blendFactor + delta * 12, 1);
+            const VNAMES = [
+                'viseme_sil','viseme_PP','viseme_FF','viseme_TH','viseme_DD',
+                'viseme_kk','viseme_CH','viseme_SS','viseme_nn','viseme_RR',
+                'viseme_aa','viseme_E','viseme_I','viseme_O','viseme_U'
+            ];
+            VNAMES.forEach(name => {
+                if (vi[name] !== undefined) {
+                    const idx = vi[name];
+                    const cur = mt.morphTargetInfluences[idx];
+                    if (name === this.lipSync.targetViseme) {
+                        mt.morphTargetInfluences[idx] = cur + (0.7 - cur) * this.lipSync.blendFactor;
+                    } else {
+                        mt.morphTargetInfluences[idx] = cur * 0.85;
+                    }
+                }
+            });
+        }
+
+        // Gentle idle rotation for fallback avatars
+        if (this.three.avatar && !this.three.mixer) {
+            this.three.avatar.rotation.y = Math.sin(Date.now() * 0.001) * 0.15;
+        }
+
+        if (this.three.renderer && this.three.scene && this.three.camera) {
+            this.three.renderer.render(this.three.scene, this.three.camera);
+        }
+    }
+
+    onAvatar3DResize() {
+        if (!this.three.camera || !this.three.renderer || !this.avatarView) return;
+        const w = this.avatarView.clientWidth;
+        const h = this.avatarView.clientHeight;
+        if (!w || !h) return;
+        this.three.camera.aspect = w / h;
+        this.three.camera.updateProjectionMatrix();
+        this.three.renderer.setSize(w, h);
+    }
+
+    // ==================== LIP-SYNC ====================
+
+    // Character-to-viseme mapping (approximate English phonemes)
+    get CHAR_TO_VISEME() {
+        return {
+            'a':'viseme_aa','à':'viseme_aa','á':'viseme_aa',
+            'e':'viseme_E', 'è':'viseme_E', 'é':'viseme_E',
+            'i':'viseme_I', 'ì':'viseme_I', 'í':'viseme_I','y':'viseme_I',
+            'o':'viseme_O', 'ò':'viseme_O', 'ó':'viseme_O',
+            'u':'viseme_U', 'ù':'viseme_U', 'ú':'viseme_U','w':'viseme_U',
+            'p':'viseme_PP','b':'viseme_PP','m':'viseme_PP',
+            'f':'viseme_FF','v':'viseme_FF',
+            't':'viseme_DD','d':'viseme_DD',
+            'k':'viseme_kk','g':'viseme_kk','c':'viseme_kk','q':'viseme_kk',
+            's':'viseme_SS','z':'viseme_SS','x':'viseme_SS',
+            'n':'viseme_nn','l':'viseme_nn',
+            'r':'viseme_RR',
+            'j':'viseme_CH','h':'viseme_CH',
+            ' ':'viseme_sil','.':'viseme_sil',',':'viseme_sil','!':'viseme_sil','?':'viseme_sil'
+        };
+    }
+
+    textToVisemes(text) {
+        const visemes = [];
+        const map = this.CHAR_TO_VISEME;
+        const words = text.toLowerCase().split(/\s+/);
+        for (const word of words) {
+            for (let i = 0; i < word.length; i++) {
+                const char = word[i];
+                // Handle digraphs
+                if (i < word.length - 1) {
+                    const dg = char + word[i + 1];
+                    if (dg === 'th') { visemes.push('viseme_TH'); i++; continue; }
+                    if (dg === 'ch' || dg === 'sh') { visemes.push('viseme_CH'); i++; continue; }
+                }
+                visemes.push(map[char] || 'viseme_sil');
+            }
+            visemes.push('viseme_sil'); // silence between words
+        }
+        return visemes;
+    }
+
+    startTextLipSync(text, durationMs) {
+        this.stopLipSync();
+        const visemes = this.textToVisemes(text);
+        if (!visemes.length) return;
+        const msPerViseme = Math.max(durationMs / visemes.length, 30);
+        let idx = 0;
+        this.lipSync.interval = setInterval(() => {
+            if (idx >= visemes.length) { this.stopLipSync(); return; }
+            this.lipSync.targetViseme = visemes[idx++];
+            this.lipSync.blendFactor = 0;
+        }, msPerViseme);
+    }
+
+    startSimulatedLipSync() {
+        this.stopLipSync();
+        const vowels = ['viseme_aa','viseme_E','viseme_O','viseme_I','viseme_U','viseme_sil'];
+        this.lipSync.interval = setInterval(() => {
+            this.lipSync.targetViseme = Math.random() > 0.25
+                ? vowels[Math.floor(Math.random() * vowels.length)]
+                : 'viseme_sil';
+            this.lipSync.blendFactor = 0;
+        }, 80);
+    }
+
+    stopLipSync() {
+        if (this.lipSync.interval) {
+            clearInterval(this.lipSync.interval);
+            this.lipSync.interval = null;
+        }
+        this.lipSync.targetViseme = 'viseme_sil';
+        this.lipSync.blendFactor = 0;
+        // Zero-out all morph targets
+        const mt = this.three.mouthMorphTarget;
+        const vi = this.three.visemeInfluences;
+        if (mt && Object.keys(vi).length > 0) {
+            Object.values(vi).forEach(idx => { mt.morphTargetInfluences[idx] = 0; });
         }
     }
 
@@ -817,6 +1249,76 @@ class ArmosaChatWidget {
                 color: #00C896 !important;
             }
 
+            /* ==================== VOICE VIEW ==================== */
+            #armosa-widget .voice-view {
+                flex: 1 !important;
+                display: none !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                justify-content: center !important;
+                background: linear-gradient(180deg, #f0f4ff 0%, #e8fdf5 100%) !important;
+                border-radius: 20px !important;
+                border: 2px solid rgba(37, 99, 235, 0.12) !important;
+                gap: 20px !important;
+            }
+
+            #armosa-widget .voice-view.active {
+                display: flex !important;
+            }
+
+            #armosa-widget .voice-orb {
+                width: 100px !important;
+                height: 100px !important;
+                border-radius: 50% !important;
+                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                cursor: pointer !important;
+                box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35) !important;
+                transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+                animation: voiceFloat 3s ease-in-out infinite !important;
+            }
+
+            #armosa-widget .voice-orb:hover {
+                transform: scale(1.08) !important;
+                box-shadow: 0 12px 32px rgba(37, 99, 235, 0.45) !important;
+            }
+
+            #armosa-widget .voice-orb.listening {
+                animation: voicePulse 1s ease-in-out infinite !important;
+                background: linear-gradient(135deg, #EF4444 0%, #FF8A00 100%) !important;
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7) !important;
+            }
+
+            #armosa-widget .voice-orb.speaking {
+                animation: voiceBounce 0.5s ease-in-out infinite alternate !important;
+                background: linear-gradient(135deg, #00C896 0%, #2563EB 100%) !important;
+            }
+
+            @keyframes voiceFloat {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-8px); }
+            }
+
+            @keyframes voicePulse {
+                0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+                70% { transform: scale(1.1); box-shadow: 0 0 0 16px rgba(239, 68, 68, 0); }
+                100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+            }
+
+            @keyframes voiceBounce {
+                from { transform: scale(1); }
+                to { transform: scale(1.06); }
+            }
+
+            #armosa-widget .voice-status-text {
+                font-size: 14px !important;
+                font-weight: 600 !important;
+                color: #71717A !important;
+                text-align: center !important;
+            }
+
             /* ==================== AVATAR VIEW ==================== */
             #armosa-widget .avatar-view {
                 flex: 1 !important;
@@ -834,6 +1336,31 @@ class ArmosaChatWidget {
 
             #armosa-widget .avatar-view.active {
                 display: flex !important;
+            }
+
+            /* 3D canvas fills the avatar view */
+            #armosa-widget #armosa-avatar-canvas {
+                display: none;
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                border-radius: 18px !important;
+                z-index: 3 !important;
+            }
+
+            /* Keep status text visible above canvas */
+            #armosa-widget .avatar-view .avatar-status-text {
+                position: absolute !important;
+                bottom: 14px !important;
+                left: 50% !important;
+                transform: translateX(-50%) !important;
+                z-index: 4 !important;
+                background: rgba(255,255,255,0.85) !important;
+                padding: 4px 12px !important;
+                border-radius: 20px !important;
+                backdrop-filter: blur(4px) !important;
             }
 
             #armosa-widget .avatar-circle {
@@ -1057,6 +1584,164 @@ class ArmosaChatWidget {
                 margin-left: auto !important;
             }
 
+            /* ==================== USER AUTH STATUS ==================== */
+            #armosa-widget .armosa-user-status {
+                flex: 1 !important;
+                display: flex !important;
+                justify-content: center !important;
+                align-items: center !important;
+            }
+
+            #armosa-widget .armosa-user-badge {
+                display: flex !important;
+                align-items: center !important;
+                gap: 6px !important;
+                background: rgba(0, 200, 150, 0.08) !important;
+                border: 1px solid rgba(0, 200, 150, 0.2) !important;
+                border-radius: 20px !important;
+                padding: 4px 10px 4px 4px !important;
+            }
+
+            #armosa-widget .armosa-user-avatar {
+                width: 24px !important;
+                height: 24px !important;
+                border-radius: 50% !important;
+                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
+                color: white !important;
+                font-size: 11px !important;
+                font-weight: 700 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                flex-shrink: 0 !important;
+            }
+
+            #armosa-widget .armosa-user-name {
+                font-size: 12px !important;
+                font-weight: 600 !important;
+                color: #2563EB !important;
+                max-width: 70px !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                white-space: nowrap !important;
+            }
+
+            #armosa-widget .armosa-logout-btn {
+                all: unset !important;
+                cursor: pointer !important;
+                color: #71717A !important;
+                display: flex !important;
+                align-items: center !important;
+                transition: color 0.2s ease !important;
+            }
+
+            #armosa-widget .armosa-logout-btn:hover {
+                color: #EF4444 !important;
+            }
+
+            #armosa-widget .armosa-login-btn {
+                all: unset !important;
+                display: flex !important;
+                align-items: center !important;
+                gap: 4px !important;
+                padding: 5px 10px !important;
+                border-radius: 20px !important;
+                background: linear-gradient(135deg, #2563EB 0%, #00C896 100%) !important;
+                color: white !important;
+                font-size: 12px !important;
+                font-weight: 600 !important;
+                cursor: pointer !important;
+                transition: opacity 0.2s ease !important;
+            }
+
+            #armosa-widget .armosa-login-btn:hover {
+                opacity: 0.85 !important;
+            }
+
+            /* ==================== AVATAR SELECTOR ==================== */
+            #armosa-widget .avatar-selector {
+                position: relative !important;
+            }
+
+            #armosa-widget .avatar-selector-toggle {
+                all: unset !important;
+                width: 30px !important;
+                height: 30px !important;
+                border-radius: 8px !important;
+                background: rgba(37, 99, 235, 0.08) !important;
+                color: #2563EB !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                cursor: pointer !important;
+                font-size: 18px !important;
+                transition: background 0.2s ease !important;
+            }
+
+            #armosa-widget .avatar-selector-toggle:hover {
+                background: rgba(37, 99, 235, 0.15) !important;
+            }
+
+            #armosa-widget .avatar-selector-dropdown {
+                display: none !important;
+                position: absolute !important;
+                top: calc(100% + 6px) !important;
+                right: 0 !important;
+                background: #FFFFFF !important;
+                border: 1px solid rgba(37, 99, 235, 0.15) !important;
+                border-radius: 12px !important;
+                padding: 6px !important;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+                z-index: 9999 !important;
+                min-width: 160px !important;
+                flex-direction: column !important;
+                gap: 2px !important;
+            }
+
+            #armosa-widget .avatar-selector-dropdown.open {
+                display: flex !important;
+            }
+
+            #armosa-widget .avatar-option {
+                all: unset !important;
+                display: flex !important;
+                align-items: center !important;
+                gap: 8px !important;
+                padding: 8px 10px !important;
+                border-radius: 8px !important;
+                cursor: pointer !important;
+                transition: background 0.15s ease !important;
+                font-size: 13px !important;
+                color: #18181B !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
+            }
+
+            #armosa-widget .avatar-option:hover {
+                background: rgba(37, 99, 235, 0.07) !important;
+            }
+
+            #armosa-widget .avatar-option.selected {
+                background: rgba(37, 99, 235, 0.1) !important;
+                font-weight: 600 !important;
+                color: #2563EB !important;
+            }
+
+            #armosa-widget .avatar-option-thumb {
+                font-size: 18px !important;
+                line-height: 1 !important;
+            }
+
+            #armosa-widget .avatar-option-check {
+                margin-left: auto !important;
+                color: #2563EB !important;
+                display: none !important;
+            }
+
+            #armosa-widget .avatar-option.selected .avatar-option-check {
+                display: block !important;
+            }
+
             /* ==================== RESPONSIVE ==================== */
             @media (max-width: 420px) {
                 #armosa-widget {
@@ -1110,7 +1795,16 @@ class ArmosaChatWidget {
                             </div>
                             <span class="armosa-title">MasterProDev</span>
                         </div>
+                        <div id="armosa-user-status" class="armosa-user-status"></div>
                         <div class="header-right">
+                             <div class="avatar-selector">
+                                <button class="avatar-selector-toggle" id="avatar-selector-toggle" title="Change Avatar">
+                                    <iconify-icon icon="mdi:account-convert-outline"></iconify-icon>
+                                </button>
+                                <div class="avatar-selector-dropdown" id="avatar-selector-dropdown">
+                                    <!-- Options will be populated by JS -->
+                                </div>
+                            </div>
                              <button class="close-btn" id="close-widget" title="Close">
                                 <iconify-icon icon="mdi:close" style="font-size: 18px;"></iconify-icon>
                             </button>
@@ -1123,6 +1817,10 @@ class ArmosaChatWidget {
                              <iconify-icon icon="mdi:chat-outline" style="font-size: 16px;"></iconify-icon>
                              Chat
                         </button>
+                        <button class="tab-btn" data-mode="voice" title="Voice Mode">
+                             <iconify-icon icon="mdi:microphone-outline" style="font-size: 16px;"></iconify-icon>
+                             Voice
+                        </button>
                         <button class="tab-btn" data-mode="avatar" title="Avatar Mode">
                              <iconify-icon icon="mdi:face-man-shimmer-outline" style="font-size: 16px;"></iconify-icon>
                              Avatar
@@ -1133,15 +1831,26 @@ class ArmosaChatWidget {
                 <!-- CHAT ISLAND (Default View) -->
                 <div class="armosa-messages" id="armosa-messages"></div>
 
+                <!-- VOICE ISLAND (Hidden by default) -->
+                <div class="voice-view" id="armosa-voice-view">
+                    <div class="voice-orb" id="voice-orb">
+                        <iconify-icon icon="mdi:microphone" style="font-size: 48px; color: white;"></iconify-icon>
+                    </div>
+                    <div class="voice-status-text" id="voice-status-text">Tap to speak</div>
+                </div>
+
                 <!-- AVATAR ISLAND (Hidden by default) -->
                 <div class="avatar-view" id="armosa-avatar-view">
                     <div class="avatar-wave"></div>
                     <div class="avatar-wave"></div>
                     <div class="avatar-wave"></div>
+                    <!-- 3D canvas - shown when Three.js loads -->
+                    <canvas id="armosa-avatar-canvas"></canvas>
+                    <!-- 2D fallback circle - shown while loading or if no GLB URL -->
                     <div class="avatar-circle" id="avatar-circle">
                          <iconify-icon icon="mdi:robot-happy" style="font-size: 64px;"></iconify-icon>
                     </div>
-                    <div class="avatar-status-text" id="avatar-status-text">I'm listening...</div>
+                    <div class="avatar-status-text" id="avatar-status-text">Tap to speak</div>
                 </div>
 
                 <!-- INPUT ISLAND -->
@@ -1153,7 +1862,7 @@ class ArmosaChatWidget {
                     <button class="action-btn" id="voice-btn" title="Record voice">
                         <iconify-icon icon="mdi:microphone" style="font-size: 20px;"></iconify-icon>
                     </button>
-                    <input type="text" id="armosa-input" placeholder="Message Armosa...">
+                    <textarea id="armosa-input" placeholder="Message Armosa..." rows="1"></textarea>
                     <button class="send-btn" id="send-btn" title="Send">
                         <iconify-icon icon="mdi:send" style="font-size: 20px;"></iconify-icon>
                     </button>
@@ -1181,7 +1890,12 @@ class ArmosaChatWidget {
         this.avatarView = widget.querySelector('#armosa-avatar-view');
         this.avatarCircle = widget.querySelector('#avatar-circle');
         this.avatarStatusText = widget.querySelector('#avatar-status-text');
-        this.inputContainer = widget.querySelector('#armosa-input-container'); // Capture input container
+
+        // Voice View Elements
+        this.voiceView = widget.querySelector('#armosa-voice-view');
+        this.voiceOrb = widget.querySelector('#voice-orb');
+
+        this.inputContainer = widget.querySelector('#armosa-input-container');
         
         this.isOpen = false;
         
@@ -1223,30 +1937,32 @@ class ArmosaChatWidget {
 
     switchMode(mode) {
         this.currentMode = mode;
-        
+
         // Update Tabs
         this.widget.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
 
-        // Update Views
-        if (mode === 'avatar') {
-            this.messagesContainer.style.display = 'none';
-            this.inputContainer.style.opacity = '0'; // Hide input but keep layout or just hide
-            this.inputContainer.style.display = 'none';
-            this.avatarView.classList.add('active');
-            
-            // Auto-start listening if switching to avatar mode? 
-            // Better to let user click the big avatar to start.
-            this.setAvatarState('idle');
-            this.avatarCircle.onclick = () => this.toggleRecording();
-            this.avatarStatusText.textContent = "Tap to speak";
-        } else {
+        // Hide all views first
+        this.messagesContainer.style.display = 'none';
+        this.inputContainer.style.display = 'none';
+        this.avatarView.classList.remove('active');
+        this.voiceView.classList.remove('active');
+        this.stopRecording();
+
+        if (mode === 'chat') {
             this.messagesContainer.style.display = 'flex';
             this.inputContainer.style.display = 'flex';
-            this.inputContainer.style.opacity = '1';
-            this.avatarView.classList.remove('active');
-            this.stopRecording(); // detailed stop
+        } else if (mode === 'voice') {
+            this.voiceView.classList.add('active');
+            this.voiceOrb.onclick = () => this.toggleRecording();
+            this.widget.querySelector('#voice-status-text').textContent = 'Tap to speak';
+        } else if (mode === 'avatar') {
+            this.avatarView.classList.add('active');
+            this.setAvatarState('idle');
+            this.avatarCircle.onclick = () => this.toggleRecording();
+            // Lazy-init 3D engine on first visit to avatar tab
+            this.init3DAvatar();
         }
     }
 
@@ -1316,13 +2032,19 @@ class ArmosaChatWidget {
                     this.widget.querySelector('#voice-btn').classList.add('recording');
                     if (this.currentMode === 'avatar') {
                         this.setAvatarState('listening');
+                    } else if (this.currentMode === 'voice') {
+                        this.voiceOrb.classList.add('listening');
+                        this.widget.querySelector('#voice-status-text').textContent = 'Listening... tap to stop';
                     }
                 };
 
                 this.mediaRecorder.onstop = () => {
                     this.isRecording = false;
                     this.widget.querySelector('#voice-btn').classList.remove('recording');
-                    // State change happens in sendAudioMessage
+                    if (this.currentMode === 'voice') {
+                        this.voiceOrb.classList.remove('listening');
+                        this.widget.querySelector('#voice-status-text').textContent = 'Processing...';
+                    }
                     const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
                     this.sendAudioMessage(audioBlob);
                 };
@@ -1345,6 +2067,7 @@ class ArmosaChatWidget {
         
         this.showTypingIndicator();
         if (this.currentMode === 'avatar') this.setAvatarState('thinking');
+        if (this.currentMode === 'voice') this.widget.querySelector('#voice-status-text').textContent = 'Thinking...';
         
         fetch(this.config.voiceUrl, {
             method: 'POST',
@@ -1378,13 +2101,35 @@ class ArmosaChatWidget {
                 
                 const audioUrl = URL.createObjectURL(audioResponse);
                 const audio = new Audio(audioUrl);
-                
+
                 if (this.currentMode === 'avatar') this.setAvatarState('speaking');
-                
+                if (this.currentMode === 'voice') {
+                    this.voiceOrb.classList.add('speaking');
+                    this.widget.querySelector('#voice-status-text').textContent = 'Speaking...';
+                }
+
+                // Start lip sync once we know the audio duration
+                audio.addEventListener('loadedmetadata', () => {
+                    if (this.three.loaded) {
+                        const durationMs = (audio.duration || 3) * 1000;
+                        const spokenText = responseText ? decodeURIComponent(responseText) : '';
+                        if (spokenText && Object.keys(this.three.visemeInfluences).length > 0) {
+                            this.startTextLipSync(spokenText, durationMs);
+                        } else {
+                            this.startSimulatedLipSync();
+                        }
+                    }
+                });
+
                 audio.play();
                 audio.onended = () => {
+                    this.stopLipSync();
                     URL.revokeObjectURL(audioUrl);
                     if (this.currentMode === 'avatar') this.setAvatarState('idle');
+                    if (this.currentMode === 'voice') {
+                        this.voiceOrb.classList.remove('speaking');
+                        this.widget.querySelector('#voice-status-text').textContent = 'Tap to speak';
+                    }
                 };
             }
         })
@@ -1392,6 +2137,10 @@ class ArmosaChatWidget {
             this.addBotMessage('Sorry, there was an error processing your voice message.');
             console.error('Voice error:', err);
             if (this.currentMode === 'avatar') this.setAvatarState('idle');
+            if (this.currentMode === 'voice') {
+                this.voiceOrb.classList.remove('listening', 'speaking');
+                this.widget.querySelector('#voice-status-text').textContent = 'Tap to speak';
+            }
         })
         .finally(() => this.removeTypingIndicator());
     }
@@ -1402,15 +2151,32 @@ class ArmosaChatWidget {
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'en-US';
             utterance.rate = 1.0;
-            
+
             utterance.onstart = () => {
-                 if (this.currentMode === 'avatar') this.setAvatarState('speaking');
+                if (this.currentMode === 'avatar') this.setAvatarState('speaking');
+                if (this.currentMode === 'voice') {
+                    this.voiceOrb.classList.add('speaking');
+                    this.widget.querySelector('#voice-status-text').textContent = 'Speaking...';
+                }
+                // Estimate ~120 wpm → ~500ms/word; use text-based lip sync
+                const wordCount = text.split(/\s+/).length;
+                const estimatedMs = (wordCount / 120) * 60 * 1000;
+                if (this.three.loaded && Object.keys(this.three.visemeInfluences).length > 0) {
+                    this.startTextLipSync(text, estimatedMs);
+                } else if (this.three.loaded) {
+                    this.startSimulatedLipSync();
+                }
             };
-            
+
             utterance.onend = () => {
-                 if (this.currentMode === 'avatar') this.setAvatarState('idle');
+                this.stopLipSync();
+                if (this.currentMode === 'avatar') this.setAvatarState('idle');
+                if (this.currentMode === 'voice') {
+                    this.voiceOrb.classList.remove('speaking');
+                    this.widget.querySelector('#voice-status-text').textContent = 'Tap to speak';
+                }
             };
-            
+
             speechSynthesis.speak(utterance);
         }
     }
