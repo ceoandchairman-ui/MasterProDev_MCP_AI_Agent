@@ -2345,16 +2345,6 @@ if (document.readyState === 'loading') {
 } else {
     // DOMContentLoaded has already fired
     initializeArmosaWidget();
-}     window.armosaChatWidget = new ArmosaChatWidget();
-    }
-}
-
-// Handle various loading scenarios
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeArmosaWidget);
-} else {
-    // DOMContentLoaded has already fired
-    initializeArmosaWidget();
 }
 
 // ES Module export
