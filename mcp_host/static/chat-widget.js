@@ -774,7 +774,7 @@ class ArmosaChatWidget {
             #armosa-widget .armosa-logo {
                 width: 32px !important;
                 height: 32px !important;
-                background: #00C896 !important;
+                background: #2563EB !important;
                 border-radius: 8px !important;
                 display: flex !important;
                 align-items: center !important;
@@ -1069,7 +1069,7 @@ class ArmosaChatWidget {
                 height: 36px !important;
                 min-width: 36px !important;
                 border-radius: 50% !important;
-                background: #00C896 !important;
+                background: #2563EB !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
@@ -1088,7 +1088,7 @@ class ArmosaChatWidget {
             }
 
             #armosa-widget .bot-message-content {
-                background: #f4f4f5 !important;
+                background: #eef2ff !important;
                 border: none !important;
                 border-radius: 18px !important;
                 padding: 10px 14px !important;
@@ -1123,6 +1123,21 @@ class ArmosaChatWidget {
 
             #armosa-widget .message-group.user .message-time {
                 text-align: right !important;
+            }
+
+            /* Error / system messages — gold attention color */
+            #armosa-widget .message-group.error .message-avatar {
+                background: #FFB800 !important;
+            }
+
+            #armosa-widget .error-message-content {
+                background: rgba(255, 184, 0, 0.1) !important;
+                border: 1px solid rgba(255, 184, 0, 0.25) !important;
+                border-radius: 18px !important;
+                padding: 10px 14px !important;
+                font-size: 14px !important;
+                line-height: 1.6 !important;
+                color: #78350f !important;
             }
 
             /* ==================== CODE BLOCKS ==================== */
@@ -1191,8 +1206,8 @@ class ArmosaChatWidget {
             }
 
             #armosa-widget .list-block {
-                background: rgba(0, 200, 150, 0.05) !important;
-                border-left: 3px solid #00C896 !important;
+                background: rgba(37, 99, 235, 0.05) !important;
+                border-left: 3px solid #2563EB !important;
                 border-radius: 0 12px 12px 0 !important;
                 padding: 12px 14px !important;
                 margin-top: 8px !important;
@@ -1422,7 +1437,7 @@ class ArmosaChatWidget {
                 display: flex !important;
                 gap: 4px !important;
                 padding: 10px 14px !important;
-                background: #f4f4f5 !important;
+                background: #eef2ff !important;
                 border-radius: 18px !important;
                 width: fit-content !important;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
@@ -1432,7 +1447,7 @@ class ArmosaChatWidget {
                 width: 7px !important;
                 height: 7px !important;
                 border-radius: 50% !important;
-                background: #00C896 !important;
+                background: #2563EB !important;
                 animation: typingBounce 1.4s infinite !important;
             }
 
@@ -2105,7 +2120,7 @@ class ArmosaChatWidget {
             }
         })
         .catch(err => {
-            this.addBotMessage('Sorry, there was an error processing your voice message.');
+            this.addErrorMessage('Sorry, there was an error processing your voice message.');
             console.error('Voice error:', err);
             if (this.currentMode === 'avatar') this.setAvatarState('idle');
             if (this.currentMode === 'voice') {
@@ -2191,7 +2206,7 @@ class ArmosaChatWidget {
         })
         .catch(err => {
             this.removeTypingIndicator();
-            this.addBotMessage('Sorry, I encountered an error. Please try again.');
+            this.addErrorMessage('Sorry, I encountered an error. Please try again.');
             console.error('Chat error:', err);
         })
         .finally(() => this.removeFile());
@@ -2209,6 +2224,11 @@ class ArmosaChatWidget {
         this.scrollToBottom();
     }
 
+    addErrorMessage(message) {
+        this.messagesContainer.appendChild(this.createMessageElement(message, 'error'));
+        this.scrollToBottom();
+    }
+
     createMessageElement(content, role) {
         const group = document.createElement('div');
         group.className = `message-group ${role}`;
@@ -2217,6 +2237,8 @@ class ArmosaChatWidget {
         avatar.className = 'message-avatar';
         avatar.innerHTML = role === 'bot'
             ? '<iconify-icon icon="mdi:robot" style="font-size: 18px; color: white;"></iconify-icon>'
+            : role === 'error'
+            ? '<iconify-icon icon="mdi:alert" style="font-size: 18px; color: white;"></iconify-icon>'
             : '<iconify-icon icon="mdi:account" style="font-size: 18px; color: white;"></iconify-icon>';
         group.appendChild(avatar);
 
