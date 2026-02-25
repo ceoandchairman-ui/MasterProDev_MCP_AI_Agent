@@ -37,6 +37,10 @@ class ConversationState:
         self.conversation_id = conversation_id
         self.history: List[Dict[str, Any]] = []
         self.pending_action: Optional[str] = None  # Store pending tool calls as JSON string
+        self.file_context: Optional[Dict[str, Any]] = None  # Most recently uploaded file
+        self.user_name: Optional[str] = None   # Personalization: first name (set from login or self-intro)
+        self.name_asked: bool = False           # True after bot has asked guest for their name
+        self.name_used: bool = False            # True after name was personalised into a reply
         self.last_updated = datetime.utcnow()
 
     def add_turn(self, user_message: str, assistant_response: str):
@@ -51,6 +55,10 @@ class ConversationState:
             "conversation_id": self.conversation_id,
             "history": self.history,
             "pending_action": self.pending_action,
+            "file_context": self.file_context,
+            "user_name": self.user_name,
+            "name_asked": self.name_asked,
+            "name_used": self.name_used,
             "last_updated": self.last_updated.isoformat()
         })
 
@@ -61,6 +69,10 @@ class ConversationState:
         state = cls(data["session_id"], data["conversation_id"])
         state.history = data.get("history", [])
         state.pending_action = data.get("pending_action")
+        state.file_context = data.get("file_context")
+        state.user_name = data.get("user_name")
+        state.name_asked = data.get("name_asked", False)
+        state.name_used = data.get("name_used", False)
         state.last_updated = datetime.fromisoformat(data.get("last_updated", datetime.utcnow().isoformat()))
         return state
 
@@ -323,6 +335,37 @@ class StateManager:
         """Retrieves conversation history from the state (last 50 messages)."""
         state = await self.get_conversation_state(session_id)
         return state.history[-50:] if state else []
+
+    async def set_file_context(
+        self,
+        session_id: str,
+        filename: str,
+        file_type: str,
+        extracted_text: str,
+    ) -> None:
+        """Persist the most recently uploaded file so follow-up turns can reference it."""
+        state = await self.get_conversation_state(session_id)
+        if not state:
+            state = ConversationState(session_id, session_id)
+        state.file_context = {
+            "filename": filename,
+            "file_type": file_type,
+            "text": extracted_text,
+            "uploaded_at": datetime.utcnow().isoformat(),
+        }
+        await self.update_conversation_state(session_id, state)
+
+    async def get_file_context(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve the stored file context for a session (None if not set)."""
+        state = await self.get_conversation_state(session_id)
+        return state.file_context if state else None
+
+    async def clear_file_context(self, session_id: str) -> None:
+        """Remove stored file context (e.g. when user starts a new topic)."""
+        state = await self.get_conversation_state(session_id)
+        if state and state.file_context:
+            state.file_context = None
+            await self.update_conversation_state(session_id, state)
 
 
 # Global state manager instance

@@ -697,9 +697,24 @@ function attachEventListeners() {
     voiceBtn.addEventListener('click', toggleRecording);
 }
 
+const ACCEPTED_EXTS = new Set([
+    'pdf','doc','docx','pptx','ppt','xlsx','xls','csv','rtf',
+    'txt','md','json','xml','html','htm','log',
+    'jpg','jpeg','png','gif','bmp','webp','tiff','tif','ico',
+    'mp3','wav','m4a','ogg','flac','aac',
+    'mp4','avi','mov','mkv','webm',
+    'py','js','ts','jsx','tsx','java','c','cpp','h','cs','go','rs',
+    'rb','php','swift','kt','sh','bash','ps1','yaml','yml','toml','ini','sql','graphql',
+]);
+
 // Attach a file (shared by click-upload, drag & drop, and clipboard paste)
 function attachFile(file) {
     if (!file) return;
+    const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+    if (ext && !ACCEPTED_EXTS.has(ext)) {
+        alert(`Unsupported file type ".${ext}".\nSupported: PDF, Word, PowerPoint, Excel, CSV, images, audio, video, and most code files.`);
+        return;
+    }
     if (file.size > 25 * 1024 * 1024) { alert('File too large. Maximum size is 25MB.'); return; }
     selectedFile = file;
 
@@ -883,7 +898,6 @@ async function sendMessage() {
     const message = chatInput.value.trim();
     if (!message && !selectedFile) return;
 
-    // Render user bubble with real file chip (not raw text)
     addMessage(message, 'user', selectedFile);
     chatInput.value = '';
     chatInput.style.height = 'auto';
@@ -897,36 +911,87 @@ async function sendMessage() {
     if (conversationId) formData.append('conversation_id', conversationId);
     if (selectedFile) formData.append('file', selectedFile);
 
+    // Clear attachment immediately so UI resets while agent processes
+    if (selectedFile) {
+        selectedFile = null;
+        fileInput.value = '';
+        filePreview.classList.remove('active');
+    }
+
     try {
-        const response = await fetch(`${API_URL}/chat`, {
+        const response = await fetch(`${API_URL}/chat/stream`, {
             method: 'POST',
             headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
             body: formData
         });
 
-        if (!response.ok) throw new Error('Chat request failed');
+        if (!response.ok) throw new Error('Stream request failed');
 
-        const data = await response.json();
-        conversationId = data.conversation_id;
-        addMessage(data.response, 'bot');
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let botBubble = null;
+        let buffer = '';
 
-        // Auto-speak in avatar / voice modes (guard against double-call)
-        if ((currentMode === 'avatar' || currentMode === 'voice') && data.response) {
-            speakText(data.response);
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // hold back incomplete last line
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                try {
+                    const data = JSON.parse(line.slice(6));
+                    if (data.type === 'thinking') {
+                        // typing indicator already visible
+                    } else if (data.type === 'chunk') {
+                        if (!botBubble) {
+                            typingIndicator.classList.remove('active');
+                            botBubble = addStreamBubble();
+                        }
+                        appendToStreamBubble(botBubble, data.text);
+                        scrollToBottom();
+                    } else if (data.type === 'done') {
+                        if (data.conversation_id) conversationId = data.conversation_id;
+                        if ((currentMode === 'avatar' || currentMode === 'voice') && botBubble) {
+                            speakText(botBubble.querySelector('.stream-text').textContent);
+                        }
+                        if (data.pending_auth && data.auth_url) {
+                            addMessage(`🔐 Authorization required. [Click here to authorize](${data.auth_url})`, 'bot');
+                        }
+                    } else if (data.type === 'error') {
+                        typingIndicator.classList.remove('active');
+                        addMessage(data.text, 'bot');
+                    }
+                } catch (e) { /* skip malformed chunk */ }
+            }
         }
-
-        if (selectedFile) {
-            selectedFile = null;
-            fileInput.value = '';
-            filePreview.classList.remove('active');
-        }
-
     } catch (error) {
         console.error('Chat error:', error);
         addMessage('Sorry, something went wrong. Please try again.', 'bot');
     } finally {
         typingIndicator.classList.remove('active');
     }
+}
+
+function addStreamBubble() {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message bot';
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    messageDiv.innerHTML = `
+        <div class="message-content">
+            <p class="stream-text" style="white-space: pre-wrap; margin: 0;"></p>
+            <div class="message-time">${time}</div>
+        </div>`;
+    chatMessages.insertBefore(messageDiv, typingIndicator);
+    return messageDiv;
+}
+
+function appendToStreamBubble(bubble, text) {
+    const p = bubble.querySelector('.stream-text');
+    if (p) p.textContent += text;
 }
 
 // Speak text using browser TTS with viseme lip sync
@@ -976,6 +1041,19 @@ function addMessage(text, sender, file = null) {
     messageDiv.className = `message ${sender}`;
 
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Render file-processing errors as a styled error chip instead of plain text
+    if (sender === 'bot' && text && /^\[File (not processed|upload failed):/i.test(text)) {
+        messageDiv.innerHTML = `
+            <div class="message-content file-error-chip">
+                <iconify-icon icon="mdi:alert-circle-outline" style="font-size:18px;color:#ef4444;flex-shrink:0;"></iconify-icon>
+                <span>${escapeHtml(text.replace(/^\[|\]$/g, ''))}</span>
+                <div class="message-time">${time}</div>
+            </div>`;
+        chatMessages.insertBefore(messageDiv, typingIndicator);
+        scrollToBottom();
+        return;
+    }
 
     // Build file chip HTML for user messages
     let fileChipHtml = '';

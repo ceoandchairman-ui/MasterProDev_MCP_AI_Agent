@@ -3,7 +3,7 @@
 from fastapi import FastAPI, HTTPException, Depends, status, Header, Request, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.openapi.utils import get_openapi
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -24,7 +24,7 @@ from .models import (
     UserProfileResponse, HealthResponse
 )
 from .auth import hash_password, verify_password, create_access_token, decode_token
-from .state import state_manager
+from .state import state_manager, ConversationState
 from .agent import mcp_agent
 from .rag_service import rag_service
 from .evaluator import evaluator  # Import evaluator for metrics endpoint
@@ -687,6 +687,8 @@ async def chat(
     
     # Process file if uploaded
     file_content = None
+    extracted_text = None
+    file_type = None
     if file:
         try:
             file_data = await file.read()
@@ -741,6 +743,48 @@ async def chat(
         user_id = "guest"
         conversation_history = await state_manager.get_conversation_history(session_id)
     
+    # ── Store new file context in session OR inject previous file context ──
+    if file and extracted_text and file_type:
+        # New file successfully processed — persist so follow-up turns can reference it
+        try:
+            await state_manager.set_file_context(session_id, file.filename, file_type, extracted_text)
+        except Exception:
+            pass
+    elif not file:
+        # No file this turn — check if a previous upload exists in this session
+        try:
+            stored_fc = await state_manager.get_file_context(session_id)
+            if stored_fc:
+                full_message += (
+                    f"\n\n[Context from previously uploaded file '{stored_fc['filename']}' "
+                    f"({stored_fc['file_type']}) — still available for reference]\n"
+                    f"{stored_fc['text']}"
+                )
+        except Exception:
+            pass
+
+    # ── Name capture: if guest is replying with their name ─────────────────────
+    if user_id == "guest":
+        try:
+            _cs = await state_manager.get_conversation_state(session_id)
+            if _cs and _cs.name_asked and not _cs.user_name:
+                _candidate = message.strip().rstrip("!?., ")
+                if mcp_agent._looks_like_name(_candidate):
+                    _first = _candidate.split()[0].capitalize()
+                    _cs.user_name = _first
+                    _cs.name_used = False
+                    await state_manager.update_conversation_state(session_id, _cs)
+                    _name_reply = (
+                        f"Nice to meet you, **{_first}**! \U0001f60a "
+                        "I'm here to help whenever you need me. What can I assist you with?"
+                    )
+                    await state_manager.save_conversation_turn(
+                        session_id, user_id, conv_id, full_message, _name_reply
+                    )
+                    return ChatResponse(response=_name_reply, conversation_id=conv_id)
+        except Exception as _e:
+            logger.warning(f"\u26a0\ufe0f Name-capture check failed (non-critical): {_e}")
+
     # Process message through LangChain agent
     try:
         agent_result = await mcp_agent.process_message(
@@ -763,7 +807,29 @@ async def chat(
         logger.debug(f"📋 Tools executed: {[tc.get('tool') for tc in agent_result['tool_calls']]}")
     
     response_text = agent_result.get("response", "I couldn't process that request.")
-    
+
+    # ── Personalization: inject name (once per session) + ask for name (guests) ───
+    if user_id == "guest":
+        try:
+            _cs = await state_manager.get_conversation_state(session_id)
+            if not _cs:
+                _cs = ConversationState(session_id, conv_id)
+            _state_changed = False
+            if _cs.user_name and not _cs.name_used:
+                # Use name once — append warm sign-off
+                response_text += f"\n\nLet me know if you need anything else, **{_cs.user_name}**! \U0001f60a"
+                _cs.name_used = True
+                _state_changed = True
+            elif not _cs.name_asked and not _cs.user_name:
+                # First reply to this guest — ask for name at the end
+                response_text += "\n\nBy the way, may I know your name so I can address you properly? \U0001f60a"
+                _cs.name_asked = True
+                _state_changed = True
+            if _state_changed:
+                await state_manager.update_conversation_state(session_id, _cs)
+        except Exception as _e:
+            logger.warning(f"\u26a0\ufe0f Personalization failed (non-critical): {_e}")
+
     # Save conversation for ALL users (guests save to Redis only, authenticated to PostgreSQL too)
     try:
         await state_manager.save_conversation_turn(
@@ -781,7 +847,187 @@ async def chat(
     )
 
 
-@app.get("/conversations")
+@app.post("/chat/stream")
+async def chat_stream(
+    message: str = Form(...),
+    conversation_id: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    authorization: Optional[str] = Header(None)
+):
+    """Streaming chat endpoint — returns SSE (text/event-stream).
+    Same logic as /chat but streams the final response word-by-word
+    and emits heartbeat events while the agent is thinking.
+    """
+    import json as _json
+
+    # ── File processing ────────────────────────────────────────────────────
+    file_content = None
+    extracted_text_s = None
+    file_type_s = None
+    if file:
+        try:
+            file_data = await file.read()
+            from .file_processor import file_processor
+            extracted_text_s, file_type_s = await file_processor.process_file(
+                file_data, file.filename, user_query=message
+            )
+            file_content = f"\n\n{extracted_text_s}"
+        except ValueError as e:
+            file_content = f"\n\n[File not processed: {e}]"
+        except Exception as e:
+            file_content = f"\n\n[File upload failed: {e}]"
+
+    full_message = message + (file_content or "")
+
+    # ── Session resolution ─────────────────────────────────────────────────
+    if authorization:
+        try:
+            token = get_token_from_header(authorization)
+            session = await state_manager.get_session(token)
+            if session:
+                session_id = session["session_id"]
+                user_id = session["user_id"]
+                conv_id = conversation_id or str(uuid.uuid4())
+                conversation_history = await state_manager.get_conversation_history(session_id)
+            else:
+                conv_id = conversation_id or str(uuid.uuid4())
+                session_id = f"guest_{conv_id}"
+                user_id = "guest"
+                conversation_history = await state_manager.get_conversation_history(session_id)
+        except HTTPException:
+            conv_id = conversation_id or str(uuid.uuid4())
+            session_id = f"guest_{conv_id}"
+            user_id = "guest"
+            conversation_history = await state_manager.get_conversation_history(session_id)
+    else:
+        conv_id = conversation_id or str(uuid.uuid4())
+        session_id = f"guest_{conv_id}"
+        user_id = "guest"
+        conversation_history = await state_manager.get_conversation_history(session_id)
+
+    # ── File context persistence / injection ───────────────────────────────
+    if file and extracted_text_s and file_type_s:
+        try:
+            await state_manager.set_file_context(session_id, file.filename, file_type_s, extracted_text_s)
+        except Exception:
+            pass
+    elif not file:
+        try:
+            stored_fc = await state_manager.get_file_context(session_id)
+            if stored_fc:
+                full_message += (
+                    f"\n\n[Context from previously uploaded file '{stored_fc['filename']}' "
+                    f"({stored_fc['file_type']}) — still available for reference]\n"
+                    f"{stored_fc['text']}"
+                )
+        except Exception:
+            pass
+
+    # ── Name capture: if guest is replying with their name ──────────────────────────
+    if user_id == "guest":
+        try:
+            _cs_s = await state_manager.get_conversation_state(session_id)
+            if _cs_s and _cs_s.name_asked and not _cs_s.user_name:
+                _candidate_s = message.strip().rstrip("!?., ")
+                if mcp_agent._looks_like_name(_candidate_s):
+                    _first_s = _candidate_s.split()[0].capitalize()
+                    _cs_s.user_name = _first_s
+                    _cs_s.name_used = False
+                    await state_manager.update_conversation_state(session_id, _cs_s)
+                    _name_reply_s = (
+                        f"Nice to meet you, **{_first_s}**! \U0001f60a "
+                        "I'm here to help whenever you need me. What can I assist you with?"
+                    )
+                    await state_manager.save_conversation_turn(
+                        session_id, user_id, conv_id, full_message, _name_reply_s
+                    )
+
+                    async def _name_ack_stream():
+                        import json as _j
+                        for _w in _name_reply_s.split(" "):
+                            yield f"data: {_j.dumps({'type': 'chunk', 'text': _w + ' '})}\n\n"
+                            await asyncio.sleep(0.022)
+                        yield f"data: {_j.dumps({'type': 'done', 'conversation_id': conv_id})}\n\n"
+
+                    return StreamingResponse(
+                        _name_ack_stream(),
+                        media_type="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                    )
+        except Exception as _e_s:
+            logger.warning(f"\u26a0\ufe0f Stream name-capture failed (non-critical): {_e_s}")
+
+    # ── Run agent (runs fully before streaming; SSE heartbeats keep connection alive) ──
+    agent_task = asyncio.create_task(
+        mcp_agent.process_message(
+            message=full_message,
+            session_id=session_id,
+            conversation_history=conversation_history,
+        )
+    )
+
+    async def event_stream():
+        # Heartbeat while agent is thinking
+        tick = 0
+        while not agent_task.done():
+            await asyncio.sleep(0.4)
+            tick += 1
+            yield f"data: {_json.dumps({'type': 'thinking', 'tick': tick})}\n\n"
+
+        try:
+            agent_result = agent_task.result()
+        except Exception as e:
+            logger.error(f"Agent error in stream: {e}")
+            yield f"data: {_json.dumps({'type': 'error', 'text': 'I had trouble processing that. Please try again.'})}\n\n"
+            return
+
+        response_text = agent_result.get("response", "I couldn't process that request.")
+
+        # ── Personalization: name inject (once) or name ask (first reply) ────────
+        if user_id == "guest":
+            try:
+                _cs_ev = await state_manager.get_conversation_state(session_id)
+                if not _cs_ev:
+                    _cs_ev = ConversationState(session_id, conv_id)
+                _changed_ev = False
+                if _cs_ev.user_name and not _cs_ev.name_used:
+                    response_text += f"\n\nLet me know if you need anything else, **{_cs_ev.user_name}**! \U0001f60a"
+                    _cs_ev.name_used = True
+                    _changed_ev = True
+                elif not _cs_ev.name_asked and not _cs_ev.user_name:
+                    response_text += "\n\nBy the way, may I know your name so I can address you properly? \U0001f60a"
+                    _cs_ev.name_asked = True
+                    _changed_ev = True
+                if _changed_ev:
+                    await state_manager.update_conversation_state(session_id, _cs_ev)
+            except Exception as _e_ev:
+                logger.warning(f"\u26a0\ufe0f Stream personalization failed (non-critical): {_e_ev}")
+
+        # Persist conversation turn
+        try:
+            await state_manager.save_conversation_turn(
+                session_id, user_id, conv_id, full_message, response_text
+            )
+        except Exception as e:
+            logger.warning(f"Failed to save conversation turn: {e}")
+
+        # Stream the response word-by-word
+        words = response_text.split(" ")
+        for i, word in enumerate(words):
+            chunk = word + (" " if i < len(words) - 1 else "")
+            yield f"data: {_json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+            await asyncio.sleep(0.022)
+
+        # Final done event
+        yield f"data: {_json.dumps({'type': 'done', 'conversation_id': conv_id, 'pending_auth': agent_result.get('pending_auth', False), 'auth_url': agent_result.get('auth_url')})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 async def get_conversations(authorization: Optional[str] = Header(None)):
     """Get user conversations"""
     token = get_token_from_header(authorization)

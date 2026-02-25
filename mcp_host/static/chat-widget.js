@@ -1949,7 +1949,7 @@ class ArmosaChatWidget {
                 <div class="armosa-input-wrapper" id="armosa-input-wrapper">
                     <div class="file-attachment-area" id="file-attachment-area"></div>
                     <div class="armosa-input-container" id="armosa-input-container">
-                        <input type="file" id="file-input" accept="audio/*,video/*,image/*,.pdf,.docx,.doc,.txt" style="display: none;">
+                        <input type="file" id="file-input" accept="audio/*,video/*,image/*,.pdf,.doc,.docx,.pptx,.ppt,.xlsx,.xls,.csv,.rtf,.txt,.md,.json,.xml,.html,.htm,.py,.js,.ts,.jsx,.tsx,.sql,.yaml,.yml" style="display: none;">
                         <button class="action-btn" id="file-btn" title="Attach file">
                             <iconify-icon icon="mdi:paperclip" style="font-size: 20px;"></iconify-icon>
                         </button>
@@ -2112,10 +2112,24 @@ class ArmosaChatWidget {
 
     handleFileSelect(e) {
         const file = e.target.files[0];
-        if (file) {
-            this.selectedFile = file;
-            this.showFileChip(file);
+        if (!file) return;
+        const ACCEPTED_EXTS = new Set([
+            'pdf','doc','docx','pptx','ppt','xlsx','xls','csv','rtf',
+            'txt','md','json','xml','html','htm','log',
+            'jpg','jpeg','png','gif','bmp','webp','tiff','tif','ico',
+            'mp3','wav','m4a','ogg','flac','aac',
+            'mp4','avi','mov','mkv','webm',
+            'py','js','ts','jsx','tsx','java','c','cpp','h','cs','go','rs',
+            'rb','php','swift','kt','sh','bash','ps1','yaml','yml','toml','ini','sql',
+        ]);
+        const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+        if (ext && !ACCEPTED_EXTS.has(ext)) {
+            alert(`Unsupported file type ".${ext}".\nSupported: PDF, Word, PowerPoint, Excel, CSV, images, audio, video, and most code files.`);
+            return;
         }
+        if (file.size > 25 * 1024 * 1024) { alert('File too large. Maximum size is 25MB.'); return; }
+        this.selectedFile = file;
+        this.showFileChip(file);
     }
 
     showFileChip(file) {
@@ -2353,12 +2367,9 @@ class ArmosaChatWidget {
     sendMessage() {
         const input = this.widget.querySelector('#armosa-input');
         const message = input.value.trim();
-
         if (!message && !this.selectedFile) return;
 
-        // Render user bubble with proper file chip (not raw text)
         this.addUserMessage(message, this.selectedFile);
-
         input.value = '';
         input.style.height = 'auto';
         this.showTypingIndicator();
@@ -2367,33 +2378,82 @@ class ArmosaChatWidget {
         formData.append('message', message || 'Please analyze this file');
         if (this.conversationId) formData.append('conversation_id', this.conversationId);
         if (this.selectedFile) formData.append('file', this.selectedFile);
+        this.removeFile();
 
-        fetch(this.config.apiUrl, {
+        const streamUrl = this.config.apiUrl.replace(/\/chat$/, '/chat/stream');
+
+        fetch(streamUrl, {
             method: 'POST',
             headers: this.authToken ? { 'Authorization': `Bearer ${this.authToken}` } : {},
             body: formData
         })
         .then(response => {
             if (!response.ok) throw new Error(`Request failed (${response.status})`);
-            return response.json();
-        })
-        .then(data => {
-            this.removeTypingIndicator();
-            if (data.conversation_id) this.conversationId = data.conversation_id;
-            this.addBotMessage(data.response);
-            
-            // Handle pending authentication
-            if (data.pending_auth && data.auth_url) {
-                const authMsg = `🔐 **Authorization Required**\n\nPlease [click here to authorize](${data.auth_url}) access to your external account.`;
-                this.addBotMessage(authMsg);
-            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let botEl = null;
+            let buffer = '';
+
+            const processChunk = ({ done, value }) => {
+                if (done) { this.removeTypingIndicator(); return; }
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.type === 'chunk') {
+                            if (!botEl) { this.removeTypingIndicator(); botEl = this.addStreamBotBubble(); }
+                            this.appendToStreamBubble(botEl, data.text);
+                        } else if (data.type === 'done') {
+                            if (data.conversation_id) this.conversationId = data.conversation_id;
+                            if (data.pending_auth && data.auth_url) {
+                                this.addBotMessage(`🔐 Authorization required. [Click here to authorize](${data.auth_url})`);
+                            }
+                        } else if (data.type === 'error') {
+                            this.removeTypingIndicator();
+                            this.addErrorMessage(data.text);
+                        }
+                    } catch (e) {}
+                }
+                return reader.read().then(processChunk);
+            };
+            return reader.read().then(processChunk);
         })
         .catch(err => {
             this.removeTypingIndicator();
             this.addErrorMessage('Sorry, I encountered an error. Please try again.');
             console.error('Chat error:', err);
-        })
-        .finally(() => this.removeFile());
+        });
+    }
+
+    addStreamBotBubble() {
+        const group = document.createElement('div');
+        group.className = 'message-group bot';
+        const av = document.createElement('div');
+        av.className = 'message-avatar';
+        av.innerHTML = '<iconify-icon icon="mdi:robot" style="font-size:18px;color:white;"></iconify-icon>';
+        group.appendChild(av);
+        const bubble = document.createElement('div');
+        bubble.className = 'message-bubble';
+        const textDiv = document.createElement('div');
+        textDiv.className = 'bot-message-content stream-content';
+        bubble.appendChild(textDiv);
+        const time = document.createElement('div');
+        time.className = 'message-time';
+        time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        bubble.appendChild(time);
+        group.appendChild(bubble);
+        this.messagesContainer.appendChild(group);
+        this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+        return group;
+    }
+
+    appendToStreamBubble(group, text) {
+        const el = group.querySelector('.stream-content');
+        if (el) el.textContent += text;
+        this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
     }
 
     addUserMessage(message, file = null) {

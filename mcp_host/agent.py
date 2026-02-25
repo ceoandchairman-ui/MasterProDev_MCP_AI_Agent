@@ -19,6 +19,12 @@ from mcp_host.query_processor import QueryProcessor
 from mcp_host.intent_router import IntentRouter, Intent
 from mcp_host.evaluator import evaluator  # Task evaluation metrics
 
+try:
+    from langdetect import detect as _detect_lang, LangDetectException
+    _LANGDETECT_AVAILABLE = True
+except ImportError:
+    _LANGDETECT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,6 +86,78 @@ class MCPAgent:
     """
     
     MAX_TOOL_STEPS = 3
+
+    # Tier-0: deterministic responses — no LLM call, zero tokens
+    _DETERMINISTIC_RESPONSES = [
+        (['hello', 'hi', 'hey', 'howdy', 'greetings'],
+         "Hi! I'm MasterProDev's AI Assistant. What can I help you with today?"),
+        (['good morning'],
+         "Good morning! I'm MasterProDev's AI Assistant. How can I help you today?"),
+        (['good afternoon'],
+         "Good afternoon! I'm MasterProDev's AI Assistant. How can I help you today?"),
+        (['good evening', 'good night'],
+         "Good evening! I'm MasterProDev's AI Assistant. How can I help you today?"),
+        (['thank you', 'thanks', 'thx', 'cheers'],
+         "You're welcome! Is there anything else I can help you with?"),
+        (['bye', 'goodbye', 'see you', 'take care', 'cya', 'ttyl'],
+         "Goodbye! Feel free to reach out whenever you need help."),
+        (['how are you', 'how are things', "what's up", 'whats up'],
+         "I'm doing well, thanks for asking! How can I assist you today?"),
+    ]
+
+    # Tier-0a: FAQ bank — zero LLM tokens. Mirrored in prompts.yaml for reference.
+    _FAQS = [
+        {
+            "id": "faq_identity",
+            "keywords": ["who", "masterprodev", "about", "company", "what do you do"],
+            "answer": "\U0001f3e2 **MasterProDev** is a professional software consulting firm based in Toronto, Canada. We specialise in AI-powered applications, custom software development, and digital transformation.",
+        },
+        {
+            "id": "faq_services",
+            "keywords": ["services", "offer", "expertise", "solutions", "provide"],
+            "answer": "\U0001f680 We offer: **AI & Machine Learning**, **Custom Software Development**, **Cloud Solutions**, **Mobile & Web Apps**, and **Digital Strategy Consulting**.",
+        },
+        {
+            "id": "faq_location",
+            "keywords": ["located", "location", "office", "address", "toronto", "where"],
+            "answer": "\U0001f4cd MasterProDev is headquartered in **Toronto, Canada**. We serve clients globally and operate remotely worldwide.",
+        },
+        {
+            "id": "faq_contact",
+            "keywords": ["contact", "reach", "get in touch", "email", "phone", "talk"],
+            "answer": "\U0001f4ec You can reach our team via the contact form on our website, or I can help you send an email directly \u2014 just say the word!",
+        },
+        {
+            "id": "faq_hours",
+            "keywords": ["hours", "working", "business", "open", "available", "schedule", "when"],
+            "answer": "\U0001f550 Our team is available **Monday\u2013Friday, 9 AM\u20136 PM EST**. I\u2019m available 24/7 to assist you! \U0001f60a",
+        },
+        {
+            "id": "faq_booking",
+            "keywords": ["book", "meeting", "schedule", "call", "appointment", "discovery", "calendar"],
+            "answer": "\U0001f4c5 I can book that for you right now! Just tell me your preferred date and time and I\u2019ll get it on the calendar. \u2705",
+        },
+        {
+            "id": "faq_capabilities",
+            "keywords": ["can you", "capabilities", "help me", "features", "what can", "do for me"],
+            "answer": "\U0001f916 I can help you with: **\U0001f4c5 Calendar & scheduling**, **\U0001f4e7 Email management**, **\U0001f4da Company knowledge**, and **\U0001f4c1 File analysis**. What do you need?",
+        },
+        {
+            "id": "faq_privacy",
+            "keywords": ["data", "privacy", "store", "safe", "secure", "personal", "information"],
+            "answer": "\U0001f512 Your data is securely stored and never shared with third parties. We comply with standard data privacy regulations.",
+        },
+        {
+            "id": "faq_onboarding",
+            "keywords": ["get started", "start", "onboarding", "first step", "begin", "how do i"],
+            "answer": "\U0001f44b Great to have you here! Tell me what you need \u2014 schedule a meeting, ask about our services, or send an email. I\u2019ll guide you! \U0001f680",
+        },
+        {
+            "id": "faq_team",
+            "keywords": ["team", "staff", "employees", "who works", "people", "engineers"],
+            "answer": "\U0001f465 MasterProDev has a talented team of engineers, designers, and consultants. Want me to connect you with the right person? Just describe what you need!",
+        },
+    ]
 
     def __init__(self):
         self.tools = []
@@ -154,20 +232,43 @@ class MCPAgent:
         # If no pending action was handled, process the query normally
         processed_query = await self.query_processor.process_query(message, session_id)
 
+        # ── Tier 0a: FAQ keyword match — zero LLM tokens ─────────────────────
+        faq_answer = self._match_faq(message)
+        if faq_answer:
+            logger.info("\U0001f4da Tier-0a FAQ match \u2014 no LLM call")
+            return {
+                "response": faq_answer,
+                "tool_calls": [],
+                "execution_time": (datetime.utcnow() - start_time).total_seconds(),
+                "success": True,
+                "llm_provider": "faq",
+            }
+
+        # ── Tier 0: hardcoded template — zero LLM tokens ──────────────────────
+        det_response = self._get_deterministic_response(message)
+        if det_response:
+            logger.info("⚡ Tier-0 deterministic response — no LLM call")
+            return {
+                "response": det_response,
+                "tool_calls": [],
+                "execution_time": (datetime.utcnow() - start_time).total_seconds(),
+                "success": True,
+                "llm_provider": "deterministic",
+            }
+
         # Format and trim history to fit token budget
         history_text = self._format_history(conversation_history)
         history_text = self.token_budget.trim_context(history_text)
         logger.info(f"📊 Context tokens budgeted: {self.token_budget.get_context_tokens()} tokens")
         
-        # --- Pre-filter: Detect if this is pure conversation (no tools needed) ---
-        # This prevents the planner from wasting resources on greetings, small talk, etc.
+        # ── Tier 1: pure conversation — LLM, capped at 150 tokens ────────────
         if self._is_pure_conversation(message):
-            logger.info("💬 Message is pure conversation - skipping planner, generating direct response...")
+            logger.info("💬 Tier-1 conversation — direct LLM response (150 tokens)")
             direct_prompt = self._build_direct_prompt(message, history_text)
             final_response = await self.llm_manager.generate(
                 prompt=direct_prompt,
-                max_tokens=self.token_budget.get_synthesis_tokens(),
-                temperature=0.3
+                max_tokens=150,
+                temperature=0.1
             )
             execution_time = (datetime.utcnow() - start_time).total_seconds()
             return {
@@ -718,11 +819,11 @@ Consider date, time, title, and any details mentioned."""
             logger.warning("⚠ Synthesis prompt not found in library, using fallback")
             synthesis_prompt = f"Convert these tool results to a natural response:\n{tool_log_snippets}\n\nUser asked: {user_message}"
 
-        logger.info(f"📊 Synthesis tokens allocated: {self.token_budget.get_synthesis_tokens()} tokens")
+        logger.info(f"📊 Synthesis tokens allocated: 400 (capped for grounding)")
         logger.info(f"📋 FINAL PROMPT BEING SENT TO LLM:\n{'='*80}\n{synthesis_prompt}\n{'='*80}")
         return await self.llm_manager.generate(
             prompt=synthesis_prompt,
-            max_tokens=self.token_budget.get_synthesis_tokens(),
+            max_tokens=400,   # Tier-2 grounded synthesis cap
             temperature=0.1
         )
 
@@ -1126,6 +1227,41 @@ Consider date, time, title, and any details mentioned."""
             "tools": [tool.name for tool in self.tools],
             "llm_provider": self.llm_manager.get_active_provider_info() if self.initialized else None,
         }
+
+    def _get_deterministic_response(self, message: str) -> Optional[str]:
+        """Tier-0: return a hardcoded reply for simple greetings/closings — zero LLM tokens."""
+        msg = message.lower().strip().rstrip('!?., ')
+        for patterns, response in self._DETERMINISTIC_RESPONSES:
+            for pattern in patterns:
+                if msg == pattern or msg.startswith(pattern + ' ') or msg.startswith(pattern + ','):
+                    return response
+        return None
+
+    def _match_faq(self, message: str) -> Optional[str]:
+        """Tier-0a: fuzzy keyword FAQ match. Returns answer text if \u22652 keywords hit."""
+        msg = message.lower()
+        best_score = 0
+        best_answer: Optional[str] = None
+        for faq in self._FAQS:
+            score = sum(1 for kw in faq["keywords"] if kw in msg)
+            if score >= 2 and score > best_score:
+                best_score = score
+                best_answer = faq["answer"]
+        return best_answer
+
+    @staticmethod
+    def _looks_like_name(text: str) -> bool:
+        """Returns True if text looks like a personal name (1\u20133 words, no question markers)."""
+        if not text or len(text) > 40:
+            return False
+        if "?" in text or "@" in text or "." in text:
+            return False
+        _q = {"what", "who", "where", "when", "how", "why", "is", "are", "can",
+              "do", "does", "my", "the", "i", "a", "an", "it", "yes", "no", "ok", "okay"}
+        words = text.split()
+        if not (1 <= len(words) <= 3):
+            return False
+        return words[0].lower() not in _q
 
     def _is_pure_conversation(self, message: str) -> bool:
         """

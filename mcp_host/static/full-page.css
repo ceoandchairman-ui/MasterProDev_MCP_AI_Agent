@@ -579,6 +579,29 @@ button.logout-btn:hover {
     color: rgba(255, 255, 255, 0.75);
 }
 
+/* ── File-error chip (backend rejected / failed the upload) ─────────── */
+.file-error-chip {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: #ef4444;
+    font-size: 13px;
+    line-height: 1.5;
+    flex-wrap: wrap;
+}
+.file-error-chip span {
+    flex: 1;
+    min-width: 0;
+}
+.file-error-chip .message-time {
+    width: 100%;
+    padding-top: 4px;
+}
+
 /* ── Drag & drop highlight ───────────────────────────────────────────── */
 #chat-messages.drag-over {
     outline: 2px dashed var(--primary, #00C896);
