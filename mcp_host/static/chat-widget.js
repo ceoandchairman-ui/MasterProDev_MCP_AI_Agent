@@ -1460,10 +1460,95 @@ class ArmosaChatWidget {
             }
 
             /* ==================== INPUT AREA ==================== */
-            #armosa-widget .armosa-input-container {
-                background: #ffffff !important;
-                border-radius: 0 !important;
+            #armosa-widget .armosa-input-wrapper {
+                display: flex !important;
+                flex-direction: column !important;
                 border-top: 1px solid #e8e8e8 !important;
+                background: #ffffff !important;
+                flex-shrink: 0 !important;
+            }
+
+            #armosa-widget .file-attachment-area {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 6px !important;
+                padding: 0 16px !important;
+                max-height: 0 !important;
+                overflow: hidden !important;
+                transition: max-height 0.2s ease, padding 0.2s ease !important;
+            }
+
+            #armosa-widget .file-attachment-area.has-file {
+                max-height: 100px !important;
+                padding: 10px 16px 0 !important;
+            }
+
+            #armosa-widget .file-chip {
+                display: flex !important;
+                align-items: center !important;
+                gap: 8px !important;
+                background: #f4f4f5 !important;
+                border: 1px solid #e5e5e5 !important;
+                border-radius: 10px !important;
+                padding: 8px 10px !important;
+                font-size: 12px !important;
+                color: #3f3f46 !important;
+                min-width: 0 !important;
+            }
+
+            #armosa-widget .file-chip-icon {
+                flex-shrink: 0 !important;
+                font-size: 18px !important;
+                line-height: 1 !important;
+            }
+
+            #armosa-widget .file-chip-info {
+                flex: 1 !important;
+                min-width: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 2px !important;
+            }
+
+            #armosa-widget .file-chip-name {
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                white-space: nowrap !important;
+                font-size: 12px !important;
+                font-weight: 500 !important;
+                color: #18181b !important;
+            }
+
+            #armosa-widget .file-chip-size {
+                font-size: 10px !important;
+                color: #a1a1aa !important;
+            }
+
+            #armosa-widget .file-chip-remove {
+                all: unset !important;
+                flex-shrink: 0 !important;
+                width: 20px !important;
+                height: 20px !important;
+                border-radius: 50% !important;
+                background: #e5e5e5 !important;
+                color: #71717a !important;
+                cursor: pointer !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                font-size: 12px !important;
+                transition: background 0.15s ease, color 0.15s ease !important;
+            }
+
+            #armosa-widget .file-chip-remove:hover {
+                background: #ef4444 !important;
+                color: white !important;
+            }
+
+            #armosa-widget .armosa-input-container {
+                background: transparent !important;
+                border-radius: 0 !important;
+                border-top: none !important;
                 display: flex !important;
                 align-items: center !important;
                 padding: 12px 16px !important;
@@ -1554,31 +1639,8 @@ class ArmosaChatWidget {
                 cursor: not-allowed !important;
             }
 
-            /* ==================== FILE PREVIEW ==================== */
-            #armosa-widget .file-preview {
-                display: none !important;
-                background: #f4f4f5 !important;
-                border: 1px solid #e5e5e5 !important;
-                border-radius: 10px !important;
-                padding: 8px 12px !important;
-                margin-bottom: 8px !important;
-                font-size: 12px !important;
-                color: #3f3f46 !important;
-                align-items: center !important;
-                gap: 8px !important;
-            }
-
-            #armosa-widget .file-preview.active {
-                display: flex !important;
-            }
-
-            #armosa-widget .remove-file-btn {
-                all: unset !important;
-                color: #EF4444 !important;
-                cursor: pointer !important;
-                font-size: 16px !important;
-                margin-left: auto !important;
-            }
+            /* ==================== FILE PREVIEW (legacy hidden) ==================== */
+            #armosa-widget .file-preview { display: none !important; }
 
             /* ==================== USER AUTH STATUS ==================== */
             #armosa-widget .armosa-user-status {
@@ -1839,19 +1901,22 @@ class ArmosaChatWidget {
                     <div class="avatar-status-text" id="avatar-status-text">Tap to speak</div>
                 </div>
 
-                <!-- INPUT ISLAND -->
-                <div class="armosa-input-container" id="armosa-input-container">
-                    <input type="file" id="file-input" accept="audio/*,video/*,image/*,.pdf,.docx,.doc,.txt" style="display: none;">
-                    <button class="action-btn" id="file-btn" title="Attach file">
-                        <iconify-icon icon="mdi:paperclip" style="font-size: 20px;"></iconify-icon>
-                    </button>
-                    <button class="action-btn" id="voice-btn" title="Record voice">
-                        <iconify-icon icon="mdi:microphone" style="font-size: 20px;"></iconify-icon>
-                    </button>
-                    <textarea id="armosa-input" placeholder="Message Armosa..." rows="1"></textarea>
-                    <button class="send-btn" id="send-btn" title="Send">
-                        <iconify-icon icon="mdi:send" style="font-size: 20px;"></iconify-icon>
-                    </button>
+                <!-- INPUT WRAPPER: file area stacks above input row -->
+                <div class="armosa-input-wrapper" id="armosa-input-wrapper">
+                    <div class="file-attachment-area" id="file-attachment-area"></div>
+                    <div class="armosa-input-container" id="armosa-input-container">
+                        <input type="file" id="file-input" accept="audio/*,video/*,image/*,.pdf,.docx,.doc,.txt" style="display: none;">
+                        <button class="action-btn" id="file-btn" title="Attach file">
+                            <iconify-icon icon="mdi:paperclip" style="font-size: 20px;"></iconify-icon>
+                        </button>
+                        <button class="action-btn" id="voice-btn" title="Record voice">
+                            <iconify-icon icon="mdi:microphone" style="font-size: 20px;"></iconify-icon>
+                        </button>
+                        <textarea id="armosa-input" placeholder="Message Armosa..." rows="1"></textarea>
+                        <button class="send-btn" id="send-btn" title="Send">
+                            <iconify-icon icon="mdi:send" style="font-size: 20px;"></iconify-icon>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- LOGIN MODAL -->
@@ -1881,7 +1946,7 @@ class ArmosaChatWidget {
         this.voiceView = widget.querySelector('#armosa-voice-view');
         this.voiceOrb = widget.querySelector('#voice-orb');
 
-        this.inputContainer = widget.querySelector('#armosa-input-container');
+        this.inputContainer = widget.querySelector('#armosa-input-wrapper');
         
         this.isOpen = false;
         
@@ -1971,30 +2036,63 @@ class ArmosaChatWidget {
         const file = e.target.files[0];
         if (file) {
             this.selectedFile = file;
-            this.showFilePreview(file.name);
+            this.showFileChip(file);
         }
     }
 
-    showFilePreview(filename) {
-        let preview = this.widget.querySelector('.file-preview');
-        if (!preview) {
-            preview = document.createElement('div');
-            preview.className = 'file-preview';
-            this.widget.querySelector('.armosa-input-container').insertBefore(preview, this.widget.querySelector('#file-btn'));
-        }
-        preview.innerHTML = `
-            <iconify-icon icon="mdi:file-document" style="font-size: 16px;"></iconify-icon>
-            <span>${filename}</span>
-            <button class="remove-file-btn">✕</button>
+    showFileChip(file) {
+        const area = this.widget.querySelector('#file-attachment-area');
+        if (!area) return;
+
+        // Determine icon & color by type
+        const ext = file.name.split('.').pop().toLowerCase();
+        const iconMap = {
+            pdf: { icon: 'mdi:file-pdf-box', color: '#ef4444' },
+            doc: { icon: 'mdi:file-word-box', color: '#2563EB' },
+            docx: { icon: 'mdi:file-word-box', color: '#2563EB' },
+            txt: { icon: 'mdi:file-document-outline', color: '#71717a' },
+            jpg: { icon: 'mdi:file-image', color: '#f59e0b' },
+            jpeg: { icon: 'mdi:file-image', color: '#f59e0b' },
+            png: { icon: 'mdi:file-image', color: '#f59e0b' },
+            gif: { icon: 'mdi:file-image', color: '#f59e0b' },
+            mp3: { icon: 'mdi:file-music', color: '#8b5cf6' },
+            wav: { icon: 'mdi:file-music', color: '#8b5cf6' },
+            mp4: { icon: 'mdi:file-video', color: '#ec4899' },
+            webm: { icon: 'mdi:file-video', color: '#ec4899' }
+        };
+        const { icon, color } = iconMap[ext] || { icon: 'mdi:file-outline', color: '#71717a' };
+
+        // Format file size
+        const size = file.size;
+        const sizeStr = size < 1024 ? `${size} B`
+            : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KB`
+            : `${(size / (1024 * 1024)).toFixed(1)} MB`;
+
+        area.innerHTML = `
+            <div class="file-chip">
+                <span class="file-chip-icon">
+                    <iconify-icon icon="${icon}" style="color: ${color}; font-size: 20px;"></iconify-icon>
+                </span>
+                <div class="file-chip-info">
+                    <span class="file-chip-name" title="${file.name}">${file.name}</span>
+                    <span class="file-chip-size">${sizeStr}</span>
+                </div>
+                <button class="file-chip-remove" title="Remove file">✕</button>
+            </div>
         `;
-        preview.classList.add('active');
-        preview.querySelector('.remove-file-btn').addEventListener('click', () => this.removeFile());
+        area.classList.add('has-file');
+        area.querySelector('.file-chip-remove').addEventListener('click', () => this.removeFile());
     }
 
     removeFile() {
         this.selectedFile = null;
-        const preview = this.widget.querySelector('.file-preview');
-        if (preview) preview.classList.remove('active');
+        const area = this.widget.querySelector('#file-attachment-area');
+        if (area) {
+            area.innerHTML = '';
+            area.classList.remove('has-file');
+        }
+        const fileInput = this.widget.querySelector('#file-input');
+        if (fileInput) fileInput.value = '';
     }
 
     toggleRecording() {

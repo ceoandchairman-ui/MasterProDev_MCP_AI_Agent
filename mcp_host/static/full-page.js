@@ -659,15 +659,46 @@ function attachEventListeners() {
     
     fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
-        if (file) {
-            if (file.size > 25 * 1024 * 1024) {
-                alert('File too large. Maximum size is 25MB.');
-                return;
-            }
-            selectedFile = file;
-            fileName.textContent = `📎 ${file.name}`;
-            filePreview.classList.add('active');
+        if (!file) return;
+        if (file.size > 25 * 1024 * 1024) {
+            alert('File too large. Maximum size is 25MB.');
+            return;
         }
+        selectedFile = file;
+
+        // Icon & color by extension
+        const ext = file.name.split('.').pop().toLowerCase();
+        const iconMap = {
+            pdf:  { icon: 'mdi:file-pdf-box',          color: '#ef4444' },
+            doc:  { icon: 'mdi:file-word-box',          color: '#2563EB' },
+            docx: { icon: 'mdi:file-word-box',          color: '#2563EB' },
+            txt:  { icon: 'mdi:file-document-outline',  color: '#71717a' },
+            jpg:  { icon: 'mdi:file-image',             color: '#f59e0b' },
+            jpeg: { icon: 'mdi:file-image',             color: '#f59e0b' },
+            png:  { icon: 'mdi:file-image',             color: '#f59e0b' },
+            gif:  { icon: 'mdi:file-image',             color: '#f59e0b' },
+            mp3:  { icon: 'mdi:file-music',             color: '#8b5cf6' },
+            wav:  { icon: 'mdi:file-music',             color: '#8b5cf6' },
+            mp4:  { icon: 'mdi:file-video',             color: '#ec4899' },
+            webm: { icon: 'mdi:file-video',             color: '#ec4899' },
+        };
+        const { icon, color } = iconMap[ext] || { icon: 'mdi:file-outline', color: '#71717a' };
+        const chipIcon = document.getElementById('file-chip-icon');
+        if (chipIcon) chipIcon.innerHTML = `<iconify-icon icon="${icon}" style="font-size: 20px; color: ${color};"></iconify-icon>`;
+
+        // Filename
+        const fileNameEl = document.getElementById('file-name');
+        if (fileNameEl) fileNameEl.textContent = file.name;
+
+        // Human-readable size
+        const sz = file.size;
+        const sizeStr = sz < 1024 ? `${sz} B`
+            : sz < 1024 * 1024 ? `${(sz / 1024).toFixed(1)} KB`
+            : `${(sz / (1024 * 1024)).toFixed(1)} MB`;
+        const fileSizeEl = document.getElementById('file-size');
+        if (fileSizeEl) fileSizeEl.textContent = sizeStr;
+
+        filePreview.classList.add('active');
     });
 
     removeFileBtn.addEventListener('click', () => {

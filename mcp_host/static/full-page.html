@@ -106,11 +106,16 @@
 
         <!-- Input Area -->
         <div class="chat-input-container">
-            <!-- File Preview -->
+            <!-- File Chip (shown when file attached) -->
             <div class="file-preview" id="file-preview">
-                <iconify-icon icon="mdi:paperclip" style="color: #FFB800;"></iconify-icon>
-                <span id="file-name">file.pdf</span>
-                <button class="remove-file" id="remove-file">×</button>
+                <span class="file-chip-icon" id="file-chip-icon">
+                    <iconify-icon icon="mdi:file-document-outline" style="font-size: 20px;"></iconify-icon>
+                </span>
+                <div class="file-chip-info">
+                    <span class="file-chip-name" id="file-name">file.pdf</span>
+                    <span class="file-chip-size" id="file-size"></span>
+                </div>
+                <button class="remove-file" id="remove-file" title="Remove file">✕</button>
             </div>
 
             <!-- Input Row -->
