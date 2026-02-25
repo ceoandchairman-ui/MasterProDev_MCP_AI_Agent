@@ -1642,6 +1642,50 @@ class ArmosaChatWidget {
             /* ==================== FILE PREVIEW (legacy hidden) ==================== */
             #armosa-widget .file-preview { display: none !important; }
 
+            /* ==================== USER BUBBLE FILE CHIP ==================== */
+            #armosa-widget .bubble-file-chip {
+                display: flex !important;
+                align-items: center !important;
+                gap: 8px !important;
+                background: rgba(255,255,255,0.2) !important;
+                border: 1px solid rgba(255,255,255,0.35) !important;
+                border-radius: 10px !important;
+                padding: 7px 10px !important;
+                margin-bottom: 6px !important;
+                font-size: 12px !important;
+                color: white !important;
+                min-width: 0 !important;
+            }
+
+            #armosa-widget .bubble-file-chip-info {
+                flex: 1 !important;
+                min-width: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 1px !important;
+            }
+
+            #armosa-widget .bubble-file-chip-name {
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                white-space: nowrap !important;
+                font-size: 12px !important;
+                font-weight: 500 !important;
+                color: white !important;
+            }
+
+            #armosa-widget .bubble-file-chip-size {
+                font-size: 10px !important;
+                color: rgba(255,255,255,0.75) !important;
+            }
+
+            /* ==================== DRAG & DROP ==================== */
+            #armosa-widget .armosa-messages.drag-over {
+                outline: 2px dashed #00C896 !important;
+                outline-offset: -8px !important;
+                background: rgba(0, 200, 150, 0.04) !important;
+            }
+
             /* ==================== USER AUTH STATUS ==================== */
             #armosa-widget .armosa-user-status {
                 flex: 1 !important;
@@ -1976,6 +2020,12 @@ class ArmosaChatWidget {
             }
         });
 
+        // Auto-resize textarea
+        input.addEventListener('input', () => {
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+        });
+
         this.widget.querySelector('#send-btn').addEventListener('click', () => this.sendMessage());
 
         const fileBtn = this.widget.querySelector('#file-btn');
@@ -1984,6 +2034,34 @@ class ArmosaChatWidget {
         fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
 
         this.widget.querySelector('#voice-btn').addEventListener('click', () => this.toggleRecording());
+
+        // ── Drag & drop onto messages area ──────────────────────────────
+        const msgs = this.messagesContainer;
+        msgs.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            msgs.classList.add('drag-over');
+        });
+        msgs.addEventListener('dragleave', () => msgs.classList.remove('drag-over'));
+        msgs.addEventListener('drop', (e) => {
+            e.preventDefault();
+            msgs.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file) { this.selectedFile = file; this.showFileChip(file); }
+        });
+
+        // ── Paste image from clipboard ───────────────────────────────────
+        input.addEventListener('paste', (e) => {
+            const items = e.clipboardData && e.clipboardData.items;
+            if (!items) return;
+            for (const item of items) {
+                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                    e.preventDefault();
+                    const file = item.getAsFile();
+                    if (file) { this.selectedFile = file; this.showFileChip(file); }
+                    break;
+                }
+            }
+        });
     }
 
     switchMode(mode) {
@@ -2082,6 +2160,10 @@ class ArmosaChatWidget {
         `;
         area.classList.add('has-file');
         area.querySelector('.file-chip-remove').addEventListener('click', () => this.removeFile());
+
+        // Update placeholder to show file is ready
+        const input = this.widget.querySelector('#armosa-input');
+        if (input) input.placeholder = 'Add a message (optional)...';
     }
 
     removeFile() {
@@ -2093,6 +2175,9 @@ class ArmosaChatWidget {
         }
         const fileInput = this.widget.querySelector('#file-input');
         if (fileInput) fileInput.value = '';
+        // Reset placeholder
+        const input = this.widget && this.widget.querySelector('#armosa-input');
+        if (input) input.placeholder = 'Message Armosa...';
     }
 
     toggleRecording() {
@@ -2271,10 +2356,11 @@ class ArmosaChatWidget {
 
         if (!message && !this.selectedFile) return;
 
-        const displayMessage = this.selectedFile ? `${message}\n📎 ${this.selectedFile.name}` : message;
-        this.addUserMessage(displayMessage || 'Please analyze this file');
-        
+        // Render user bubble with proper file chip (not raw text)
+        this.addUserMessage(message, this.selectedFile);
+
         input.value = '';
+        input.style.height = 'auto';
         this.showTypingIndicator();
 
         const formData = new FormData();
@@ -2310,9 +2396,9 @@ class ArmosaChatWidget {
         .finally(() => this.removeFile());
     }
 
-    addUserMessage(message) {
+    addUserMessage(message, file = null) {
         this.messages.push({ role: 'user', content: message });
-        this.messagesContainer.appendChild(this.createMessageElement(message, 'user'));
+        this.messagesContainer.appendChild(this.createMessageElement(message, 'user', file));
         this.scrollToBottom();
     }
 
@@ -2327,7 +2413,7 @@ class ArmosaChatWidget {
         this.scrollToBottom();
     }
 
-    createMessageElement(content, role) {
+    createMessageElement(content, role, file = null) {
         const group = document.createElement('div');
         group.className = `message-group ${role}`;
 
@@ -2342,7 +2428,40 @@ class ArmosaChatWidget {
 
         const bubble = document.createElement('div');
         bubble.className = 'message-bubble';
-        bubble.innerHTML = this.parseMessage(content, role);
+
+        // File chip inside user bubble (ChatGPT-style)
+        if (file && role === 'user') {
+            const ext = file.name.split('.').pop().toLowerCase();
+            const iconMap = {
+                pdf:  { icon: 'mdi:file-pdf-box',         color: 'rgba(255,255,255,0.9)' },
+                doc:  { icon: 'mdi:file-word-box',         color: 'rgba(255,255,255,0.9)' },
+                docx: { icon: 'mdi:file-word-box',         color: 'rgba(255,255,255,0.9)' },
+                txt:  { icon: 'mdi:file-document-outline', color: 'rgba(255,255,255,0.9)' },
+                jpg:  { icon: 'mdi:file-image',            color: 'rgba(255,255,255,0.9)' },
+                jpeg: { icon: 'mdi:file-image',            color: 'rgba(255,255,255,0.9)' },
+                png:  { icon: 'mdi:file-image',            color: 'rgba(255,255,255,0.9)' },
+                mp3:  { icon: 'mdi:file-music',            color: 'rgba(255,255,255,0.9)' },
+                wav:  { icon: 'mdi:file-music',            color: 'rgba(255,255,255,0.9)' },
+                mp4:  { icon: 'mdi:file-video',            color: 'rgba(255,255,255,0.9)' },
+            };
+            const { icon } = iconMap[ext] || { icon: 'mdi:file-outline' };
+            const sz = file.size;
+            const sizeStr = sz < 1024 ? `${sz} B`
+                : sz < 1048576 ? `${(sz/1024).toFixed(1)} KB`
+                : `${(sz/1048576).toFixed(1)} MB`;
+            const chipDiv = document.createElement('div');
+            chipDiv.className = 'bubble-file-chip';
+            chipDiv.innerHTML = `
+                <iconify-icon icon="${icon}" style="font-size: 20px; flex-shrink: 0;"></iconify-icon>
+                <div class="bubble-file-chip-info">
+                    <span class="bubble-file-chip-name" title="${file.name}">${file.name}</span>
+                    <span class="bubble-file-chip-size">${sizeStr}</span>
+                </div>
+            `;
+            bubble.appendChild(chipDiv);
+        }
+
+        bubble.insertAdjacentHTML('beforeend', this.parseMessage(content, role));
 
         const time = document.createElement('div');
         time.className = 'message-time';

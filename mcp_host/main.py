@@ -46,12 +46,25 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting MCP Host...")
     await state_manager.initialize()
-    
+
     # Initialize RAG service in background to avoid blocking startup
-    # This prevents Railway deployment timeouts if Weaviate is slow to start
     asyncio.create_task(rag_service.initialize_async())
-    
+
     await mcp_agent.initialize()
+
+    # Initialize file processor at startup (not lazily per-request)
+    from .file_processor import initialize_file_processor
+    from .voice_service import voice_service as _vs
+    _openai_client = None
+    _openai_key = os.environ.get("OPENAI_API_KEY")
+    if _openai_key:
+        try:
+            from openai import OpenAI
+            _openai_client = OpenAI(api_key=_openai_key)
+        except Exception as _e:
+            logger.warning(f"OpenAI client init failed: {_e}")
+    initialize_file_processor(_openai_client, _vs)
+
     logger.info("MCP Host started successfully")
     yield
     # Shutdown
@@ -677,34 +690,22 @@ async def chat(
     if file:
         try:
             file_data = await file.read()
-            logger.info(f"📎 File uploaded: {file.filename} ({len(file_data)} bytes)")
-            
-            # Import file processor
-            from .file_processor import file_processor, initialize_file_processor
-            if not file_processor:
-                from .voice_service import voice_service
-                openai_client = None
-                openai_key = os.environ.get("OPENAI_API_KEY")
-                if openai_key:
-                    try:
-                        from openai import OpenAI
-                        openai_client = OpenAI(api_key=openai_key)
-                        logger.info("✓ OpenAI client initialized for file processing")
-                    except Exception as e:
-                        logger.warning(f"⚠️ OpenAI client failed: {e}")
-                initialize_file_processor(openai_client, voice_service)
-                logger.info("✓ File processor initialized")
-            
-            extracted_text, file_type = await file_processor.process_file(file_data, file.filename)
+            logger.info(f"📎 File received: '{file.filename}' ({len(file_data):,} bytes)")
+
+            from .file_processor import file_processor
+            extracted_text, file_type = await file_processor.process_file(
+                file_data,
+                file.filename,
+                user_query=message,   # lets vision models focus on what the user asked
+            )
             file_content = f"\n\n{extracted_text}"
-            logger.info(f"✓ File processed ({file_type}): {len(extracted_text)} chars extracted")
+            logger.info(f"✓ File processed ({file_type}): {len(extracted_text):,} chars")
         except ValueError as e:
-            # Unsupported file type
-            logger.warning(f"⚠️ Unsupported file type: {e}")
-            file_content = f"\n\n[File uploaded: {file.filename} - unsupported format]"
+            logger.warning(f"⚠️ File rejected: {e}")
+            file_content = f"\n\n[File not processed: {e}]"
         except Exception as e:
             logger.error(f"❌ File processing error: {e}", exc_info=True)
-            file_content = f"\n\n[File upload failed: {str(e)}]"
+            file_content = f"\n\n[File upload failed: {e}]"
     
     # Combine message with file content
     full_message = message + (file_content or "")

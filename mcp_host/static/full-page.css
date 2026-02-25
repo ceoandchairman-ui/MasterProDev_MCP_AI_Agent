@@ -547,6 +547,45 @@ button.logout-btn:hover {
     color: white;
 }
 
+/* ── User bubble file chip ───────────────────────────────────────────── */
+.bubble-file-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 10px;
+    padding: 7px 10px;
+    margin-bottom: 6px;
+    min-width: 0;
+}
+.bubble-file-chip-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.bubble-file-chip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 500;
+    color: white;
+}
+.bubble-file-chip-size {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+/* ── Drag & drop highlight ───────────────────────────────────────────── */
+#chat-messages.drag-over {
+    outline: 2px dashed var(--primary, #00C896);
+    outline-offset: -8px;
+    background: rgba(0, 200, 150, 0.04);
+}
+
 .input-row {
     display: flex;
     gap: 10px;

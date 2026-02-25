@@ -657,58 +657,81 @@ function attachEventListeners() {
     // File upload
     attachBtn.addEventListener('click', () => fileInput.click());
     
-    fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        if (file.size > 25 * 1024 * 1024) {
-            alert('File too large. Maximum size is 25MB.');
-            return;
-        }
-        selectedFile = file;
-
-        // Icon & color by extension
-        const ext = file.name.split('.').pop().toLowerCase();
-        const iconMap = {
-            pdf:  { icon: 'mdi:file-pdf-box',          color: '#ef4444' },
-            doc:  { icon: 'mdi:file-word-box',          color: '#2563EB' },
-            docx: { icon: 'mdi:file-word-box',          color: '#2563EB' },
-            txt:  { icon: 'mdi:file-document-outline',  color: '#71717a' },
-            jpg:  { icon: 'mdi:file-image',             color: '#f59e0b' },
-            jpeg: { icon: 'mdi:file-image',             color: '#f59e0b' },
-            png:  { icon: 'mdi:file-image',             color: '#f59e0b' },
-            gif:  { icon: 'mdi:file-image',             color: '#f59e0b' },
-            mp3:  { icon: 'mdi:file-music',             color: '#8b5cf6' },
-            wav:  { icon: 'mdi:file-music',             color: '#8b5cf6' },
-            mp4:  { icon: 'mdi:file-video',             color: '#ec4899' },
-            webm: { icon: 'mdi:file-video',             color: '#ec4899' },
-        };
-        const { icon, color } = iconMap[ext] || { icon: 'mdi:file-outline', color: '#71717a' };
-        const chipIcon = document.getElementById('file-chip-icon');
-        if (chipIcon) chipIcon.innerHTML = `<iconify-icon icon="${icon}" style="font-size: 20px; color: ${color};"></iconify-icon>`;
-
-        // Filename
-        const fileNameEl = document.getElementById('file-name');
-        if (fileNameEl) fileNameEl.textContent = file.name;
-
-        // Human-readable size
-        const sz = file.size;
-        const sizeStr = sz < 1024 ? `${sz} B`
-            : sz < 1024 * 1024 ? `${(sz / 1024).toFixed(1)} KB`
-            : `${(sz / (1024 * 1024)).toFixed(1)} MB`;
-        const fileSizeEl = document.getElementById('file-size');
-        if (fileSizeEl) fileSizeEl.textContent = sizeStr;
-
-        filePreview.classList.add('active');
-    });
+    fileInput.addEventListener('change', (e) => attachFile(e.target.files[0]));
 
     removeFileBtn.addEventListener('click', () => {
         selectedFile = null;
         fileInput.value = '';
         filePreview.classList.remove('active');
+        chatInput.placeholder = 'Message MasterProDev AI...';
+    });
+
+    // ── Drag & drop onto chat messages area ─────────────────────────────
+    chatMessages.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        chatMessages.classList.add('drag-over');
+    });
+    chatMessages.addEventListener('dragleave', () => chatMessages.classList.remove('drag-over'));
+    chatMessages.addEventListener('drop', (e) => {
+        e.preventDefault();
+        chatMessages.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file) attachFile(file);
+    });
+
+    // ── Paste image from clipboard ───────────────────────────────────────
+    chatInput.addEventListener('paste', (e) => {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.kind === 'file' && item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (file) attachFile(file);
+                break;
+            }
+        }
     });
 
     // Voice recording
     voiceBtn.addEventListener('click', toggleRecording);
+}
+
+// Attach a file (shared by click-upload, drag & drop, and clipboard paste)
+function attachFile(file) {
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) { alert('File too large. Maximum size is 25MB.'); return; }
+    selectedFile = file;
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    const iconMap = {
+        pdf:  { icon: 'mdi:file-pdf-box',          color: '#ef4444' },
+        doc:  { icon: 'mdi:file-word-box',          color: '#2563EB' },
+        docx: { icon: 'mdi:file-word-box',          color: '#2563EB' },
+        txt:  { icon: 'mdi:file-document-outline',  color: '#71717a' },
+        jpg:  { icon: 'mdi:file-image',             color: '#f59e0b' },
+        jpeg: { icon: 'mdi:file-image',             color: '#f59e0b' },
+        png:  { icon: 'mdi:file-image',             color: '#f59e0b' },
+        gif:  { icon: 'mdi:file-image',             color: '#f59e0b' },
+        mp3:  { icon: 'mdi:file-music',             color: '#8b5cf6' },
+        wav:  { icon: 'mdi:file-music',             color: '#8b5cf6' },
+        mp4:  { icon: 'mdi:file-video',             color: '#ec4899' },
+        webm: { icon: 'mdi:file-video',             color: '#ec4899' },
+    };
+    const { icon, color } = iconMap[ext] || { icon: 'mdi:file-outline', color: '#71717a' };
+
+    const chipIcon = document.getElementById('file-chip-icon');
+    if (chipIcon) chipIcon.innerHTML = `<iconify-icon icon="${icon}" style="font-size: 20px; color: ${color};"></iconify-icon>`;
+
+    const sz = file.size;
+    const sizeStr = sz < 1024 ? `${sz} B` : sz < 1048576 ? `${(sz/1024).toFixed(1)} KB` : `${(sz/1048576).toFixed(1)} MB`;
+    const fileNameEl = document.getElementById('file-name');
+    if (fileNameEl) fileNameEl.textContent = file.name || 'pasted-image.png';
+    const fileSizeEl = document.getElementById('file-size');
+    if (fileSizeEl) fileSizeEl.textContent = sizeStr;
+
+    filePreview.classList.add('active');
+    if (chatInput) chatInput.placeholder = 'Add a message (optional)...';
 }
 
 // Voice Recording
@@ -860,10 +883,11 @@ async function sendMessage() {
     const message = chatInput.value.trim();
     if (!message && !selectedFile) return;
 
-    const displayMessage = selectedFile ? `${message}\n📎 ${selectedFile.name}` : message;
-    addMessage(displayMessage, 'user');
+    // Render user bubble with real file chip (not raw text)
+    addMessage(message, 'user', selectedFile);
     chatInput.value = '';
     chatInput.style.height = 'auto';
+    chatInput.placeholder = 'Message MasterProDev AI...';
 
     typingIndicator.classList.add('active');
     scrollToBottom();
@@ -880,21 +904,14 @@ async function sendMessage() {
             body: formData
         });
 
-        if (!response.ok) {
-            throw new Error('Chat request failed');
-        }
+        if (!response.ok) throw new Error('Chat request failed');
 
         const data = await response.json();
         conversationId = data.conversation_id;
         addMessage(data.response, 'bot');
-        
-        // Auto-speak bot response in avatar mode
-        if (currentMode === 'avatar' && data.response) {
-            speakText(data.response);
-        }
 
-        // Auto-speak response in voice/avatar modes
-        if ((currentMode === 'voice' || currentMode === 'avatar') && data.response && 'speechSynthesis' in window) {
+        // Auto-speak in avatar / voice modes (guard against double-call)
+        if ((currentMode === 'avatar' || currentMode === 'voice') && data.response) {
             speakText(data.response);
         }
 
@@ -954,20 +971,48 @@ function speakText(text) {
 }
 
 // Add Message to UI
-function addMessage(text, sender) {
+function addMessage(text, sender, file = null) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${sender}`;
-    
+
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
+
+    // Build file chip HTML for user messages
+    let fileChipHtml = '';
+    if (file && sender === 'user') {
+        const ext = file.name.split('.').pop().toLowerCase();
+        const iconMap = {
+            pdf:  'mdi:file-pdf-box',
+            doc:  'mdi:file-word-box', docx: 'mdi:file-word-box',
+            txt:  'mdi:file-document-outline',
+            jpg:  'mdi:file-image', jpeg: 'mdi:file-image',
+            png:  'mdi:file-image', gif: 'mdi:file-image',
+            mp3:  'mdi:file-music', wav: 'mdi:file-music',
+            mp4:  'mdi:file-video', webm: 'mdi:file-video',
+        };
+        const icon = iconMap[ext] || 'mdi:file-outline';
+        const sz = file.size;
+        const sizeStr = sz < 1024 ? `${sz} B`
+            : sz < 1048576 ? `${(sz/1024).toFixed(1)} KB`
+            : `${(sz/1048576).toFixed(1)} MB`;
+        fileChipHtml = `
+            <div class="bubble-file-chip">
+                <iconify-icon icon="${icon}" style="font-size: 20px; flex-shrink: 0;"></iconify-icon>
+                <div class="bubble-file-chip-info">
+                    <span class="bubble-file-chip-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+                    <span class="bubble-file-chip-size">${sizeStr}</span>
+                </div>
+            </div>`;
+    }
+
     messageDiv.innerHTML = `
-        <div class="message-avatar">${sender === 'bot' ? '🤖' : '👤'}</div>
         <div class="message-content">
-            <p style="white-space: pre-wrap;">${escapeHtml(text)}</p>
+            ${fileChipHtml}
+            ${text ? `<p style="white-space: pre-wrap;">${escapeHtml(text)}</p>` : ''}
             <div class="message-time">${time}</div>
         </div>
     `;
-    
+
     chatMessages.insertBefore(messageDiv, typingIndicator);
     scrollToBottom();
 }
