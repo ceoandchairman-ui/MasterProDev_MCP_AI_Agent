@@ -1,8 +1,9 @@
 import weaviate
 from weaviate.classes.init import Auth, AdditionalConfig, Timeout
+from weaviate.classes.query import MetadataQuery, Filter
 from mcp_host.config import settings
+from mcp_host.embeddings import MultiFallbackEmbeddings
 import logging
-from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from typing import List, Dict, Any, Optional
 import json
 import os
@@ -56,89 +57,8 @@ class RAGService:
             self.client = None
 
         try:
-            # 2. Initialize embeddings with retry logic and 1024-dim models
+            # 2. Initialize embeddings (shared MultiFallbackEmbeddings class)
             logger.info(f"Initializing embeddings with model {self.embedding_model}...")
-            
-            class MultiFallbackEmbeddings:
-                """Embeddings with retry logic and 1024-dim models for best quality"""
-                # Use 1024-dim models for better semantic richness and multilingual support
-                PRIMARY_MODEL = "BAAI/bge-m3"  # 1024 dims - best quality
-                FALLBACK_MODELS = [
-                    "BAAI/bge-large-en-v1.5",  # 1024 dims - fallback
-                ]
-                MAX_RETRIES = 3
-                
-                def __init__(self, api_key, model_name):
-                    self.api_key = api_key
-                    self.model_name = model_name
-                    self.working_model = None
-                    
-                def _try_requests(self, text, model, timeout=60):
-                    import requests
-                    url = f"https://router.huggingface.co/hf-inference/models/{model}/pipeline/feature-extraction"
-                    headers = {"Authorization": f"Bearer {self.api_key}"}
-                    response = requests.post(url, headers=headers, json={"inputs": text}, timeout=timeout)
-                    response.raise_for_status()
-                    return response.json()
-                    
-                def embed_query(self, text):
-                    import time
-                    
-                    # If we found a working model, try it first with retries
-                    if self.working_model:
-                        for attempt in range(self.MAX_RETRIES):
-                            try:
-                                result = self._try_requests(text, self.working_model)
-                                if result and len(result) > 0:
-                                    return result
-                            except Exception as e:
-                                if attempt < self.MAX_RETRIES - 1:
-                                    wait_time = 2 ** attempt
-                                    logger.warning(f"⚠️ Retry {attempt+1}/{self.MAX_RETRIES} for {self.working_model} in {wait_time}s...")
-                                    time.sleep(wait_time)
-                                else:
-                                    self.working_model = None
-                    
-                    # Try primary model with retries
-                    for attempt in range(self.MAX_RETRIES):
-                        try:
-                            result = self._try_requests(text, self.PRIMARY_MODEL)
-                            if result and len(result) > 0:
-                                if self.working_model != self.PRIMARY_MODEL:
-                                    logger.info(f"✓ Embedding model: {self.PRIMARY_MODEL} (1024-dim)")
-                                    self.working_model = self.PRIMARY_MODEL
-                                return result
-                        except Exception as e:
-                            if attempt < self.MAX_RETRIES - 1:
-                                wait_time = 2 ** attempt
-                                logger.warning(f"⚠️ Retry {attempt+1}/{self.MAX_RETRIES} for {self.PRIMARY_MODEL} in {wait_time}s: {e}")
-                                time.sleep(wait_time)
-                            else:
-                                logger.warning(f"⚠️ Primary model failed after {self.MAX_RETRIES} retries")
-                    
-                    # Try fallback models (same 1024-dim) with retries
-                    for model in self.FALLBACK_MODELS:
-                        for attempt in range(self.MAX_RETRIES):
-                            try:
-                                result = self._try_requests(text, model)
-                                if result and len(result) > 0:
-                                    if self.working_model != model:
-                                        logger.info(f"✓ Fallback embedding model: {model} (1024-dim)")
-                                        self.working_model = model
-                                    return result
-                            except Exception as e:
-                                if attempt < self.MAX_RETRIES - 1:
-                                    wait_time = 2 ** attempt
-                                    logger.warning(f"⚠️ Retry {attempt+1}/{self.MAX_RETRIES} for {model} in {wait_time}s: {e}")
-                                    time.sleep(wait_time)
-                                else:
-                                    break
-                    
-                    raise ValueError(f"All embedding models failed after retries")
-                        
-                def embed_documents(self, texts):
-                    return [self.embed_query(t) for t in texts]
-            
             self.embeddings = MultiFallbackEmbeddings(
                 api_key=self.hf_api_key, model_name=self.embedding_model
             )
@@ -206,6 +126,31 @@ class RAGService:
         scored_results.sort(key=lambda x: x['score'], reverse=True)
         return scored_results[:top_k]
 
+    def _fetch_parent_texts(self, collection, parent_ids: set) -> Dict[str, str]:
+        """
+        MultiVector pattern: given a set of parent chunk_ids, fetch their
+        full_text from Weaviate so the retriever can return full section
+        context alongside matched sub-chunks.
+        """
+        parent_texts: Dict[str, str] = {}
+        for pid in parent_ids:
+            try:
+                response = collection.query.fetch_objects(
+                    filters=Filter.by_property("chunk_id").equal(pid),
+                    limit=1,
+                )
+                if response.objects:
+                    obj = response.objects[0]
+                    ft = obj.properties.get('full_text', '')
+                    if ft:
+                        parent_texts[pid] = ft
+                    else:
+                        # Fallback: use parent's content if no full_text
+                        parent_texts[pid] = obj.properties.get('content', '')
+            except Exception as e:
+                logger.warning(f"Failed to fetch parent chunk {pid}: {e}")
+        return parent_texts
+
     def search(self, query: str, limit: int = 5) -> list[dict]:
         """
         Performs semantic search using Weaviate with vector embeddings.
@@ -231,19 +176,22 @@ class RAGService:
             response = collection.query.near_vector(
                 near_vector=query_vector,
                 limit=raw_limit,
-                return_metadata=weaviate.classes.query.MetadataQuery(distance=True)
+                return_metadata=MetadataQuery(distance=True)
             )
             
-            # Extract results
+            # Extract results (now includes chunk_id, parent_id, full_text)
             raw_results = []
             for item in response.objects:
                 raw_results.append({
                     'id': item.uuid,
+                    'chunk_id': item.properties.get('chunk_id', ''),
                     'content': item.properties.get('content', ''),
                     'source': item.properties.get('source', 'Unknown'),
                     'summary': item.properties.get('summary', ''),
                     'level': item.properties.get('level', 1),
                     'section_title': item.properties.get('section_title', ''),
+                    'parent_id': item.properties.get('parent_id', ''),
+                    'full_text': item.properties.get('full_text', ''),
                     'entities': json.loads(item.properties.get('entities', '{}')),
                     'distance': item.metadata.distance
                 })
@@ -272,12 +220,38 @@ class RAGService:
             # Rerank results
             reranked = self._rerank_results(query, raw_results, top_k=limit)
             
+            # ── MultiVector pattern: fetch parent full_text for L2 sub-chunks ──
+            parent_ids_needed = set()
+            for ranked_item in reranked:
+                r = ranked_item['result']
+                if r['level'] == 2 and r.get('parent_id'):
+                    parent_ids_needed.add(r['parent_id'])
+            
+            parent_texts = {}
+            if parent_ids_needed:
+                parent_texts = self._fetch_parent_texts(collection, parent_ids_needed)
+            
             # Format results
             formatted_results = []
             for ranked_item in reranked:
                 result = ranked_item['result']
+                
+                # Determine best text to return:
+                #  - L1 with full_text → use full_text (complete section)
+                #  - L2 sub-chunk     → attach parent full_text if available
+                #  - Otherwise        → use content as-is
+                best_text = result['content']
+                parent_context = ""
+                
+                if result.get('full_text'):
+                    # L1 summary-only chunk: return the full section text
+                    best_text = result['full_text']
+                elif result['level'] == 2 and result.get('parent_id') in parent_texts:
+                    # L2 sub-chunk: attach parent section context
+                    parent_context = parent_texts[result['parent_id']]
+                
                 formatted_result = {
-                    "text": result['content'],
+                    "text": best_text,
                     "source": result['source'],
                     "summary": result['summary'] or result['content'][:150],
                     "section_title": result.get('section_title', ''),
@@ -285,6 +259,8 @@ class RAGService:
                     "relevance_score": round(ranked_item['score'], 3),
                     "chunk_type": ["document_summary", "section", "sub_chunk"][min(result['level'], 2)]
                 }
+                if parent_context:
+                    formatted_result["parent_context"] = parent_context
                 formatted_results.append(formatted_result)
             
             logger.info(f"✓ Search for '{query}' returned {len(formatted_results)} reranked results.")

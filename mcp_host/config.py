@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
     # Knowledge Base
     KNOWLEDGE_BASE_PATH: str = "knowledge_base"
-    EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
+    EMBEDDING_MODEL: str = "BAAI/bge-m3"
 
     model_config = {
         "env_file": ".env",

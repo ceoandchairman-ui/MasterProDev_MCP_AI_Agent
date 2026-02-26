@@ -2,21 +2,35 @@ import os
 import logging
 import json
 from pathlib import Path
-from langchain_community.vectorstores import Weaviate
-from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter, MarkdownHeaderTextSplitter
 from mcp_host.config import Settings
 import weaviate
 import re
-from typing import List, Dict, Any, Tuple
-from langchain.schema import Document
+from typing import List, Dict, Any, Optional, Tuple
 import uuid
+
+# ── LangChain imports ─────────────────────────────────────────────────────
+from langchain.schema import Document
+from langchain_text_splitters import (
+    RecursiveCharacterTextSplitter,
+    MarkdownHeaderTextSplitter,
+)
+from langchain_community.document_loaders import DirectoryLoader, TextLoader
+
+# python-docx for heading-aware .docx parsing (LangChain's Docx2txtLoader
+# strips heading structure, so we keep python-docx for that one task)
 from docx import Document as DocxDocument
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Simple sentence splitter (no nltk dependency)
+# ============================================================================
+# EMBEDDINGS — imported from shared module (single source of truth)
+# ============================================================================
+from mcp_host.embeddings import MultiFallbackEmbeddings
+
+
+# Simple sentence splitter — used ONLY for extractive summaries.
+# All chunking is handled by LangChain splitters.
 def simple_sent_tokenize(text: str) -> List[str]:
     """Split text into sentences using regex."""
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
@@ -55,43 +69,52 @@ def extract_entities(text: str) -> Dict[str, List[str]]:
 
 def load_documents_from_directory(directory_path: str) -> List[Document]:
     """
-    Load documents from directory using direct format-specific loaders.
-    Supports: .docx, .txt, .md
-    No unstructured dependency - robust and fast.
+    Load documents using LangChain DirectoryLoader (for .txt/.md) and
+    custom python-docx loader (for .docx — preserves heading structure).
+
+    LangChain handles file discovery, encoding, and Document creation.
     """
     documents = []
     path = Path(directory_path)
-    
-    # Supported extensions
-    supported_files = list(path.rglob('*.docx')) + list(path.rglob('*.txt')) + list(path.rglob('*.md'))
-    
-    logging.info(f"Found {len(supported_files)} supported files")
-    
-    for file_path in supported_files:
+
+    # ── Stage 1: .txt and .md via LangChain DirectoryLoader ────────────
+    for ext, label in [("*.txt", "txt"), ("*.md", "md")]:
         try:
-            if file_path.suffix == '.docx':
-                # Load DOCX with heading-aware section detection
-                full_text, sections = _detect_sections_docx(file_path)
-                documents.append(Document(
-                    page_content=full_text,
-                    metadata={"source": str(file_path), "type": "docx", "sections": sections}
-                ))
-                logging.info(f"✓ Loaded {file_path.name} ({len(full_text)} chars, {len(sections)} sections)")
-                
-            elif file_path.suffix in ['.txt', '.md']:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    text = f.read()
-                sections = _detect_sections_text(text, file_path.suffix)
-                documents.append(Document(
-                    page_content=text,
-                    metadata={"source": str(file_path), "type": file_path.suffix[1:], "sections": sections}
-                ))
-                logging.info(f"✓ Loaded {file_path.name} ({len(text)} chars, {len(sections)} sections)")
-                
+            loader = DirectoryLoader(
+                str(path),
+                glob=f"**/{ext}",
+                loader_cls=TextLoader,
+                loader_kwargs={"encoding": "utf-8"},
+                show_progress=False,
+                use_multithreading=True,
+            )
+            text_docs = loader.load()
+            for doc in text_docs:
+                file_source = doc.metadata.get("source", "")
+                suffix = Path(file_source).suffix if file_source else f".{label}"
+                sections = _detect_sections_text(doc.page_content, suffix)
+                doc.metadata.update({"type": label, "sections": sections})
+                documents.append(doc)
+                logging.info(
+                    f"✓ Loaded {Path(file_source).name} "
+                    f"({len(doc.page_content)} chars, {len(sections)} sections) [LangChain DirectoryLoader]"
+                )
+        except Exception as e:
+            logging.warning(f"DirectoryLoader for {ext} failed: {e}")
+
+    # ── Stage 2: .docx via python-docx (heading-aware) ─────────────────
+    for file_path in path.rglob("*.docx"):
+        try:
+            full_text, sections = _detect_sections_docx(file_path)
+            documents.append(Document(
+                page_content=full_text,
+                metadata={"source": str(file_path), "type": "docx", "sections": sections},
+            ))
+            logging.info(f"✓ Loaded {file_path.name} ({len(full_text)} chars, {len(sections)} sections)")
         except Exception as e:
             logging.error(f"✗ Failed to load {file_path.name}: {e}")
-            continue
-    
+
+    logging.info(f"Total: {len(documents)} documents loaded")
     return documents
 
 
@@ -170,7 +193,15 @@ def _is_heading_by_heuristic(para) -> bool:
 
 
 def _infer_heading_level(para) -> int:
-    """Infer markdown heading level from a python-docx paragraph style."""
+    """
+    Infer markdown heading level from a python-docx paragraph.
+
+    Priority:
+      1. Formal Word styles (Heading 1–4, Title, Subtitle)
+      2. Numbered patterns: depth of dot-separated numbers
+         "1. Topic" → 1, "1.1 Sub" → 2, "1.1.1 Detail" → 3
+      3. Everything else (bold, ALL CAPS) → level 1
+    """
     style = (para.style.name or "") if para.style else ""
     if style == "Title":
         return 1
@@ -181,7 +212,15 @@ def _infer_heading_level(para) -> int:
             return min(int(style.replace("Heading", "").strip()), 4)
         except (ValueError, IndexError):
             return 1
-    # Heuristic-detected headings (bold, ALL CAPS, etc.) → level 1
+
+    # Infer level from numbered-heading depth: "1." → 1, "1.2" → 2, "1.2.3" → 3
+    text = para.text.strip()
+    m = re.match(r'^(\d{1,3}(?:\.\d{1,3}){0,3})\.?\s+', text)
+    if m:
+        depth = m.group(1).count('.') + 1      # "1" → 1, "1.2" → 2, "1.2.3" → 3
+        return min(depth, 4)
+
+    # Chapter/Section/Part keywords → level 1
     return 1
 
 
@@ -358,39 +397,16 @@ def generate_extractive_summary(
 # SEMANTIC HIERARCHICAL CHUNKING
 # ============================================================================
 
-# LangChain Stage 2 splitter — recursive sub-chunk splitting.
-# Breaks large sections into overlapping sub-chunks for embedding.
-_langchain_splitter = RecursiveCharacterTextSplitter(
+# ── LangChain Stage 2 splitter ─────────────────────────────────────────
+# RecursiveCharacterTextSplitter — the recommended default for generic text.
+# Tries to split on paragraphs → sentences → words, keeping semantic units.
+_sub_chunk_splitter = RecursiveCharacterTextSplitter(
     chunk_size=1024,          # ~256 tokens × 4 chars/token
     chunk_overlap=256,        # ~64 tokens overlap
     separators=["\n\n", "\n", ". ", "? ", "! ", "; ", ", ", " ", ""],
     length_function=len,
     is_separator_regex=False,
 )
-
-
-def _build_sub_chunks(
-    text: str,
-    chunk_size: int = 1024,
-    chunk_overlap: int = 256,
-) -> List[str]:
-    """
-    Split a long section into sub-chunks using LangChain's
-    RecursiveCharacterTextSplitter — respects sentence and paragraph
-    boundaries automatically.
-    """
-    # Use the module-level splitter if defaults match, else create one
-    if chunk_size == 1024 and chunk_overlap == 256:
-        splitter = _langchain_splitter
-    else:
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            separators=["\n\n", "\n", ". ", "? ", "! ", "; ", ", ", " ", ""],
-            length_function=len,
-            is_separator_regex=False,
-        )
-    return splitter.split_text(text)
 
 
 def semantic_hierarchical_chunking(
@@ -477,6 +493,8 @@ def semantic_hierarchical_chunking(
                 ))
             else:
                 # Section too large → Level 1 summary-only + Level 2 sub-chunks
+                # Store full section text in full_text so the retriever can
+                # "search on summaries, return full parents" (MultiVector pattern)
                 all_chunks.append(Document(
                     page_content=sec_summary,
                     metadata={
@@ -485,6 +503,7 @@ def semantic_hierarchical_chunking(
                         "level": 1,
                         "section_title": heading,
                         "summary": sec_summary,
+                        "full_text": sec_text,
                         "parent_id": doc_chunk_id,
                         "chunk_index": sec_idx,
                         "total_chunks": 0,
@@ -493,26 +512,43 @@ def semantic_hierarchical_chunking(
                     }
                 ))
 
-                # Sub-chunk the section into Level 2 pieces
-                sub_chunks = _build_sub_chunks(sec_text, sub_chunk_size, sub_chunk_overlap)
+                # ── Level 2: sub-chunk via LangChain create_documents() ──
+                # create_documents() returns Document objects directly,
+                # propagating the base metadata to every sub-chunk.
+                if sub_chunk_size == 1024 and sub_chunk_overlap == 256:
+                    splitter = _sub_chunk_splitter
+                else:
+                    splitter = RecursiveCharacterTextSplitter(
+                        chunk_size=sub_chunk_size,
+                        chunk_overlap=sub_chunk_overlap,
+                        separators=["\n\n", "\n", ". ", "? ", "! ", "; ", ", ", " ", ""],
+                        length_function=len,
+                        is_separator_regex=False,
+                    )
 
-                for sub_idx, sub_text in enumerate(sub_chunks):
-                    sub_summary = generate_extractive_summary(sub_text, max_sentences=2, max_tokens=80)
-                    all_chunks.append(Document(
-                        page_content=sub_text,
-                        metadata={
-                            "chunk_id": str(uuid.uuid4()),
-                            "source": source,
-                            "level": 2,
-                            "section_title": heading,
-                            "summary": sub_summary,
-                            "parent_id": section_chunk_id,
-                            "chunk_index": sub_idx,
-                            "total_chunks": len(sub_chunks),
-                            "chunk_size": len(sub_text),
-                            "token_count": len(sub_text.split()),
-                        }
-                    ))
+                sub_docs = splitter.create_documents(
+                    [sec_text],
+                    metadatas=[{
+                        "source": source,
+                        "level": 2,
+                        "section_title": heading,
+                        "parent_id": section_chunk_id,
+                    }],
+                )
+
+                for sub_idx, sub_doc in enumerate(sub_docs):
+                    sub_summary = generate_extractive_summary(
+                        sub_doc.page_content, max_sentences=2, max_tokens=80
+                    )
+                    sub_doc.metadata.update({
+                        "chunk_id": str(uuid.uuid4()),
+                        "summary": sub_summary,
+                        "chunk_index": sub_idx,
+                        "total_chunks": len(sub_docs),
+                        "chunk_size": len(sub_doc.page_content),
+                        "token_count": len(sub_doc.page_content.split()),
+                    })
+                    all_chunks.append(sub_doc)
 
     l0 = sum(1 for c in all_chunks if c.metadata['level'] == 0)
     l1 = sum(1 for c in all_chunks if c.metadata['level'] == 1)
@@ -553,94 +589,11 @@ def seed_documents_from_local():
         # 2. Create hierarchical chunks with multi-level summaries
         logging.info("Creating semantic chunks with multi-level summaries...")
         
-        # Initialize embeddings with dual fallback: InferenceClient -> requests
+        # Initialize embeddings
         logging.info(f"Initializing embeddings with model {settings.EMBEDDING_MODEL}...")
-        
-        class MultiFallbackEmbeddings:
-            """Embeddings with retry logic and 1024-dim models for best quality"""
-            # Use 1024-dim models for better semantic richness and multilingual support
-            PRIMARY_MODEL = "BAAI/bge-m3"  # 1024 dims - best quality
-            FALLBACK_MODELS = [
-                "BAAI/bge-large-en-v1.5",  # 1024 dims - fallback
-            ]
-            MAX_RETRIES = 3
-            
-            def __init__(self, api_key, model_name):
-                self.api_key = api_key
-                self.model_name = model_name
-                self.working_model = None
-                
-            def _try_requests(self, text, model, timeout=60):
-                import requests
-                import time
-                url = f"https://router.huggingface.co/hf-inference/models/{model}/pipeline/feature-extraction"
-                headers = {"Authorization": f"Bearer {self.api_key}"}
-                response = requests.post(url, headers=headers, json={"inputs": text}, timeout=timeout)
-                response.raise_for_status()
-                return response.json()
-                
-            def embed_query(self, text):
-                import time
-                
-                # If we found a working model, try it first with retries
-                if self.working_model:
-                    for attempt in range(self.MAX_RETRIES):
-                        try:
-                            result = self._try_requests(text, self.working_model)
-                            if result and len(result) > 0:
-                                return result
-                        except Exception as e:
-                            if attempt < self.MAX_RETRIES - 1:
-                                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                                logging.warning(f"⚠️ Retry {attempt+1}/{self.MAX_RETRIES} for {self.working_model} in {wait_time}s...")
-                                time.sleep(wait_time)
-                            else:
-                                self.working_model = None  # Reset and try primary
-                
-                # Try primary model with retries
-                for attempt in range(self.MAX_RETRIES):
-                    try:
-                        result = self._try_requests(text, self.PRIMARY_MODEL)
-                        if result and len(result) > 0:
-                            if self.working_model != self.PRIMARY_MODEL:
-                                logging.info(f"✓ Embedding model: {self.PRIMARY_MODEL} (1024-dim)")
-                                self.working_model = self.PRIMARY_MODEL
-                            return result
-                    except Exception as e:
-                        if attempt < self.MAX_RETRIES - 1:
-                            wait_time = 2 ** attempt
-                            logging.warning(f"⚠️ Retry {attempt+1}/{self.MAX_RETRIES} for {self.PRIMARY_MODEL} in {wait_time}s: {e}")
-                            time.sleep(wait_time)
-                        else:
-                            logging.warning(f"⚠️ Primary model {self.PRIMARY_MODEL} failed after {self.MAX_RETRIES} retries")
-                
-                # Try fallback models (same 1024-dim) with retries
-                for model in self.FALLBACK_MODELS:
-                    for attempt in range(self.MAX_RETRIES):
-                        try:
-                            result = self._try_requests(text, model)
-                            if result and len(result) > 0:
-                                if self.working_model != model:
-                                    logging.info(f"✓ Fallback embedding model: {model} (1024-dim)")
-                                    self.working_model = model
-                                return result
-                        except Exception as e:
-                            if attempt < self.MAX_RETRIES - 1:
-                                wait_time = 2 ** attempt
-                                logging.warning(f"⚠️ Retry {attempt+1}/{self.MAX_RETRIES} for {model} in {wait_time}s: {e}")
-                                time.sleep(wait_time)
-                            else:
-                                logging.warning(f"⚠️ Fallback model {model} failed after {self.MAX_RETRIES} retries")
-                                break
-                
-                raise ValueError(f"All embedding models failed after retries")
-                    
-            def embed_documents(self, texts):
-                return [self.embed_query(t) for t in texts]
-        
         embeddings = MultiFallbackEmbeddings(
             api_key=settings.HUGGINGFACE_API_KEY,
-            model_name=settings.EMBEDDING_MODEL
+            model_name=settings.EMBEDDING_MODEL,
         )
         
         # Apply semantic hierarchical chunking
@@ -662,20 +615,22 @@ def seed_documents_from_local():
             if 'entities' in chunk.metadata:
                 logging.info(f"  - Chunk {i+1} entities: {chunk.metadata['entities']}")
         
-        # 🔍 CHUNK VISIBILITY LOGGING
-        logging.info("\n" + "="*80)
-        logging.info("📋 SEEDING VERIFICATION - ALL CHUNKS CREATED:")
-        logging.info("="*80)
-        for i, chunk in enumerate(enriched_chunks):
-            logging.info(f"\n[CHUNK {i}]")
-            logging.info(f"  Level: {chunk.metadata.get('level', '?')}")
-            logging.info(f"  Section: {chunk.metadata.get('section_title', 'N/A')}")
-            logging.info(f"  Size: {len(chunk.page_content)} chars ({chunk.metadata.get('token_count', '?')} tokens)")
-            logging.info(f"  Source: {chunk.metadata.get('source', 'unknown')}")
-            logging.info(f"  Summary: {chunk.metadata.get('summary', '')[:120]}")
-            logging.info(f"  Entities: {chunk.metadata.get('entities', [])}")
-            logging.info(f"  Content: {chunk.page_content[:250]}...")
-        logging.info("="*80 + "\n")
+        # Chunk summary table (concise production-friendly logging)
+        from collections import Counter
+        level_counts = Counter(c.metadata.get('level', '?') for c in enriched_chunks)
+        source_counts = Counter(
+            Path(c.metadata.get('source', 'unknown')).name for c in enriched_chunks
+        )
+        logging.info("\n" + "="*60)
+        logging.info("SEEDING SUMMARY")
+        logging.info(f"  Total chunks: {len(enriched_chunks)}")
+        logging.info(f"  By level: L0={level_counts.get(0,0)}, L1={level_counts.get(1,0)}, L2={level_counts.get(2,0)}")
+        logging.info(f"  By source:")
+        for fname, cnt in source_counts.most_common():
+            logging.info(f"    {fname}: {cnt} chunks")
+        avg_size = sum(len(c.page_content) for c in enriched_chunks) // max(len(enriched_chunks), 1)
+        logging.info(f"  Avg chunk size: {avg_size} chars")
+        logging.info("="*60 + "\n")
 
         # 3. Seed Weaviate
         logging.info(f"Connecting to Weaviate at {settings.WEAVIATE_HOST}:{settings.WEAVIATE_PORT}...")
@@ -691,14 +646,27 @@ def seed_documents_from_local():
             logging.warning(f"Collection '{collection_name}' already exists. Deleting and recreating.")
             client.collections.delete(collection_name)
 
-        # Create collection with proper schema for new Weaviate v4 API
-        from weaviate.classes.config import Configure
+        # Create collection with explicit property schema
+        from weaviate.classes.config import Configure, Property, DataType
         client.collections.create(
             name=collection_name,
-            vectorizer_config=Configure.Vectorizer.none(),  # We'll provide vectors
-            vector_index_config=Configure.VectorIndex.hnsw()
+            vectorizer_config=Configure.Vectorizer.none(),
+            vector_index_config=Configure.VectorIndex.hnsw(),
+            properties=[
+                Property(name="chunk_id",      data_type=DataType.TEXT),
+                Property(name="content",       data_type=DataType.TEXT),
+                Property(name="full_text",     data_type=DataType.TEXT),
+                Property(name="source",        data_type=DataType.TEXT),
+                Property(name="summary",       data_type=DataType.TEXT),
+                Property(name="level",         data_type=DataType.INT),
+                Property(name="section_title", data_type=DataType.TEXT),
+                Property(name="parent_id",     data_type=DataType.TEXT),
+                Property(name="entities",      data_type=DataType.TEXT),
+                Property(name="chunk_index",   data_type=DataType.INT),
+                Property(name="total_chunks",  data_type=DataType.INT),
+            ],
         )
-        logging.info(f"✓ Created Weaviate collection '{collection_name}'")
+        logging.info(f"✓ Created Weaviate collection '{collection_name}' with explicit schema")
 
         # Seed documents with embeddings
         logging.info(f"Seeding {len(enriched_chunks)} hierarchically-structured chunks into Weaviate...")
@@ -716,13 +684,17 @@ def seed_documents_from_local():
                     
                 collection.data.insert(
                     properties={
+                        "chunk_id": chunk.metadata.get("chunk_id", ""),
                         "content": chunk.page_content,
+                        "full_text": chunk.metadata.get("full_text", ""),
                         "source": chunk.metadata.get("source", ""),
-                        "entities": json.dumps(chunk.metadata.get("entities", {})),
                         "summary": chunk.metadata.get("summary", ""),
                         "level": chunk.metadata.get("level", 1),
                         "section_title": chunk.metadata.get("section_title", ""),
                         "parent_id": chunk.metadata.get("parent_id", ""),
+                        "entities": json.dumps(chunk.metadata.get("entities", {})),
+                        "chunk_index": chunk.metadata.get("chunk_index", 0),
+                        "total_chunks": chunk.metadata.get("total_chunks", 1),
                     },
                     vector=vector
                 )
