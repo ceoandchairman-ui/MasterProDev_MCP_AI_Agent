@@ -56,6 +56,9 @@ prompts:
       - Error or missing data: 1 sentence, suggest next step.
       - NEVER write an intro paragraph before the answer.
 
+      PRIOR CONVERSATION (use this to understand context and resolve follow-up references):
+      {history}
+
       TOOL EXECUTION RESULTS:
       {tool_outputs}
 

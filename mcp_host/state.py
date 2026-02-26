@@ -270,39 +270,41 @@ class StateManager:
             return False
 
     async def get_conversation_state(self, session_id: str) -> Optional[ConversationState]:
-        """Retrieves the full state of a conversation from Redis."""
+        """Retrieves the full state of a conversation from Redis, falling back to in-memory."""
         if self.degraded_mode:
             return self._memory_conversations.get(session_id)
 
-        if not self.redis:
-            return None
+        if self.redis:
+            try:
+                state_json = await self.redis.get(f"conversation_state:{session_id}")
+                if state_json:
+                    return ConversationState.from_json(state_json)
+                # Not in Redis — check memory (e.g. written before Redis recovered)
+                return self._memory_conversations.get(session_id)
+            except Exception as e:
+                logger.warning(f"⚠ Redis get_conversation_state failed, using memory fallback: {e}")
+                return self._memory_conversations.get(session_id)
 
-        try:
-            state_json = await self.redis.get(f"conversation_state:{session_id}")
-            if state_json:
-                return ConversationState.from_json(state_json)
-            return None
-        except Exception as e:
-            logger.error(f"✗ Error retrieving conversation state: {e}")
-            return None
+        # No Redis at all — use in-memory
+        return self._memory_conversations.get(session_id)
 
     async def update_conversation_state(self, session_id: str, state: ConversationState):
-        """Saves the full state of a conversation to Redis."""
+        """Saves the full state of a conversation to Redis, falling back to in-memory."""
+        # Always keep in-memory copy as fallback
+        self._memory_conversations[session_id] = state
+
         if self.degraded_mode:
-            self._memory_conversations[session_id] = state
             return
 
-        if not self.redis:
-            return
-
-        try:
-            await self.redis.setex(
-                f"conversation_state:{session_id}",
-                CONVERSATION_CACHE_TTL,
-                state.to_json()
-            )
-        except Exception as e:
-            logger.error(f"✗ Error updating conversation state: {e}")
+        if self.redis:
+            try:
+                await self.redis.setex(
+                    f"conversation_state:{session_id}",
+                    CONVERSATION_CACHE_TTL,
+                    state.to_json()
+                )
+            except Exception as e:
+                logger.warning(f"⚠ Redis update_conversation_state failed, using memory fallback: {e}")
 
 
     async def save_conversation_turn(

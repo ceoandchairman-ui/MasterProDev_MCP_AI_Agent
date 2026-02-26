@@ -120,7 +120,8 @@ class MultiTurnProcessor:
         self,
         original_message: str,
         llm_generate_fn,
-        strategy: ProcessingStrategy = ProcessingStrategy.SEQUENTIAL
+        strategy: ProcessingStrategy = ProcessingStrategy.SEQUENTIAL,
+        history_text: str = ""
     ) -> Dict[str, Any]:
         """
         Execute multi-turn processing for complex requests.
@@ -153,7 +154,7 @@ class MultiTurnProcessor:
         # Process tasks based on strategy
         if strategy == ProcessingStrategy.SEQUENTIAL:
             for task in subtasks:
-                result = await self._execute_task(task, turn_results, llm_generate_fn)
+                result = await self._execute_task(task, turn_results, llm_generate_fn, history_text=history_text)
                 turn_results[task['task_id']] = result
         
         # Synthesize multi-turn results
@@ -180,7 +181,8 @@ class MultiTurnProcessor:
         self,
         task: Dict[str, Any],
         previous_results: Dict[str, Any],
-        llm_generate_fn
+        llm_generate_fn,
+        history_text: str = ""
     ) -> str:
         """Execute a single sub-task with context from previous results."""
         task_query = task['query']
@@ -193,12 +195,15 @@ class MultiTurnProcessor:
                 if dep_id in previous_results:
                     context_text += f"\nPrevious result ({dep_id}):\n{previous_results[dep_id][:200]}...\n"
         
+        # Build conversation history block
+        history_block = f"\nConversation so far:\n{history_text}\n" if history_text else ""
+
         # Construct task prompt
         task_prompt = f"""You are processing part of a larger user request. 
 Here is your specific sub-task:
 
 {task_query}
-
+{history_block}
 {f"Context from previous step:{context_text}" if context_text else ""}
 
 Answer this sub-task specifically and concisely. Your response will feed into the next part of the request."""

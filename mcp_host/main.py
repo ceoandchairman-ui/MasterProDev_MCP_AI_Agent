@@ -5,8 +5,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.openapi.utils import get_openapi
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+try:
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+    _SLOWAPI_AVAILABLE = True
+except ImportError:
+    _SLOWAPI_AVAILABLE = False
+    # Graceful stub — no rate limiting when slowapi is not installed
+    def get_remote_address(request):  # noqa: E301
+        return request.client.host if request.client else "unknown"
+
+    class Limiter:  # noqa: E302
+        def __init__(self, **kwargs):
+            pass
+        def limit(self, *args, **kwargs):
+            def decorator(func):
+                return func
+            return decorator
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from pydantic_settings import BaseSettings
@@ -28,8 +43,18 @@ from .state import state_manager, ConversationState
 from .agent import mcp_agent
 from .rag_service import rag_service
 from .evaluator import evaluator  # Import evaluator for metrics endpoint
-from .voice_service import voice_service  # Voice processing (STT/TTS)
-from prometheus_fastapi_instrumentator import Instrumentator
+try:
+    from .voice_service import voice_service  # Voice processing (STT/TTS)
+    _VOICE_SERVICE_AVAILABLE = True
+except Exception as _vs_err:
+    voice_service = None  # type: ignore
+    _VOICE_SERVICE_AVAILABLE = False
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    _PROMETHEUS_AVAILABLE = True
+except ImportError:
+    Instrumentator = None  # type: ignore
+    _PROMETHEUS_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -90,7 +115,8 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
 # Instrument the app
-Instrumentator().instrument(app).expose(app)
+if _PROMETHEUS_AVAILABLE and Instrumentator is not None:
+    Instrumentator().instrument(app).expose(app)
 
 # Add CORS middleware
 app.add_middleware(
@@ -373,6 +399,8 @@ async def voice_chat(
     4. Convert response to speech (TTS via OpenAI)
     5. Return audio file
     """
+    if not _VOICE_SERVICE_AVAILABLE or voice_service is None:
+        raise HTTPException(status_code=503, detail="Voice service unavailable (openai package missing)")
     try:
         # Get session (same as /chat endpoint)
         if authorization:
@@ -767,15 +795,18 @@ async def chat(
     if user_id == "guest":
         try:
             _cs = await state_manager.get_conversation_state(session_id)
-            if _cs and _cs.name_asked and not _cs.user_name:
-                _candidate = message.strip().rstrip("!?., ")
-                if mcp_agent._looks_like_name(_candidate):
-                    _first = _candidate.split()[0].capitalize()
-                    _cs.user_name = _first
+            if _cs and not _cs.user_name:
+                # Accept explicit phrases ("my name is X") at any time;
+                # also accept short direct replies once we've asked.
+                _extracted = mcp_agent._extract_name_from_message(
+                    message.strip(), require_explicit=not _cs.name_asked
+                )
+                if _extracted:
+                    _cs.user_name = _extracted
                     _cs.name_used = False
                     await state_manager.update_conversation_state(session_id, _cs)
                     _name_reply = (
-                        f"Nice to meet you, **{_first}**! \U0001f60a "
+                        f"Nice to meet you, **{_extracted}**! \U0001f60a "
                         "I'm here to help whenever you need me. What can I assist you with?"
                     )
                     await state_manager.save_conversation_turn(
@@ -927,15 +958,16 @@ async def chat_stream(
     if user_id == "guest":
         try:
             _cs_s = await state_manager.get_conversation_state(session_id)
-            if _cs_s and _cs_s.name_asked and not _cs_s.user_name:
-                _candidate_s = message.strip().rstrip("!?., ")
-                if mcp_agent._looks_like_name(_candidate_s):
-                    _first_s = _candidate_s.split()[0].capitalize()
-                    _cs_s.user_name = _first_s
+            if _cs_s and not _cs_s.user_name:
+                _extracted_s = mcp_agent._extract_name_from_message(
+                    message.strip(), require_explicit=not _cs_s.name_asked
+                )
+                if _extracted_s:
+                    _cs_s.user_name = _extracted_s
                     _cs_s.name_used = False
                     await state_manager.update_conversation_state(session_id, _cs_s)
                     _name_reply_s = (
-                        f"Nice to meet you, **{_first_s}**! \U0001f60a "
+                        f"Nice to meet you, **{_extracted_s}**! \U0001f60a "
                         "I'm here to help whenever you need me. What can I assist you with?"
                     )
                     await state_manager.save_conversation_turn(

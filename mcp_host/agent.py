@@ -109,52 +109,62 @@ class MCPAgent:
     _FAQS = [
         {
             "id": "faq_identity",
-            "keywords": ["who", "masterprodev", "about", "company", "what do you do"],
+            "keywords": ["masterprodev", "master pro dev", "your company", "about the company", "about your company", "about masterprodev", "what does masterprodev", "what does master pro dev", "what do you do", "what masterprodev does", "what master pro dev does"],
+            "min_score": 1,
             "answer": "\U0001f3e2 **MasterProDev** is a professional software consulting firm based in Toronto, Canada. We specialise in AI-powered applications, custom software development, and digital transformation.",
         },
         {
             "id": "faq_services",
             "keywords": ["services", "offer", "expertise", "solutions", "provide"],
+            "min_score": 2,
             "answer": "\U0001f680 We offer: **AI & Machine Learning**, **Custom Software Development**, **Cloud Solutions**, **Mobile & Web Apps**, and **Digital Strategy Consulting**.",
         },
         {
             "id": "faq_location",
-            "keywords": ["located", "location", "office", "address", "toronto", "where"],
+            "keywords": ["located", "location", "your address", "toronto", "your office"],
+            "min_score": 2,
             "answer": "\U0001f4cd MasterProDev is headquartered in **Toronto, Canada**. We serve clients globally and operate remotely worldwide.",
         },
         {
             "id": "faq_contact",
-            "keywords": ["contact", "reach", "get in touch", "email", "phone", "talk"],
+            "keywords": ["contact", "get in touch", "reach us", "email address", "phone number"],
+            "min_score": 2,
             "answer": "\U0001f4ec You can reach our team via the contact form on our website, or I can help you send an email directly \u2014 just say the word!",
         },
         {
             "id": "faq_hours",
-            "keywords": ["hours", "working", "business", "open", "available", "schedule", "when"],
+            "keywords": ["hours", "business hours", "working hours", "office hours", "opening time"],
+            "min_score": 2,
             "answer": "\U0001f550 Our team is available **Monday\u2013Friday, 9 AM\u20136 PM EST**. I\u2019m available 24/7 to assist you! \U0001f60a",
         },
         {
             "id": "faq_booking",
-            "keywords": ["book", "meeting", "schedule", "call", "appointment", "discovery", "calendar"],
+            "keywords": ["book a meeting", "book a call", "schedule a meeting", "schedule a call", "book an appointment", "discovery call"],
+            "min_score": 1,
             "answer": "\U0001f4c5 I can book that for you right now! Just tell me your preferred date and time and I\u2019ll get it on the calendar. \u2705",
         },
         {
             "id": "faq_capabilities",
-            "keywords": ["can you", "capabilities", "help me", "features", "what can", "do for me"],
+            "keywords": ["capabilities", "what can you do", "what can you help", "what you offer", "your features"],
+            "min_score": 1,
             "answer": "\U0001f916 I can help you with: **\U0001f4c5 Calendar & scheduling**, **\U0001f4e7 Email management**, **\U0001f4da Company knowledge**, and **\U0001f4c1 File analysis**. What do you need?",
         },
         {
             "id": "faq_privacy",
-            "keywords": ["data", "privacy", "store", "safe", "secure", "personal", "information"],
+            "keywords": ["data privacy", "personal data", "secure data", "store my data", "privacy policy"],
+            "min_score": 1,
             "answer": "\U0001f512 Your data is securely stored and never shared with third parties. We comply with standard data privacy regulations.",
         },
         {
             "id": "faq_onboarding",
-            "keywords": ["get started", "start", "onboarding", "first step", "begin", "how do i"],
+            "keywords": ["get started", "getting started", "onboarding", "first step", "how do i start"],
+            "min_score": 2,
             "answer": "\U0001f44b Great to have you here! Tell me what you need \u2014 schedule a meeting, ask about our services, or send an email. I\u2019ll guide you! \U0001f680",
         },
         {
             "id": "faq_team",
-            "keywords": ["team", "staff", "employees", "who works", "people", "engineers"],
+            "keywords": ["your team", "your staff", "your engineers", "your employees", "who works"],
+            "min_score": 1,
             "answer": "\U0001f465 MasterProDev has a talented team of engineers, designers, and consultants. Want me to connect you with the right person? Just describe what you need!",
         },
     ]
@@ -232,8 +242,12 @@ class MCPAgent:
         # If no pending action was handled, process the query normally
         processed_query = await self.query_processor.process_query(message, session_id)
 
+        # ── Normalise for routing (LLM always receives the original text) ─────
+        norm_message = self._normalize_message(message)
+        logger.info(f"📝 Normalised: '{norm_message}'")
+
         # ── Tier 0a: FAQ keyword match — zero LLM tokens ─────────────────────
-        faq_answer = self._match_faq(message)
+        faq_answer = self._match_faq(norm_message, history_len=len(conversation_history or []))
         if faq_answer:
             logger.info("\U0001f4da Tier-0a FAQ match \u2014 no LLM call")
             return {
@@ -245,7 +259,7 @@ class MCPAgent:
             }
 
         # ── Tier 0: hardcoded template — zero LLM tokens ──────────────────────
-        det_response = self._get_deterministic_response(message)
+        det_response = self._get_deterministic_response(norm_message)
         if det_response:
             logger.info("⚡ Tier-0 deterministic response — no LLM call")
             return {
@@ -261,13 +275,50 @@ class MCPAgent:
         history_text = self.token_budget.trim_context(history_text)
         logger.info(f"📊 Context tokens budgeted: {self.token_budget.get_context_tokens()} tokens")
         
-        # ── Tier 1: pure conversation — LLM, capped at 150 tokens ────────────
-        if self._is_pure_conversation(message):
-            logger.info("💬 Tier-1 conversation — direct LLM response (150 tokens)")
+        # ── Tier 1a: elaboration follow-up — RAG search on previous topic ────
+        if self._is_elaboration(norm_message) and conversation_history:
+            logger.info("🔍 Elaboration detected — routing to RAG for richer answer")
+            last_answer = self._get_last_assistant_turn(conversation_history)
+            if last_answer:
+                try:
+                    forced_actions = [{"tool": "search_knowledge_base", "arguments": {"query": last_answer[:300]}}]
+                    tool_runs = await self._execute_plan(forced_actions, session_id)
+                    rag_output = str(tool_runs[0].get("output", "")) if tool_runs else ""
+                    has_content = (
+                        bool(rag_output)
+                        and "no results" not in rag_output.lower()
+                        and "error" not in rag_output.lower()
+                        and len(rag_output.strip()) > 30
+                    )
+                    if has_content:
+                        final_response = await self._synthesize_response(
+                            user_message=message,
+                            history_text=history_text,
+                            tool_runs=tool_runs,
+                            planner_hint="The user asked for elaboration on the previous answer. Expand meaningfully using the search results. Do not repeat what was already said.",
+                            had_errors=False,
+                        )
+                        execution_time = (datetime.utcnow() - start_time).total_seconds()
+                        return {
+                            "response": (final_response or "I couldn't craft a response.").strip(),
+                            "tool_calls": [],
+                            "execution_time": execution_time,
+                            "success": True,
+                            "llm_provider": self.llm_manager.get_active_provider_info(),
+                        }
+                    logger.info("⚠ RAG returned no useful content for elaboration — falling back to Tier-1")
+                except Exception as _elab_err:
+                    logger.warning(f"⚠ Elaboration RAG failed: {_elab_err} — falling back to Tier-1")
+
+        # ── Tier 1: pure conversation — LLM, capped at 400 tokens for elaborations
+        if self._is_pure_conversation(norm_message):
+            is_elab = self._is_elaboration(norm_message)
+            tier1_tokens = 400 if is_elab else 150
+            logger.info(f"💬 Tier-1 conversation — direct LLM response ({tier1_tokens} tokens)")
             direct_prompt = self._build_direct_prompt(message, history_text)
             final_response = await self.llm_manager.generate(
                 prompt=direct_prompt,
-                max_tokens=150,
+                max_tokens=tier1_tokens,
                 temperature=0.1
             )
             execution_time = (datetime.utcnow() - start_time).total_seconds()
@@ -280,13 +331,14 @@ class MCPAgent:
             }
         
         # Check if multi-turn processing should be used for complex requests
-        message_complexity = self._calculate_message_complexity(message)
+        message_complexity = self._calculate_message_complexity(norm_message)
         if multi_turn_processor and multi_turn_processor.should_use_multi_turn(message, message_complexity):
             logger.info("🔄 Complex request detected - using multi-turn processing...")
             try:
                 multi_turn_result = await multi_turn_processor.process_multi_turn(
                     message,
-                    llm_generate_fn=self.llm_manager.generate
+                    llm_generate_fn=self.llm_manager.generate,
+                    history_text=history_text
                 )
                 
                 if multi_turn_result['turns'] > 1:
@@ -305,7 +357,7 @@ class MCPAgent:
         logger.info("🎯 UNIFIED AGENT LOOP: Planning actions with all available tools...")
         try:
             # SINGLE FLOW: Plan actions using ALL tools (calendar, email, knowledge)
-            plan = await self._plan_actions(message, history_text)
+            plan = await self._plan_actions(message, history_text, norm_message=norm_message)
             logger.info(f"🧭 Planner decided on actions: {[a.get('tool') for a in plan.get('actions', [])]}")
 
             tool_runs: List[Dict[str, Any]] = []
@@ -431,20 +483,21 @@ class MCPAgent:
         else:
             return 'simple'
 
-    async def _plan_actions(self, message: str, history_text: str) -> Dict[str, Any]:
+    async def _plan_actions(self, message: str, history_text: str, norm_message: str = "") -> Dict[str, Any]:
         """
         Ask the LLM planner to decide which tools to use with ADAPTIVE SEMANTIC ROUTING.
         Routes based on message complexity and detected intent.
         Uses token budgeting to allocate resources optimally.
+        norm_message: pre-normalised version of message used only for keyword routing.
         """
         tool_catalog = self._format_tool_catalog()
         
         # Calculate message complexity for adaptive routing
-        message_complexity = self._calculate_message_complexity(message)
+        message_complexity = self._calculate_message_complexity(norm_message or message)
         logger.info(f"📈 Message complexity: {message_complexity}")
         
-        # Semantic routing: Detect intent from message keywords
-        msg_lower = message.lower()
+        # Semantic routing: use normalised message so typos / abbrevs still match
+        msg_lower = norm_message if norm_message else message.lower()
         
         # Knowledge/Document intent keywords
         knowledge_keywords = ['policy', 'procedure', 'document', 'documentation', 'handbook', 
@@ -812,7 +865,8 @@ Consider date, time, title, and any details mentioned."""
             tool_outputs=os.linesep.join(tool_log_snippets) if tool_log_snippets else "(no tools executed)",
             planner_hint=planner_hint or "(none)",
             user_message=user_message,
-            resolution_instruction=resolution_instruction
+            resolution_instruction=resolution_instruction,
+            history=history_text or "(no prior turns)"
         )
         
         if not synthesis_prompt:
@@ -1075,10 +1129,17 @@ Consider date, time, title, and any details mentioned."""
         if not conversation_history:
             return ""
         trimmed = conversation_history[-10:]  # Keep last 10 turns for better context
-        return "\n".join(
-            # Try new format first ("user"/"assistant"), fall back to old format ("role"/"content")
-            f"{msg.get('role') or 'user'}: {msg.get('content') or msg.get('assistant', '')}" for msg in trimmed
-        )
+        lines = []
+        for msg in trimmed:
+            # New format: {"user": "...", "assistant": "..."}
+            if "user" in msg and "assistant" in msg:
+                lines.append(f"User: {msg['user']}")
+                lines.append(f"Assistant: {msg['assistant']}")
+            # LangChain/OpenAI format: {"role": "user"/"assistant", "content": "..."}
+            elif "role" in msg and "content" in msg:
+                label = "User" if msg["role"] == "user" else "Assistant"
+                lines.append(f"{label}: {msg['content']}")
+        return "\n".join(lines)
 
     def _stringify_tool_output(self, payload: Any) -> str:
         """Convert tool output to a compact printable string."""
@@ -1237,31 +1298,193 @@ Consider date, time, title, and any details mentioned."""
                     return response
         return None
 
-    def _match_faq(self, message: str) -> Optional[str]:
-        """Tier-0a: fuzzy keyword FAQ match. Returns answer text if \u22652 keywords hit."""
+    def _match_faq(self, message: str, history_len: int = 0) -> Optional[str]:
+        """Tier-0a: fuzzy keyword FAQ match.
+
+        Uses per-FAQ min_score thresholds. No history penalty — min_score values
+        are calibrated to be selective enough on their own.
+        """
         msg = message.lower()
         best_score = 0
         best_answer: Optional[str] = None
         for faq in self._FAQS:
-            score = sum(1 for kw in faq["keywords"] if kw in msg)
-            if score >= 2 and score > best_score:
+            min_s = faq.get("min_score", 2)
+            score = sum(1 for kw in faq["keywords"] if self._fuzzy_keyword_match(kw, msg))
+            if score >= min_s and score > best_score:
                 best_score = score
                 best_answer = faq["answer"]
         return best_answer
 
     @staticmethod
+    def _normalize_message(text: str) -> str:
+        """
+        Normalise raw user input for reliable routing and matching.
+        Expands abbreviations, fixes common typos, collapses whitespace.
+        The ORIGINAL text is still sent to the LLM — this is only for
+        internal routing (FAQ, Tier-0, intent keywords, elaboration).
+        """
+        import re
+        t = text.strip().lower()
+
+        # ── 1. SMS / casual abbreviations ────────────────────────────────────
+        _abbrev = [
+            (r'\bu\b',    'you'),    (r'\bur\b',   'your'),
+            (r'\br\b',    'are'),    (r'\bpls\b',  'please'),
+            (r'\bplz\b',  'please'), (r'\bthx\b',  'thank you'),
+            (r'\bty\b',   'thank you'), (r'\babt\b', 'about'),
+            (r'\bcuz\b',  'because'), (r'\bbcz\b',  'because'),
+            (r'\bw/\b',   'with'),   (r'\bw/o\b',  'without'),
+            (r'\bidk\b',  "i don't know"), (r'\blmk\b', 'let me know'),
+            (r'\basap\b', 'as soon as possible'),
+            (r'\bfyi\b',  'for your information'),
+            (r'\bbtw\b',  'by the way'), (r'\bnvm\b',  'never mind'),
+            (r'\bomw\b',  'on my way'),  (r'\bsup\b',  "what's up"),
+            (r'\bngl\b',  'not going to lie'), (r'\btbh\b', 'to be honest'),
+            (r'\bwdym\b', 'what do you mean'), (r'\bimo\b',  'in my opinion'),
+            (r'\bhbu\b',  'how about you'),    (r'\bwbu\b',  'what about you'),
+            (r'\bgm\b',   'good morning'),     (r'\bgn\b',   'good night'),
+        ]
+        for pattern, replacement in _abbrev:
+            t = re.sub(pattern, replacement, t)
+
+        # ── 2. Domain name variants → canonical ──────────────────────────────
+        t = re.sub(r'\bmaster\s*pro\s*dev\b', 'masterprodev', t)
+        t = re.sub(r'\bmpd\b', 'masterprodev', t)
+
+        # ── 3. Common typos that break routing ───────────────────────────────
+        _typos = [
+            (r'\beloborate\w*', 'elaborate'), (r'\belabrate\w*',   'elaborate'),
+            (r'\belaborrate\w*','elaborate'),  (r'\bdescirbe\b',    'describe'),
+            (r'\bdescibe\b',    'describe'),   (r'\bsummarise\b',   'summarize'),
+            (r'\bsummaize\b',   'summarize'),  (r'\bscheudle\b',    'schedule'),
+            (r'\bscheule\b',    'schedule'),   (r'\bcalander\b',    'calendar'),
+            (r'\bcalender\b',   'calendar'),   (r'\bkalender\b',    'calendar'),
+            (r'\bappoinment\b', 'appointment'),(r'\bappointmnt\b',  'appointment'),
+            (r'\bmeetnig\b',    'meeting'),    (r'\bmeeing\b',      'meeting'),
+            (r'\bemial\b',      'email'),      (r'\bemayl\b',       'email'),
+            (r'\belaborate more\b', 'elaborate more'),
+        ]
+        for pattern, replacement in _typos:
+            t = re.sub(pattern, replacement, t)
+
+        # ── 4. Repeated punctuation (??? → ?) ────────────────────────────────
+        t = re.sub(r'([!?.])\1+', r'\1', t)
+
+        # ── 5. Collapse whitespace ────────────────────────────────────────────
+        t = re.sub(r'\s+', ' ', t).strip()
+        return t
+
+    @staticmethod
+    def _fuzzy_keyword_match(keyword: str, text: str, threshold: float = 0.82) -> bool:
+        """
+        Return True if `keyword` matches any same-length token window in `text`
+        with SequenceMatcher ratio >= threshold.  Falls back to plain substring
+        for single-word keywords (fast path).
+        """
+        from difflib import SequenceMatcher
+        if keyword in text:
+            return True
+        kw_words = keyword.split()
+        text_words = text.split()
+        n = len(kw_words)
+        if n == 1:
+            # Single word — try character-level fuzzy on every token
+            for token in text_words:
+                if SequenceMatcher(None, keyword, token).ratio() >= threshold:
+                    return True
+            return False
+        # Multi-word — sliding window
+        for i in range(max(1, len(text_words) - n + 1)):
+            window = " ".join(text_words[i:i + n])
+            if SequenceMatcher(None, keyword, window).ratio() >= threshold:
+                return True
+        return False
+
+    @staticmethod
     def _looks_like_name(text: str) -> bool:
-        """Returns True if text looks like a personal name (1\u20133 words, no question markers)."""
+        """Returns True if text looks like a personal name (1-3 words, no question markers)."""
         if not text or len(text) > 40:
             return False
         if "?" in text or "@" in text or "." in text:
             return False
         _q = {"what", "who", "where", "when", "how", "why", "is", "are", "can",
-              "do", "does", "my", "the", "i", "a", "an", "it", "yes", "no", "ok", "okay"}
+              "do", "does", "my", "the", "i", "a", "an", "it", "yes", "no", "ok", "okay",
+              "hello", "hi", "hey", "thanks", "thank", "sure", "great", "cool", "fine",
+              "nice", "good", "bye", "please", "sorry", "help", "tell", "there",
+              "more", "this", "that", "about", "us", "you", "your", "our", "we"}
         words = text.split()
         if not (1 <= len(words) <= 3):
             return False
         return words[0].lower() not in _q
+
+    @staticmethod
+    def _extract_name_from_message(text: str, require_explicit: bool = False) -> Optional[str]:
+        """Extract a first name from natural language.
+
+        Handles:
+          'My name is Srivardhan Muthyala' -> 'Srivardhan'
+          'I'm John'  -> 'John'
+          'Call me Emma' -> 'Emma'
+          'John' (direct short reply, only when require_explicit=False)
+
+        require_explicit=True: only match intro-phrase patterns (safe for open turns).
+        require_explicit=False: also accept direct 1-3 word name replies.
+        """
+        import re
+        # Hard-block list — these must NEVER be treated as names
+        _hard_block = {
+            "hello", "hi", "hey", "howdy", "greetings",
+            "yes", "no", "ok", "okay", "sure", "fine", "cool", "great", "nice",
+            "thanks", "thank", "bye", "goodbye", "please", "sorry", "help",
+            "more", "tell", "there", "this", "that", "what", "who",
+        }
+        t = text.strip().rstrip("!?., ")
+        tl = t.lower()
+
+        # Hard-block single-word greetings/fillers before anything else
+        if tl in _hard_block:
+            return None
+
+        m = re.search(
+            r"\b(?:my name is|i am|i'm|name's|my name's|call me|it is|it's)\s+([a-z]+)",
+            tl
+        )
+        if m:
+            idx = tl.find(m.group(1), m.start())
+            raw = t[idx:].split()[0]
+            _stop = {"the", "a", "an", "there", "here", "ok", "okay", "just", "not"} | _hard_block
+            if raw.lower() not in _stop and raw.isalpha():
+                return raw.capitalize()
+        if require_explicit:
+            return None
+        if MCPAgent._looks_like_name(t):
+            return t.split()[0].capitalize()
+        return None
+
+    @staticmethod
+    def _is_elaboration(message: str) -> bool:
+        """Return True if message is a follow-up elaboration request with no new topic."""
+        msg = message.lower().strip()
+        elaboration_patterns = [
+            'tell me more', 'can you elaborate', 'can u elaborate', 'elaborate more',
+            'elaborate on', 'can you expand', 'can u expand', 'expand on',
+            'more details', 'more detail', 'more info', 'tell me more about that',
+            'explain more', 'explain further', 'go on', 'continue', 'and then',
+            'what else', 'anything else', 'say more', 'keep going',
+        ]
+        return any(p in msg for p in elaboration_patterns)
+
+    @staticmethod
+    def _get_last_assistant_turn(conversation_history: List[Dict[str, Any]]) -> Optional[str]:
+        """Return the most recent assistant response text from history, or None."""
+        for turn in reversed(conversation_history):
+            # {user, assistant} format
+            if "assistant" in turn and turn["assistant"]:
+                return turn["assistant"]
+            # {role, content} format
+            if turn.get("role") == "assistant" and turn.get("content"):
+                return turn["content"]
+        return None
 
     def _is_pure_conversation(self, message: str) -> bool:
         """
@@ -1282,17 +1505,34 @@ Consider date, time, title, and any details mentioned."""
         
         # Generic conversation (no specific request)
         conversation_patterns = ['how are you', 'how are things', "what's up", 'whats up']
+
+        # Follow-up elaboration — refer back to previous answer, no new tool needed
+        elaboration_patterns = [
+            'tell me more', 'can you elaborate', 'can u elaborate', 'elaborate more',
+            'elaborate on', 'can you expand', 'can u expand', 'expand on',
+            'more details', 'more detail', 'more info', 'tell me more about that',
+            'explain more', 'explain further', 'go on', 'continue', 'and then',
+            'what else', 'anything else', 'say more', 'keep going',
+        ]
         
-        # Check if message starts with or matches any of these patterns
+        # Greetings / meta / conversation: match at word boundary (startswith prevents
+        # 'hello world company info' from short-circuiting a real query)
         for pattern in greetings + meta_questions + conversation_patterns:
-            if msg_lower.startswith(pattern):
+            if msg_lower.startswith(pattern) or msg_lower == pattern:
                 logger.info(f"✓ Detected pure conversation pattern: '{pattern}'")
                 return True
-        
+
+        # Elaboration patterns: match anywhere in the message so "can you PLEASE elaborate"
+        # and "could you give me more details" are caught even with filler words.
+        for pattern in elaboration_patterns:
+            if pattern in msg_lower:
+                logger.info(f"✓ Detected elaboration pattern: '{pattern}'")
+                return True
+
         # Single word greetings
         if msg_lower in greetings:
             return True
-        
+
         return False
 
 

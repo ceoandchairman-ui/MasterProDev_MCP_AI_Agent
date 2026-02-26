@@ -4,9 +4,15 @@ import logging
 import io
 import asyncio
 from typing import Optional, Tuple
-from openai import OpenAI
 import os
 import httpx
+
+try:
+    from openai import OpenAI
+    _OPENAI_AVAILABLE = True
+except ImportError:
+    OpenAI = None  # type: ignore
+    _OPENAI_AVAILABLE = False
 
 # Edge TTS (Free, High Quality)
 try:
