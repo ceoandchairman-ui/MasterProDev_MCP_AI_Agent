@@ -163,25 +163,29 @@ class RAGService:
     def _rerank_results(self, query: str, results: List[Dict[str, Any]], top_k: int = 3) -> List[Dict[str, Any]]:
         """
         Rerank results using semantic relevance scoring.
-        Prioritizes results with good summaries and hierarchy levels.
+        Prioritises section-level (L1) chunks, boosts results with summaries,
+        and applies query-keyword matching.
         """
         if not results:
             return []
         
-        # Score each result based on:
-        # 1. Content relevance (already filtered by vector search)
-        # 2. Summary quality (if available)
-        # 3. Hierarchy level (base chunks > grouped chunks)
         scored_results = []
         for result in results:
-            score = result.get('distance', 0.5)  # Use Weaviate distance
+            # Base score: invert distance so CLOSER = HIGHER score
+            distance = result.get('distance', 0.5)
+            score = max(0, 1.0 - distance)
             
-            # Boost base-level chunks (hierarchy level 1)
+            # Hierarchy boost:
+            #   L1 (section) = best for most queries  +0.3
+            #   L2 (sub-chunk) = good for detail       +0.15
+            #   L0 (doc summary) = broad context only  +0.0
             hierarchy_level = result.get('level', 1)
             if hierarchy_level == 1:
                 score += 0.3
+            elif hierarchy_level == 2:
+                score += 0.15
             
-            # Boost results with good summaries
+            # Boost results with meaningful summaries
             summary = result.get('summary', '')
             if summary and len(summary) > 50:
                 score += 0.2
@@ -189,7 +193,8 @@ class RAGService:
             # Query keyword matching boost
             query_terms = set(query.lower().split())
             content_lower = result.get('content', '').lower()
-            matches = sum(1 for term in query_terms if term in content_lower)
+            section_lower = result.get('section_title', '').lower()
+            matches = sum(1 for term in query_terms if term in content_lower or term in section_lower)
             score += min(0.3, matches * 0.05)
             
             scored_results.append({
@@ -238,6 +243,7 @@ class RAGService:
                     'source': item.properties.get('source', 'Unknown'),
                     'summary': item.properties.get('summary', ''),
                     'level': item.properties.get('level', 1),
+                    'section_title': item.properties.get('section_title', ''),
                     'entities': json.loads(item.properties.get('entities', '{}')),
                     'distance': item.metadata.distance
                 })
@@ -258,6 +264,8 @@ class RAGService:
                 logger.info(f"\n[RETRIEVED CHUNK {i}]")
                 logger.info(f"  Distance: {result['distance']}")
                 logger.info(f"  Source: {result['source']}")
+                logger.info(f"  Section: {result.get('section_title', 'N/A')}")
+                logger.info(f"  Level: {result['level']}")
                 logger.info(f"  Entities: {result['entities']}")
                 logger.info(f"  Content: {result['content'][:300]}...")
             
@@ -272,9 +280,10 @@ class RAGService:
                     "text": result['content'],
                     "source": result['source'],
                     "summary": result['summary'] or result['content'][:150],
+                    "section_title": result.get('section_title', ''),
                     "hierarchy_level": result['level'],
-                    "relevance_score": round(1 - ranked_item['score'], 2),
-                    "chunk_type": "standard"
+                    "relevance_score": round(ranked_item['score'], 3),
+                    "chunk_type": ["document_summary", "section", "sub_chunk"][min(result['level'], 2)]
                 }
                 formatted_results.append(formatted_result)
             

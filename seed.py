@@ -2,9 +2,9 @@ import os
 import logging
 import json
 from pathlib import Path
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Weaviate
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter, MarkdownHeaderTextSplitter
 from mcp_host.config import Settings
 import weaviate
 import re
@@ -70,24 +70,23 @@ def load_documents_from_directory(directory_path: str) -> List[Document]:
     for file_path in supported_files:
         try:
             if file_path.suffix == '.docx':
-                # Load DOCX using python-docx directly
-                doc = DocxDocument(str(file_path))
-                text = '\n'.join([para.text for para in doc.paragraphs if para.text.strip()])
+                # Load DOCX with heading-aware section detection
+                full_text, sections = _detect_sections_docx(file_path)
                 documents.append(Document(
-                    page_content=text,
-                    metadata={"source": str(file_path), "type": "docx"}
+                    page_content=full_text,
+                    metadata={"source": str(file_path), "type": "docx", "sections": sections}
                 ))
-                logging.info(f"✓ Loaded {file_path.name} ({len(text)} chars)")
+                logging.info(f"✓ Loaded {file_path.name} ({len(full_text)} chars, {len(sections)} sections)")
                 
             elif file_path.suffix in ['.txt', '.md']:
-                # Load text files directly
                 with open(file_path, 'r', encoding='utf-8') as f:
                     text = f.read()
+                sections = _detect_sections_text(text, file_path.suffix)
                 documents.append(Document(
                     page_content=text,
-                    metadata={"source": str(file_path), "type": file_path.suffix[1:]}
+                    metadata={"source": str(file_path), "type": file_path.suffix[1:], "sections": sections}
                 ))
-                logging.info(f"✓ Loaded {file_path.name} ({len(text)} chars)")
+                logging.info(f"✓ Loaded {file_path.name} ({len(text)} chars, {len(sections)} sections)")
                 
         except Exception as e:
             logging.error(f"✗ Failed to load {file_path.name}: {e}")
@@ -95,97 +94,432 @@ def load_documents_from_directory(directory_path: str) -> List[Document]:
     
     return documents
 
-def extract_structure_and_text(doc: Document) -> List[Dict[str, Any]]:
-    """
-    Extracts structured content from a document.
-    Since we're loading with format-specific loaders, content is already clean.
-    """
-    return [{"type": "paragraph", "content": doc.page_content, "style": "Normal"}]
 
-def deterministic_chunking(
+# ============================================================================
+# SECTION DETECTION — 2-stage LangChain pipeline
+#   Stage 1: MarkdownHeaderTextSplitter  → structure-aware section splitting
+#   Stage 2: RecursiveCharacterTextSplitter → sub-chunk large sections
+# ============================================================================
+
+# LangChain Stage 1 splitter — splits by heading hierarchy.
+# .docx and .txt are first converted to markdown format, then split here.
+_md_header_splitter = MarkdownHeaderTextSplitter(
+    headers_to_split_on=[
+        ("#", "Header 1"),
+        ("##", "Header 2"),
+        ("###", "Header 3"),
+        ("####", "Header 4"),
+    ],
+)
+
+
+def _is_heading_by_heuristic(para) -> bool:
+    """
+    Auto-detect whether a python-docx paragraph is a heading using
+    multiple heuristics — works even if the document has no formal
+    Heading styles applied.
+
+    Checks (any one is enough):
+      1. Word style name starts with "Heading" or equals "Title" / "Subtitle"
+      2. Entire paragraph is bold and ≤ 120 chars
+      3. Font size ≥ 14 pt and ≤ 120 chars
+      4. Text is ALL CAPS, has ≥ 2 words, and ≤ 120 chars
+      5. Text matches common numbered-heading patterns
+         ("1.", "1.1", "A.", "I.", "Chapter 3", "Section 2", etc.)
+    """
+    text = para.text.strip()
+    if not text or len(text) > 120:
+        return False
+
+    # 1. Formal Word style
+    style = (para.style.name or "") if para.style else ""
+    if style.startswith("Heading") or style in ("Title", "Subtitle"):
+        return True
+
+    word_count = len(text.split())
+    if word_count < 1 or word_count > 15:
+        return False            # Too long for a heading
+
+    # 2. All runs bold
+    runs = [r for r in para.runs if r.text.strip()]
+    if runs and all(r.bold for r in runs):
+        return True
+
+    # 3. Large font (≥ 14pt)
+    sizes = {r.font.size.pt for r in runs if r.font and r.font.size}
+    if sizes and min(sizes) >= 14:
+        return True
+
+    # 4. ALL CAPS with at least 2 words (rules out acronyms like "AI")
+    if text == text.upper() and word_count >= 2 and any(c.isalpha() for c in text):
+        return True
+
+    # 5. Numbered heading patterns
+    if re.match(
+        r'^(?:'
+        r'\d{1,3}(?:\.\d{1,3}){0,3}\.?\s+'
+        r'|[A-Z]\.\s+'
+        r'|[IVXLC]+\.\s+'
+        r'|(?:Chapter|Section|Part|Appendix|Annex|Module|Unit|Phase|Pillar|Pillar\s*\d)'
+        r')'
+        , text, re.IGNORECASE
+    ):
+        return True
+
+    return False
+
+
+def _infer_heading_level(para) -> int:
+    """Infer markdown heading level from a python-docx paragraph style."""
+    style = (para.style.name or "") if para.style else ""
+    if style == "Title":
+        return 1
+    if style == "Subtitle":
+        return 2
+    if style.startswith("Heading"):
+        try:
+            return min(int(style.replace("Heading", "").strip()), 4)
+        except (ValueError, IndexError):
+            return 1
+    # Heuristic-detected headings (bold, ALL CAPS, etc.) → level 1
+    return 1
+
+
+def _docx_to_markdown(file_path) -> Tuple[str, str]:
+    """
+    Convert a .docx to markdown-formatted text so LangChain's
+    MarkdownHeaderTextSplitter can do structure-aware splitting.
+
+    Returns (markdown_text, plain_full_text).
+    """
+    doc = DocxDocument(str(file_path))
+    md_lines: List[str] = []
+    plain_lines: List[str] = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+        plain_lines.append(text)
+
+        if _is_heading_by_heuristic(para):
+            level = _infer_heading_level(para)
+            md_lines.append(f"\n{'#' * level} {text}\n")
+        else:
+            md_lines.append(text)
+
+    return '\n'.join(md_lines), '\n'.join(plain_lines)
+
+
+def _detect_sections_docx(file_path) -> Tuple[str, List[Dict[str, str]]]:
+    """
+    Parse .docx → convert to markdown → split with LangChain's
+    MarkdownHeaderTextSplitter for automatic structure-aware sections.
+
+    Two LangChain splitters work in a pipeline:
+      Stage 1: MarkdownHeaderTextSplitter  → sections by heading
+      Stage 2: RecursiveCharacterTextSplitter → sub-chunks (in _build_sub_chunks)
+    """
+    md_text, full_text = _docx_to_markdown(file_path)
+    section_docs = _md_header_splitter.split_text(md_text)
+
+    sections: List[Dict[str, str]] = []
+    for doc in section_docs:
+        # Pick the most specific (deepest) heading level
+        heading = (doc.metadata.get("Header 4") or doc.metadata.get("Header 3")
+                   or doc.metadata.get("Header 2") or doc.metadata.get("Header 1")
+                   or Path(file_path).stem)
+        body = doc.page_content.strip()
+        if body:
+            sections.append({"heading": heading, "text": body})
+
+    # Fallback: entire document as a single section
+    if not sections:
+        sections.append({"heading": Path(file_path).stem, "text": full_text})
+
+    logging.info(f"  → Detected {len(sections)} sections in {Path(file_path).name}: "
+                 f"{[s['heading'][:50] for s in sections]}")
+    return full_text, sections
+
+
+def _is_text_heading(line: str) -> bool:
+    """
+    Auto-detect heading lines in plain text / markdown.
+    Matches: # headings, ALL CAPS lines, numbered headings, underline patterns.
+    """
+    stripped = line.strip()
+    if not stripped or len(stripped) > 120:
+        return False
+
+    # Markdown # heading
+    if re.match(r'^#{1,4}\s+', stripped):
+        return True
+
+    word_count = len(stripped.split())
+    if word_count < 1 or word_count > 15:
+        return False
+
+    # ALL CAPS (at least 2 words)
+    if stripped == stripped.upper() and word_count >= 2 and any(c.isalpha() for c in stripped):
+        return True
+
+    # Numbered heading
+    if re.match(
+        r'^(?:'
+        r'\d{1,3}(?:\.\d{1,3}){0,3}\.?\s+'
+        r'|[A-Z]\.\s+'
+        r'|[IVXLC]+\.\s+'
+        r'|(?:Chapter|Section|Part|Appendix|Annex|Module|Unit|Phase)'
+        r')'
+        , stripped, re.IGNORECASE
+    ):
+        return True
+
+    return False
+
+
+def _detect_sections_text(text: str, file_suffix: str = ".md") -> List[Dict[str, str]]:
+    """
+    Split .md / .txt into sections using LangChain's MarkdownHeaderTextSplitter.
+
+    - .md files  → fed directly to the splitter (already has # headings).
+    - .txt files → auto-detected headings converted to # format first,
+                    then split by LangChain.
+    """
+    if file_suffix == ".md":
+        md_text = text
+    else:
+        # Convert plain-text headings to markdown # format
+        lines = text.split('\n')
+        md_lines: List[str] = []
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].strip()
+
+            # Underline-style heading: "Title\n=====" → "# Title"
+            if stripped and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line and len(next_line) >= 3:
+                    if set(next_line) <= {'='}:
+                        md_lines.append(f"\n# {stripped}\n")
+                        i += 2
+                        continue
+                    elif set(next_line) <= {'-'}:
+                        md_lines.append(f"\n## {stripped}\n")
+                        i += 2
+                        continue
+
+            # Other heading patterns (ALL CAPS, numbered, etc.)
+            if stripped and _is_text_heading(stripped) and not stripped.startswith('#'):
+                md_lines.append(f"\n# {stripped}\n")
+            else:
+                md_lines.append(lines[i])
+            i += 1
+        md_text = '\n'.join(md_lines)
+
+    section_docs = _md_header_splitter.split_text(md_text)
+
+    sections: List[Dict[str, str]] = []
+    for doc in section_docs:
+        heading = (doc.metadata.get("Header 4") or doc.metadata.get("Header 3")
+                   or doc.metadata.get("Header 2") or doc.metadata.get("Header 1")
+                   or "Content")
+        body = doc.page_content.strip()
+        if body:
+            sections.append({"heading": heading, "text": body})
+
+    if not sections:
+        sections.append({"heading": "Content", "text": text})
+
+    return sections
+
+
+# ============================================================================
+# EXTRACTIVE SUMMARIES
+# ============================================================================
+
+def generate_extractive_summary(
+    text: str, max_sentences: int = 3, max_tokens: int = 150
+) -> str:
+    """Create an extractive summary from the first N sentences, capped at max_tokens."""
+    sentences = simple_sent_tokenize(text)
+    parts: List[str] = []
+    token_count = 0
+    for sent in sentences[:max_sentences]:
+        sent_tokens = len(sent.split())
+        if token_count + sent_tokens > max_tokens and parts:
+            break
+        parts.append(sent)
+        token_count += sent_tokens
+    return ' '.join(parts) if parts else text[:400]
+
+
+# ============================================================================
+# SEMANTIC HIERARCHICAL CHUNKING
+# ============================================================================
+
+# LangChain Stage 2 splitter — recursive sub-chunk splitting.
+# Breaks large sections into overlapping sub-chunks for embedding.
+_langchain_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1024,          # ~256 tokens × 4 chars/token
+    chunk_overlap=256,        # ~64 tokens overlap
+    separators=["\n\n", "\n", ". ", "? ", "! ", "; ", ", ", " ", ""],
+    length_function=len,
+    is_separator_regex=False,
+)
+
+
+def _build_sub_chunks(
+    text: str,
+    chunk_size: int = 1024,
+    chunk_overlap: int = 256,
+) -> List[str]:
+    """
+    Split a long section into sub-chunks using LangChain's
+    RecursiveCharacterTextSplitter — respects sentence and paragraph
+    boundaries automatically.
+    """
+    # Use the module-level splitter if defaults match, else create one
+    if chunk_size == 1024 and chunk_overlap == 256:
+        splitter = _langchain_splitter
+    else:
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            separators=["\n\n", "\n", ". ", "? ", "! ", "; ", ", ", " ", ""],
+            length_function=len,
+            is_separator_regex=False,
+        )
+    return splitter.split_text(text)
+
+
+def semantic_hierarchical_chunking(
     documents: List[Document],
-    tokens_per_chunk: int = 256,
-    token_overlap: int = 32,
+    section_max_chars: int = 2048,
+    sub_chunk_size: int = 1024,
+    sub_chunk_overlap: int = 256,
 ) -> List[Document]:
     """
-    Chunks documents into deterministic, overlapping sentence-based chunks.
+    Semantic hierarchical chunking with three levels:
 
-    Args:
-        documents: List of LangChain documents to process.
-        tokens_per_chunk: The target number of tokens for each chunk.
-        token_overlap: The number of tokens to overlap between consecutive chunks.
+    Level 0 — One document-summary chunk per file (extractive summary).
+    Level 1 — One chunk per auto-detected section (kept whole if ≤ section_max_chars).
+    Level 2 — Sub-chunks via LangChain RecursiveCharacterTextSplitter when section is large.
 
-    Returns:
-        A list of new Document objects representing the chunks.
+    Every chunk carries an extractive summary and parent_id so the retriever
+    can walk the hierarchy (child → section → document).
+
+    Works with ANY document — headings are auto-detected from formatting,
+    bold, font size, ALL CAPS, or numbered patterns.
     """
-    logging.info(f"Starting deterministic chunking: {tokens_per_chunk} tokens/chunk, {token_overlap} token overlap.")
-    all_chunks = []
-    
+    logging.info(
+        f"Starting semantic hierarchical chunking: "
+        f"section_max={section_max_chars} chars, sub_chunk={sub_chunk_size} chars, overlap={sub_chunk_overlap} chars"
+    )
+    all_chunks: List[Document] = []
+
     for doc in documents:
-        doc_chunks = []
-        structured_content = extract_structure_and_text(doc)
-        
-        full_text = " ".join(block['content'] for block in structured_content)
-        sentences = simple_sent_tokenize(full_text)
-        
-        if not sentences:
-            continue
+        full_text = doc.page_content
+        source = doc.metadata.get("source", "unknown")
+        sections = doc.metadata.get("sections", [])
 
-        # Group sentences into chunks
-        current_chunk_sentences = []
-        current_token_count = 0
-        
-        sentence_index = 0
-        while sentence_index < len(sentences):
-            sentence = sentences[sentence_index]
-            sentence_token_count = len(sentence.split())
+        # ── Level 0: Document summary ───────────────────────────────────────
+        doc_summary = generate_extractive_summary(full_text, max_sentences=5, max_tokens=200)
+        doc_chunk_id = str(uuid.uuid4())
+        all_chunks.append(Document(
+            page_content=doc_summary,
+            metadata={
+                "chunk_id": doc_chunk_id,
+                "source": source,
+                "level": 0,
+                "section_title": "Document Summary",
+                "summary": doc_summary,
+                "parent_id": "",
+                "chunk_index": 0,
+                "total_chunks": 1,
+                "chunk_size": len(doc_summary),
+                "token_count": len(doc_summary.split()),
+            }
+        ))
 
-            if current_token_count + sentence_token_count <= tokens_per_chunk:
-                current_chunk_sentences.append(sentence)
-                current_token_count += sentence_token_count
-                sentence_index += 1
+        # Fall back to whole-document-as-one-section if no headings detected
+        if not sections:
+            sections = [{"heading": "Content", "text": full_text}]
+
+        # ── Level 1 + Level 2 ──────────────────────────────────────────────
+        for sec_idx, section in enumerate(sections):
+            heading = section["heading"]
+            sec_text = section["text"].strip()
+            if not sec_text:
+                continue
+
+            sec_tokens = len(sec_text.split())
+            sec_chars  = len(sec_text)
+            sec_summary = generate_extractive_summary(sec_text, max_sentences=3, max_tokens=120)
+            section_chunk_id = str(uuid.uuid4())
+
+            if sec_chars <= section_max_chars:
+                # Section fits in one chunk → Level 1 (full text)
+                all_chunks.append(Document(
+                    page_content=sec_text,
+                    metadata={
+                        "chunk_id": section_chunk_id,
+                        "source": source,
+                        "level": 1,
+                        "section_title": heading,
+                        "summary": sec_summary,
+                        "parent_id": doc_chunk_id,
+                        "chunk_index": sec_idx,
+                        "total_chunks": 1,
+                        "chunk_size": len(sec_text),
+                        "token_count": sec_tokens,
+                    }
+                ))
             else:
-                # Create a chunk
-                chunk_text = " ".join(current_chunk_sentences)
-                doc_chunks.append(chunk_text)
-                
-                # Start next chunk with overlap
-                overlap_sentence_count = 0
-                overlap_token_count = 0
-                # Find a good starting point for the next chunk to respect the overlap
-                start_next_chunk_from_index = sentence_index - 1
-                while start_next_chunk_from_index > 0:
-                    # Go backwards from the current sentence
-                    prev_sentence = sentences[start_next_chunk_from_index]
-                    prev_sentence_tokens = len(prev_sentence.split())
-                    if overlap_token_count + prev_sentence_tokens > token_overlap:
-                        break
-                    overlap_token_count += prev_sentence_tokens
-                    start_next_chunk_from_index -= 1
-                
-                sentence_index = start_next_chunk_from_index + 1
-                current_chunk_sentences = []
-                current_token_count = 0
+                # Section too large → Level 1 summary-only + Level 2 sub-chunks
+                all_chunks.append(Document(
+                    page_content=sec_summary,
+                    metadata={
+                        "chunk_id": section_chunk_id,
+                        "source": source,
+                        "level": 1,
+                        "section_title": heading,
+                        "summary": sec_summary,
+                        "parent_id": doc_chunk_id,
+                        "chunk_index": sec_idx,
+                        "total_chunks": 0,
+                        "chunk_size": len(sec_summary),
+                        "token_count": len(sec_summary.split()),
+                    }
+                ))
 
-        if current_chunk_sentences:
-            chunk_text = " ".join(current_chunk_sentences)
-            doc_chunks.append(chunk_text)
+                # Sub-chunk the section into Level 2 pieces
+                sub_chunks = _build_sub_chunks(sec_text, sub_chunk_size, sub_chunk_overlap)
 
-        # Create Document objects for each chunk of the current document
-        total_chunks = len(doc_chunks)
-        for i, chunk_text in enumerate(doc_chunks):
-            chunk_metadata = doc.metadata.copy()
-            chunk_metadata.update({
-                "chunk_id": str(uuid.uuid4()),
-                "chunk_index": i,
-                "total_chunks": total_chunks,
-                "chunk_size": len(chunk_text),
-                "token_count": len(chunk_text.split()),
-            })
-            all_chunks.append(Document(page_content=chunk_text, metadata=chunk_metadata))
+                for sub_idx, sub_text in enumerate(sub_chunks):
+                    sub_summary = generate_extractive_summary(sub_text, max_sentences=2, max_tokens=80)
+                    all_chunks.append(Document(
+                        page_content=sub_text,
+                        metadata={
+                            "chunk_id": str(uuid.uuid4()),
+                            "source": source,
+                            "level": 2,
+                            "section_title": heading,
+                            "summary": sub_summary,
+                            "parent_id": section_chunk_id,
+                            "chunk_index": sub_idx,
+                            "total_chunks": len(sub_chunks),
+                            "chunk_size": len(sub_text),
+                            "token_count": len(sub_text.split()),
+                        }
+                    ))
 
-    logging.info(f"✓ Created {len(all_chunks)} deterministic chunks.")
+    l0 = sum(1 for c in all_chunks if c.metadata['level'] == 0)
+    l1 = sum(1 for c in all_chunks if c.metadata['level'] == 1)
+    l2 = sum(1 for c in all_chunks if c.metadata['level'] == 2)
+    logging.info(f"✓ Created {len(all_chunks)} hierarchical chunks (L0={l0}, L1={l1}, L2={l2})")
     return all_chunks
+
 
 def seed_documents_from_local():
     """
@@ -309,8 +643,8 @@ def seed_documents_from_local():
             model_name=settings.EMBEDDING_MODEL
         )
         
-        # Apply deterministic chunking
-        chunks = deterministic_chunking(documents)
+        # Apply semantic hierarchical chunking
+        chunks = semantic_hierarchical_chunking(documents)
         
         # Enrich chunks with extracted entities
         logging.info("Enriching chunks with named entities...")
@@ -334,8 +668,11 @@ def seed_documents_from_local():
         logging.info("="*80)
         for i, chunk in enumerate(enriched_chunks):
             logging.info(f"\n[CHUNK {i}]")
-            logging.info(f"  Size: {len(chunk.page_content)} chars")
+            logging.info(f"  Level: {chunk.metadata.get('level', '?')}")
+            logging.info(f"  Section: {chunk.metadata.get('section_title', 'N/A')}")
+            logging.info(f"  Size: {len(chunk.page_content)} chars ({chunk.metadata.get('token_count', '?')} tokens)")
             logging.info(f"  Source: {chunk.metadata.get('source', 'unknown')}")
+            logging.info(f"  Summary: {chunk.metadata.get('summary', '')[:120]}")
             logging.info(f"  Entities: {chunk.metadata.get('entities', [])}")
             logging.info(f"  Content: {chunk.page_content[:250]}...")
         logging.info("="*80 + "\n")
@@ -383,7 +720,9 @@ def seed_documents_from_local():
                         "source": chunk.metadata.get("source", ""),
                         "entities": json.dumps(chunk.metadata.get("entities", {})),
                         "summary": chunk.metadata.get("summary", ""),
-                        "level": chunk.metadata.get("level", 1)
+                        "level": chunk.metadata.get("level", 1),
+                        "section_title": chunk.metadata.get("section_title", ""),
+                        "parent_id": chunk.metadata.get("parent_id", ""),
                     },
                     vector=vector
                 )
