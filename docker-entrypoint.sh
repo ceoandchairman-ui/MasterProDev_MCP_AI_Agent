@@ -26,7 +26,10 @@ if [ -n "$WEAVIATE_HOST" ]; then
   # For now, we skip blocking seeding to ensure fast startup. 
   # Seeding should be a separate job or triggered manually if Weaviate isn't ready instantly.
   if [ -d "/app/Company_Documents" ] && [ "$(ls -A /app/Company_Documents)" ]; then
-    echo "📚 Seeder skipped to prevent startup blocking (run manually if needed)..."
+    echo "📚 Running seeder in background (non-blocking)..."
+    python /app/seed.py 2>&1 | tee -a /app/logs/seeder.log &
+    SEEDER_PID=$!
+    echo "   Seeder PID: $SEEDER_PID"
   else
     echo "⚠️  No Company_Documents found - skipping seeding"
   fi

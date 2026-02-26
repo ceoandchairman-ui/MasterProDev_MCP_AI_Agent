@@ -94,11 +94,10 @@ class QueryProcessor:
         # Step 2: Lowercase for consistent search
         processed_query = processed_query.lower()
         
-        # Step 3: ONLY apply spelling correction to short, obvious typos
-        # Skip if query looks reasonable (contains mostly valid words)
+        # Step 3: Apply spelling correction
+        # lookup_compound handles multi-word input well, safe for longer queries
         words = processed_query.split()
-        if len(words) <= 3 and any(len(word) > 2 for word in words):
-            # Only correct if it's a short query with potentially misspelled words
+        if any(len(word) > 2 for word in words):
             corrected = self.spelling_corrector.correct(processed_query)
             if corrected != processed_query:
                 logging.info(f"Spelling correction: '{processed_query}' -> '{corrected}'")
