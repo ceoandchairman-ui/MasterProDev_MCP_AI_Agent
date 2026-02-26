@@ -279,6 +279,17 @@ class MCPAgent:
         if self._is_elaboration(norm_message) and conversation_history:
             logger.info("🔍 Elaboration detected — routing to RAG for richer answer")
             last_answer = self._get_last_assistant_turn(conversation_history)
+            # Guard: if last answer is a greeting/name-ack there's no real topic to elaborate on
+            if last_answer and self._is_trivial_turn(last_answer):
+                logger.info("⚠ Last turn is trivial (greeting/name-ack) — returning clarifying prompt")
+                clarify = "Sure! What would you like to know more about? I can tell you about our **services**, **team**, **location**, or how to **get started**. 😊"
+                return {
+                    "response": clarify,
+                    "tool_calls": [],
+                    "execution_time": (datetime.utcnow() - start_time).total_seconds(),
+                    "success": True,
+                    "llm_provider": "deterministic",
+                }
             if last_answer:
                 try:
                     forced_actions = [{"tool": "search_knowledge_base", "arguments": {"query": last_answer[:300]}}]
@@ -1460,6 +1471,21 @@ Consider date, time, title, and any details mentioned."""
         if MCPAgent._looks_like_name(t):
             return t.split()[0].capitalize()
         return None
+
+    @staticmethod
+    def _is_trivial_turn(text: str) -> bool:
+        """Return True if the assistant turn has no real topic (greeting, name-ack, etc.)."""
+        t = text.lower().strip()
+        trivial_phrases = [
+            "nice to meet you", "i'm here to help", "what can i assist",
+            "how can i help", "what can i help", "i'm masterprodev",
+            "hi!", "hello!", "good morning", "good afternoon", "good evening",
+            "you're welcome", "is there anything else",
+        ]
+        # Also treat very short turns as trivial (< 80 chars, no sentence of substance)
+        if len(t) < 80:
+            return True
+        return any(p in t for p in trivial_phrases)
 
     @staticmethod
     def _is_elaboration(message: str) -> bool:
