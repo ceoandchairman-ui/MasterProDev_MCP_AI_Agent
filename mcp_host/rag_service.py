@@ -80,6 +80,16 @@ class RAGService:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._sync_connect)
 
+    @staticmethod
+    def _safe_parse_entities(raw: str) -> dict:
+        """Parse entities JSON safely — returns {} on any failure."""
+        if not raw:
+            return {}
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
     def _rerank_results(self, query: str, results: List[Dict[str, Any]], top_k: int = 3) -> List[Dict[str, Any]]:
         """
         Rerank results using semantic relevance scoring.
@@ -105,17 +115,25 @@ class RAGService:
             elif hierarchy_level == 2:
                 score += 0.15
             
-            # Boost results with meaningful summaries
+            # Boost results with meaningful summaries (L0 gets lower boost)
             summary = result.get('summary', '')
             if summary and len(summary) > 50:
-                score += 0.2
+                score += 0.1 if hierarchy_level == 0 else 0.2
             
-            # Query keyword matching boost
-            query_terms = set(query.lower().split())
+            # Query keyword matching boost (filter stopwords)
+            _STOPWORDS = {'the','a','an','is','are','was','were','be','been','being',
+                          'do','does','did','will','would','could','should','can',
+                          'what','which','who','whom','how','where','when','why',
+                          'i','me','my','you','your','we','our','it','its','they',
+                          'to','of','in','for','on','at','by','with','from','about',
+                          'and','or','but','not','no','so','if','then','than','that',
+                          'this','these','those','has','have','had','may','might',
+                          'please','tell','more','also','just','very','really'}
+            query_terms = set(query.lower().split()) - _STOPWORDS
             content_lower = result.get('content', '').lower()
             section_lower = result.get('section_title', '').lower()
             matches = sum(1 for term in query_terms if term in content_lower or term in section_lower)
-            score += min(0.3, matches * 0.05)
+            score += min(0.3, matches * 0.1)
             
             scored_results.append({
                 'result': result,
@@ -192,7 +210,7 @@ class RAGService:
                     'section_title': item.properties.get('section_title', ''),
                     'parent_id': item.properties.get('parent_id', ''),
                     'full_text': item.properties.get('full_text', ''),
-                    'entities': json.loads(item.properties.get('entities', '{}')),
+                    'entities': self._safe_parse_entities(item.properties.get('entities', '{}')),
                     'distance': item.metadata.distance
                 })
             

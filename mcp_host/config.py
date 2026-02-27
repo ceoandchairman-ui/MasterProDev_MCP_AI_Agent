@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     WEAVIATE_GRPC_PORT: int = 50051
 
     # Knowledge Base
-    KNOWLEDGE_BASE_PATH: str = "knowledge_base"
+    KNOWLEDGE_BASE_PATH: str = "./Company_Documents"
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
 
     model_config = {

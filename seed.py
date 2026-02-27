@@ -632,13 +632,32 @@ def seed_documents_from_local():
         logging.info(f"  Avg chunk size: {avg_size} chars")
         logging.info("="*60 + "\n")
 
-        # 3. Seed Weaviate
+        # 3. Seed Weaviate (with readiness wait)
         logging.info(f"Connecting to Weaviate at {settings.WEAVIATE_HOST}:{settings.WEAVIATE_PORT}...")
-        client = weaviate.connect_to_local(
-            host=settings.WEAVIATE_HOST,
-            port=settings.WEAVIATE_PORT,
-            grpc_port=settings.WEAVIATE_GRPC_PORT,
-        )
+        import time as _time
+        MAX_WAIT = 120   # seconds
+        POLL_INTERVAL = 5
+        client = None
+        for elapsed in range(0, MAX_WAIT, POLL_INTERVAL):
+            try:
+                client = weaviate.connect_to_local(
+                    host=settings.WEAVIATE_HOST,
+                    port=settings.WEAVIATE_PORT,
+                    grpc_port=settings.WEAVIATE_GRPC_PORT,
+                )
+                if client.is_live():
+                    logging.info(f"✓ Weaviate is live (waited {elapsed}s)")
+                    break
+            except Exception as e:
+                logging.warning(f"Weaviate not ready ({elapsed}s elapsed): {e}")
+            _time.sleep(POLL_INTERVAL)
+        else:
+            logging.error(f"✗ Weaviate not available after {MAX_WAIT}s — seeding aborted")
+            return
+
+        if client is None:
+            logging.error("✗ Could not connect to Weaviate — seeding aborted")
+            return
         
         # Clear the collection to ensure fresh data
         collection_name = "Chunk"

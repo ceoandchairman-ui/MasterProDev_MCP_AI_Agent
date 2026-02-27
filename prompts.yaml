@@ -142,10 +142,10 @@ prompts:
       EXAMPLES:
       
       Example 1 - Knowledge Query:
-      {{"actions": [{{"tool": "search_knowledge_base", "arguments": {{"query": "company values and mission"}}}}, "final_response": null}}
+      {{"actions": [{{"tool": "search_knowledge_base", "arguments": {{"query": "company values and mission"}}}}], "final_response": null}}
       
       Example 2 - Create Calendar Event:
-      {{"actions": [{{"tool": "create_calendar_event", "arguments": {{"title": "Discovery Call", "start_time": "2026-01-26T10:00:00Z", "end_time": "2026-01-26T11:00:00Z"}}}}, "final_response": null}}
+      {{"actions": [{{"tool": "create_calendar_event", "arguments": {{"title": "Discovery Call", "start_time": "2026-01-26T10:00:00Z", "end_time": "2026-01-26T11:00:00Z"}}}}], "final_response": null}}
       
       Example 3 - Delete Recent Appointment:
       {{"actions": [{{"tool": "get_calendar_events", "arguments": {{"days": 30}}}}, {{"tool": "delete_calendar_event", "arguments": {{"event_id": "event_123"}}}}], "final_response": "I've deleted the appointment."}}
