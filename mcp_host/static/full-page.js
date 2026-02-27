@@ -710,9 +710,9 @@ const ACCEPTED_EXTS = new Set([
 // Attach a file (shared by click-upload, drag & drop, and clipboard paste)
 function attachFile(file) {
     if (!file) return;
-    const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
-    if (ext && !ACCEPTED_EXTS.has(ext)) {
-        alert(`Unsupported file type ".${ext}".\nSupported: PDF, Word, PowerPoint, Excel, CSV, images, audio, video, and most code files.`);
+    const ext1 = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+    if (ext1 && !ACCEPTED_EXTS.has(ext1)) {
+        alert(`Unsupported file type ".${ext1}".\nSupported: PDF, Word, PowerPoint, Excel, CSV, images, audio, video, and most code files.`);
         return;
     }
     if (file.size > 25 * 1024 * 1024) { alert('File too large. Maximum size is 25MB.'); return; }
