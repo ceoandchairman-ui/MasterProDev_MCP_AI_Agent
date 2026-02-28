@@ -1,5 +1,7 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import Optional
+import json
 
 
 class Settings(BaseSettings):
@@ -66,6 +68,17 @@ class Settings(BaseSettings):
     # Knowledge Base
     KNOWLEDGE_BASE_PATH: str = "./Company_Documents"
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
+
+    # Parse ALLOWED_ORIGINS from JSON string in .env
+    @field_validator('ALLOWED_ORIGINS', mode='before')
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return [v]  # Fallback: treat as single origin
+        return v
 
     model_config = {
         "env_file": ".env",
