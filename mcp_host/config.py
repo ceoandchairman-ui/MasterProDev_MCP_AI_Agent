@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     HOST: str = "0.0.0.0"
     PORT: int = 8000
-    ALLOWED_ORIGINS: list = ["*"]
+    ALLOWED_ORIGINS: list = ["http://localhost:8000", "http://localhost:3000"]  # Override via .env
     SECRET_KEY: str = "your-secret-key-change-in-production"
     PUBLIC_DOMAIN: str = "http://localhost:8000"  # Set to your Railway domain in production
 

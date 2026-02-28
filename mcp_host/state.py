@@ -127,10 +127,18 @@ class StateManager:
             logger.info("✓ State manager fully initialized")
 
         except Exception as e:
-            logger.warning(f"⚠ State manager initialization warning: {e}")
-            logger.warning("⚠ Running in degraded mode (no persistence)")
+            logger.error(f"✗ State manager initialization failed: {e}")
+            logger.error("✗ Entering degraded mode (no persistence). Please check Redis/PostgreSQL connectivity!")
             self.degraded_mode = True
             # Continue without Redis - using in-memory storage
+
+    def health_status(self):
+        """Return a dict with health status of Redis, PostgreSQL, and degraded mode."""
+        return {
+            "redis_connected": self.redis is not None and not self.degraded_mode,
+            "postgres_connected": self.db_pool is not None and not self.degraded_mode,
+            "degraded_mode": self.degraded_mode
+        }
 
     async def shutdown(self):
         """Cleanup connections"""

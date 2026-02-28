@@ -1,3 +1,8 @@
+# Health check endpoint for backend state
+@app.get("/health", tags=["System"], summary="Health check for Redis/PostgreSQL/degraded mode")
+async def health_check():
+    """Returns health status of Redis, PostgreSQL, and degraded mode."""
+    return state_manager.health_status()
 """FastAPI server for MCP Host"""
 
 from fastapi import FastAPI, HTTPException, Depends, status, Header, Request, File, UploadFile, Form
@@ -108,6 +113,15 @@ app = FastAPI(
     docs_url=None,  # Disabled - using custom /docs with auth
     redoc_url=None,  # Disabled
     openapi_url=None  # Disabled - using custom /openapi.json with auth
+)
+
+# Configure CORS using allowed origins from settings
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Initialize rate limiter for login endpoint
