@@ -5,11 +5,18 @@ from typing import Optional, Type, Any, Dict
 from pydantic import BaseModel, Field
 from langchain.tools import BaseTool
 import httpx
+import uuid
 
 from .config import settings
 from .rag_service import rag_service
+from .resilience import api_retry_strategy, get_breaker
 
 logger = logging.getLogger(__name__)
+
+# Create circuit breakers for external services
+calendar_breaker = get_breaker("calendar_server")
+gmail_breaker = get_breaker("gmail_server")
+rag_breaker = get_breaker("rag_service")
 
 
 # ============================================================================
@@ -26,6 +33,8 @@ class CalendarGetEventsInput(BaseModel):
         default=365,
         description="Number of days in the past to fetch (for finding old/past appointments). Default 365 = 1 year back"
     )
+    session_id: Optional[str] = Field(None, description="Internal session ID.")
+    trace_id: Optional[str] = Field(None, description="Internal trace ID.")
 
 
 class CalendarGetEventsTool(BaseTool):
@@ -38,25 +47,30 @@ class CalendarGetEventsTool(BaseTool):
     Examples: 'What's on my calendar?', 'Show me my appointments from the last 3 months', 'Did I have a meeting last week?'"""
     args_schema: Type[BaseModel] = CalendarGetEventsInput
     
-    def _run(self, days: int = 7, days_back: int = 365) -> str:
+    def _run(self, days: int = 7, days_back: int = 365, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> str:
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
-    async def _arun(self, days: int = 7, days_back: int = 365) -> Dict[str, Any]:
+    @api_retry_strategy
+    async def _arun(self, days: int = 7, days_back: int = 365, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Get calendar events asynchronously (both future and past)"""
+        trace_id = trace_id or str(uuid.uuid4())
+        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
+                response = await calendar_breaker.execute_async(
+                    client.post,
                     f"{settings.CALENDAR_SERVER_URL}/call",
                     params={"tool_name": "get_events"},
-                    json={"days": days, "days_back": days_back}
+                    json={"days": days, "days_back": days_back},
+                    headers=headers
                 )
                 response.raise_for_status()
                 result = response.json()
-                logger.info(f"✓ Retrieved {result.get('count', 0)} calendar events")
+                logger.info(f"[{trace_id}] ✓ Retrieved {result.get('count', 0)} calendar events")
                 return result
         except Exception as e:
-            logger.error(f"✗ Calendar tool error: {e}")
+            logger.error(f"[{trace_id}] ✗ Calendar tool error: {e}")
             return {"status": "error", "error": str(e)}
 
 
@@ -66,6 +80,8 @@ class CalendarCreateEventInput(BaseModel):
     start_time: str = Field(description="Start time in ISO8601 format (e.g., 2025-12-15T14:00:00)")
     end_time: str = Field(description="End time in ISO8601 format (e.g., 2025-12-15T15:00:00)")
     description: Optional[str] = Field(default="", description="Optional event description")
+    session_id: Optional[str] = Field(None, description="Internal session ID.")
+    trace_id: Optional[str] = Field(None, description="Internal trace ID.")
 
 
 class CalendarCreateEventTool(BaseTool):
@@ -77,21 +93,27 @@ class CalendarCreateEventTool(BaseTool):
     Examples: 'Schedule a meeting with John at 2pm', 'Book lunch tomorrow at noon'"""
     args_schema: Type[BaseModel] = CalendarCreateEventInput
     
-    def _run(self, title: str, start_time: str, end_time: str, description: str = "") -> str:
+    def _run(self, title: str, start_time: str, end_time: str, description: str = "", session_id: Optional[str] = None, trace_id: Optional[str] = None) -> str:
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
+    @api_retry_strategy
     async def _arun(
         self, 
         title: str, 
         start_time: str, 
         end_time: str, 
-        description: str = ""
+        description: str = "",
+        session_id: Optional[str] = None,
+        trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Create calendar event asynchronously"""
+        trace_id = trace_id or str(uuid.uuid4())
+        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
+                response = await calendar_breaker.execute_async(
+                    client.post,
                     f"{settings.CALENDAR_SERVER_URL}/call",
                     params={"tool_name": "create_event"},
                     json={
@@ -99,20 +121,23 @@ class CalendarCreateEventTool(BaseTool):
                         "start_time": start_time,
                         "end_time": end_time,
                         "description": description
-                    }
+                    },
+                    headers=headers
                 )
                 response.raise_for_status()
                 result = response.json()
-                logger.info(f"✓ Created calendar event: {title}")
+                logger.info(f"[{trace_id}] ✓ Created calendar event: {title}")
                 return result
         except Exception as e:
-            logger.error(f"✗ Calendar create error: {e}")
+            logger.error(f"[{trace_id}] ✗ Calendar create error: {e}")
             return {"status": "error", "error": str(e)}
 
 
 class CalendarDeleteEventInput(BaseModel):
     """Input schema for deleting calendar events"""
     event_id: str = Field(description="ID of the event to delete")
+    session_id: Optional[str] = Field(None, description="Internal session ID.")
+    trace_id: Optional[str] = Field(None, description="Internal trace ID.")
 
 
 class CalendarDeleteEventTool(BaseTool):
@@ -127,25 +152,30 @@ class CalendarDeleteEventTool(BaseTool):
     Example: User says 'delete that appointment' -> First get_calendar_events(days_back=90) -> Then delete_calendar_event(event_id='abc123')"""
     args_schema: Type[BaseModel] = CalendarDeleteEventInput
     
-    def _run(self, event_id: str) -> str:
+    def _run(self, event_id: str, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> str:
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
-    async def _arun(self, event_id: str) -> Dict[str, Any]:
+    @api_retry_strategy
+    async def _arun(self, event_id: str, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Delete calendar event asynchronously"""
+        trace_id = trace_id or str(uuid.uuid4())
+        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
+                response = await calendar_breaker.execute_async(
+                    client.post,
                     f"{settings.CALENDAR_SERVER_URL}/call",
                     params={"tool_name": "delete_event"},
-                    json={"event_id": event_id}
+                    json={"event_id": event_id},
+                    headers=headers
                 )
                 response.raise_for_status()
                 result = response.json()
-                logger.info(f"✓ Deleted calendar event: {event_id}")
+                logger.info(f"[{trace_id}] ✓ Deleted calendar event: {event_id}")
                 return result
         except Exception as e:
-            logger.error(f"✗ Calendar delete error: {e}")
+            logger.error(f"[{trace_id}] ✗ Calendar delete error: {e}")
             return {"status": "error", "error": str(e)}
 
 
@@ -156,6 +186,7 @@ class CalendarDeleteEventTool(BaseTool):
 class KnowledgeSearchInput(BaseModel):
     """Input schema for searching the knowledge base"""
     query: str = Field(description="The question to ask the knowledge base.")
+    trace_id: Optional[str] = Field(None, description="Internal trace ID.")
 
 
 class KnowledgeSearchTool(BaseTool):
@@ -167,32 +198,28 @@ class KnowledgeSearchTool(BaseTool):
     Example: 'What are the parameters for create_calendar_event?', 'What are the business hours for meetings?'"""
     args_schema: Type[BaseModel] = KnowledgeSearchInput
     
-    def _run(self, query: str) -> str:
+    def _run(self, query: str, trace_id: Optional[str] = None) -> str:
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
-    async def _arun(self, query: str) -> Dict[str, Any]:
+    @api_retry_strategy
+    async def _arun(self, query: str, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Search the knowledge base asynchronously"""
+        trace_id = trace_id or str(uuid.uuid4())
         try:
-            # Apply query processing (spelling correction, alias expansion)
-            from mcp_host.query_processor import QueryProcessor
-            processor = QueryProcessor()
-            # Note: process_query is async and requires session_id, but we don't have it here
-            # So we'll skip query processing in the tool and rely on preprocessing at the agent level
-            processed_query = query
+            # The RAG service is called locally, but we can still use a breaker
+            # to protect against it becoming slow or unresponsive.
+            logger.info(f"[{trace_id}] 🔍 Searching knowledge base for: '{query}'")
             
-            logger.info(f"🔍 Searching knowledge base for: '{query}'")
+            results = await rag_breaker.execute_async(rag_service.search, query=query)
             
-            results = rag_service.search(query=processed_query)
-            
-            # DEBUG: Log what was retrieved
-            logger.info(f"📊 Knowledge base search returned {len(results)} result(s):")
+            logger.info(f"[{trace_id}] 📊 Knowledge base search returned {len(results)} result(s):")
             for i, result in enumerate(results, 1):
-                logger.info(f"   Result {i}: {result.get('content', '')[:100]}...")
+                logger.info(f"   [{trace_id}] Result {i}: {result.get('content', '')[:100]}...")
             
             return {"status": "success", "results": results}
         except Exception as e:
-            logger.error(f"✗ Knowledge base search error: {e}")
+            logger.error(f"[{trace_id}] ✗ Knowledge base search error: {e}")
             return {"status": "error", "error": str(e)}
 
 
@@ -210,6 +237,8 @@ class GmailGetEmailsInput(BaseModel):
         default="",
         description="Search query (e.g., 'is:unread', 'from:boss@company.com')"
     )
+    session_id: Optional[str] = Field(None, description="Internal session ID.")
+    trace_id: Optional[str] = Field(None, description="Internal trace ID.")
 
 
 class GmailGetEmailsTool(BaseTool):
@@ -222,25 +251,30 @@ class GmailGetEmailsTool(BaseTool):
     Examples: 'Check my emails', 'Any unread messages?', 'Emails from my boss'"""
     args_schema: Type[BaseModel] = GmailGetEmailsInput
     
-    def _run(self, limit: int = 10, query: str = "") -> str:
+    def _run(self, limit: int = 10, query: str = "", session_id: Optional[str] = None, trace_id: Optional[str] = None) -> str:
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
-    async def _arun(self, limit: int = 10, query: str = "") -> Dict[str, Any]:
+    @api_retry_strategy
+    async def _arun(self, limit: int = 10, query: str = "", session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Get emails asynchronously"""
+        trace_id = trace_id or str(uuid.uuid4())
+        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
+                response = await gmail_breaker.execute_async(
+                    client.post,
                     f"{settings.GMAIL_SERVER_URL}/call",
                     params={"tool_name": "get_emails"},
-                    json={"limit": limit, "query": query}
+                    json={"limit": limit, "query": query},
+                    headers=headers
                 )
                 response.raise_for_status()
                 result = response.json()
-                logger.info(f"✓ Retrieved {result.get('count', 0)} emails")
+                logger.info(f"[{trace_id}] ✓ Retrieved {result.get('count', 0)} emails")
                 return result
         except Exception as e:
-            logger.error(f"✗ Gmail get error: {e}")
+            logger.error(f"[{trace_id}] ✗ Gmail get error: {e}")
             return {"status": "error", "error": str(e)}
 
 
@@ -251,6 +285,8 @@ class GmailSendEmailInput(BaseModel):
     body: str = Field(description="Email body content")
     cc: Optional[str] = Field(default="", description="CC recipients (comma-separated)")
     bcc: Optional[str] = Field(default="", description="BCC recipients (comma-separated)")
+    session_id: Optional[str] = Field(None, description="Internal session ID.")
+    trace_id: Optional[str] = Field(None, description="Internal trace ID.")
 
 
 class GmailSendEmailTool(BaseTool):
@@ -268,23 +304,31 @@ class GmailSendEmailTool(BaseTool):
         subject: str, 
         body: str, 
         cc: str = "", 
-        bcc: str = ""
+        bcc: str = "",
+        session_id: Optional[str] = None,
+        trace_id: Optional[str] = None
     ) -> str:
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
+    @api_retry_strategy
     async def _arun(
         self, 
         to: str, 
         subject: str, 
         body: str, 
         cc: str = "", 
-        bcc: str = ""
+        bcc: str = "",
+        session_id: Optional[str] = None,
+        trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Send email asynchronously"""
+        trace_id = trace_id or str(uuid.uuid4())
+        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
+                response = await gmail_breaker.execute_async(
+                    client.post,
                     f"{settings.GMAIL_SERVER_URL}/call",
                     params={"tool_name": "send_email"},
                     json={
@@ -293,20 +337,23 @@ class GmailSendEmailTool(BaseTool):
                         "body": body,
                         "cc": cc,
                         "bcc": bcc
-                    }
+                    },
+                    headers=headers
                 )
                 response.raise_for_status()
                 result = response.json()
-                logger.info(f"✓ Sent email to: {to}")
+                logger.info(f"[{trace_id}] ✓ Sent email to: {to}")
                 return result
         except Exception as e:
-            logger.error(f"✗ Gmail send error: {e}")
+            logger.error(f"[{trace_id}] ✗ Gmail send error: {e}")
             return {"status": "error", "error": str(e)}
 
 
 class GmailReadEmailInput(BaseModel):
     """Input schema for reading full email content"""
     email_id: str = Field(description="ID of the email to read")
+    session_id: Optional[str] = Field(None, description="Internal session ID.")
+    trace_id: Optional[str] = Field(None, description="Internal trace ID.")
 
 
 class GmailReadEmailTool(BaseTool):
@@ -319,25 +366,30 @@ class GmailReadEmailTool(BaseTool):
     Examples: 'Read that email from my boss', 'Show me the full email'"""
     args_schema: Type[BaseModel] = GmailReadEmailInput
     
-    def _run(self, email_id: str) -> str:
+    def _run(self, email_id: str, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> str:
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
-    async def _arun(self, email_id: str) -> Dict[str, Any]:
+    @api_retry_strategy
+    async def _arun(self, email_id: str, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Read email asynchronously"""
+        trace_id = trace_id or str(uuid.uuid4())
+        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
+                response = await gmail_breaker.execute_async(
+                    client.post,
                     f"{settings.GMAIL_SERVER_URL}/call",
                     params={"tool_name": "read_email"},
-                    json={"email_id": email_id}
+                    json={"email_id": email_id},
+                    headers=headers
                 )
                 response.raise_for_status()
                 result = response.json()
-                logger.info(f"✓ Read email: {email_id}")
+                logger.info(f"[{trace_id}] ✓ Read email: {email_id}")
                 return result
         except Exception as e:
-            logger.error(f"✗ Gmail read error: {e}")
+            logger.error(f"[{trace_id}] ✗ Gmail read error: {e}")
             return {"status": "error", "error": str(e)}
 
 
@@ -363,7 +415,7 @@ def get_all_mcp_tools() -> list[BaseTool]:
     ]
 
 
-async def execute_tool_by_name(tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_tool_by_name(tool_name: str, params: Dict[str, Any], trace_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Execute a tool by name with the given parameters.
     
@@ -373,6 +425,7 @@ async def execute_tool_by_name(tool_name: str, params: Dict[str, Any]) -> Dict[s
     Args:
         tool_name: Name of the tool to execute (e.g., "create_calendar_event")
         params: Dictionary of parameters to pass to the tool
+        trace_id: Optional trace ID for logging and propagation.
     
     Returns:
         Result dictionary from the tool execution
@@ -388,17 +441,23 @@ async def execute_tool_by_name(tool_name: str, params: Dict[str, Any]) -> Dict[s
             break
     
     if not matching_tool:
+        logger.error(f"[{trace_id}] Tool '{tool_name}' not found.")
         return {
             "status": "error",
             "message": f"Tool '{tool_name}' not found. Available tools: {[t.name for t in tools]}"
         }
     
     try:
+        # Add trace_id to params if the tool supports it
+        if "trace_id" in matching_tool.args_schema.__fields__:
+            params["trace_id"] = trace_id
+            
         # Execute the tool asynchronously with the provided parameters
+        logger.info(f"[{trace_id}] Executing resumed tool '{tool_name}'")
         result = await matching_tool.arun(**params)
         return result
     except Exception as e:
-        logger.error(f"Error executing tool {tool_name}: {e}")
+        logger.error(f"[{trace_id}] Error executing resumed tool {tool_name}: {e}")
         return {
             "status": "error",
             "message": f"Error executing {tool_name}: {str(e)}"

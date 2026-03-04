@@ -3,17 +3,22 @@ This module contains the core agentic logic for handling multi-turn conversation
 especially for resuming tasks after interruptions like OAuth flows.
 """
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+import logging
+import uuid
 from .state import state_manager
 from .mcp_tools import execute_tool_by_name
 
-async def handle_pending_action(session_id: str) -> Dict[str, Any]:
+logger = logging.getLogger(__name__)
+
+async def handle_pending_action(session_id: str, trace_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Checks for and executes a pending action stored in the conversation state.
 
     This is triggered after a user completes an external process like OAuth
     and confirms they are done. The agent can then resume its original task.
     """
+    trace_id = trace_id or str(uuid.uuid4())
     state = await state_manager.get_conversation_state(session_id)
     if not state or not state.pending_action:
         return {
@@ -26,20 +31,22 @@ async def handle_pending_action(session_id: str) -> Dict[str, Any]:
     params = pending_action.get("params")
 
     if not tool_name:
+        logger.error(f"[{trace_id}] Invalid pending action for session {session_id}: missing tool name.")
         return {"status": "error", "message": "Invalid pending action: missing tool name."}
 
-    print(f"Resuming pending action for session {session_id}: {tool_name} with params {params}")
+    logger.info(f"[{trace_id}] Resuming pending action for session {session_id}: {tool_name} with params {params}")
 
     # Clear the pending action from the state before executing
     state.pending_action = None
     await state_manager.update_conversation_state(session_id, state)
 
-    # Re-execute the original tool call
-    result = await execute_tool_by_name(tool_name, params)
+    # Re-execute the original tool call, passing the trace_id
+    result = await execute_tool_by_name(tool_name, params, trace_id=trace_id)
 
     # Check if the action requires another auth flow (unlikely but possible)
     if isinstance(result, dict) and result.get("status") == "pending_auth":
         # The second attempt also failed, save it again.
+        logger.warning(f"[{trace_id}] Resumed action for session {session_id} requires auth again.")
         new_pending_action = {
             "tool_name": tool_name,
             "params": params

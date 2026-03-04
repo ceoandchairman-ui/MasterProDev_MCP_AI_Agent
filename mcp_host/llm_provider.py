@@ -7,6 +7,7 @@ from enum import Enum
 import json
 import httpx
 from mcp_host.config import settings
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +38,32 @@ class LLMProvider(ABC):
         prompt: str,
         max_tokens: int = 1000,
         temperature: float = 0.7,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        trace_id: Optional[str] = None
     ) -> str:
         """Generate text from prompt"""
         pass
-    
+
+    @abstractmethod
+    async def generate_stream(
+        self,
+        prompt: str,
+        max_tokens: int = 1000,
+        temperature: float = 0.7,
+        system_prompt: Optional[str] = None,
+        trace_id: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """Generate text from prompt as a stream."""
+        pass
+
     @abstractmethod
     async def generate_with_tools(
         self,
         prompt: str,
         tools: List[Dict[str, Any]],
         max_tokens: int = 1000,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate with tool calling capability"""
         pass
@@ -171,11 +186,15 @@ class BedrockProvider(LLMProvider):
         prompt: str,
         max_tokens: int = 1000,
         temperature: float = 0.7,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        trace_id: Optional[str] = None
     ) -> str:
         """Generate text using Bedrock"""
         if not self.available:
             raise RuntimeError("Bedrock provider not available")
+        
+        trace_id = trace_id or str(uuid.uuid4())
+        logger.info(f"[{trace_id}] Generating text with Bedrock model: {self.model_name}")
         
         import json
         
@@ -196,17 +215,41 @@ class BedrockProvider(LLMProvider):
         response_body = json.loads(response.get('body').read())
         return response_body.get('results')[0].get('outputText', '')
     
+    async def generate_stream(
+        self,
+        prompt: str,
+        max_tokens: int = 1000,
+        temperature: float = 0.7,
+        system_prompt: Optional[str] = None,
+        trace_id: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """Generate text using Bedrock with streaming."""
+        if not self.available:
+            raise RuntimeError("Bedrock provider not available")
+
+        trace_id = trace_id or str(uuid.uuid4())
+        logger.info(f"[{trace_id}] Streaming text with Bedrock model: {self.model_name}")
+
+        # NOTE: This is a simplified mock stream. Real Bedrock streaming is more complex.
+        response = await self.generate(prompt, max_tokens, temperature, system_prompt, trace_id)
+        for chunk in response.split():
+            yield chunk + " "
+            await asyncio.sleep(0.05)
+
     async def generate_with_tools(
         self,
         prompt: str,
         tools: List[Dict[str, Any]],
         max_tokens: int = 1000,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate with tool calling"""
         import json
+        trace_id = trace_id or str(uuid.uuid4())
+        logger.info(f"[{trace_id}] Generating with tools with Bedrock model: {self.model_name}")
         tool_prompt = f"{prompt}\n\nAvailable tools:\n{json.dumps(tools, indent=2)}"
-        response = await self.generate(tool_prompt, max_tokens, temperature)
+        response = await self.generate(tool_prompt, max_tokens, temperature, trace_id=trace_id)
         
         return {
             "text": response,
@@ -287,17 +330,58 @@ class HuggingFaceProvider(LLMProvider):
 
         return data["choices"][0]["message"]["content"]
     
+    async def _try_model_stream(self, model_name: str, messages: List[Dict], max_tokens: int, temperature: float, trace_id: str) -> AsyncGenerator[str, None]:
+        """Try a single model and stream the response."""
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": True
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "X-Trace-Id": trace_id
+        }
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("POST", self.api_url, json=payload, headers=headers) as response:
+                if response.status_code >= 400:
+                    error_content = await response.aread()
+                    raise RuntimeError(f"Model {model_name} error: {response.status_code} - {error_content.decode()}")
+                
+                async for line in response.aiter_lines():
+                    if line.startswith("data:"):
+                        line_data = line[len("data: "):]
+                        if line_data.strip() == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(line_data)
+                            if chunk.get("choices"):
+                                delta = chunk["choices"][0].get("delta", {})
+                                content = delta.get("content")
+                                if content:
+                                    yield content
+                        except json.JSONDecodeError:
+                            logger.warning(f"[{trace_id}] Failed to decode stream chunk: {line_data}")
+                            continue
+
     async def generate(
         self,
         prompt: str,
         max_tokens: int = 1000,
         temperature: float = 0.7,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        trace_id: Optional[str] = None
     ) -> str:
         """Generate text using Hugging Face with automatic model fallback"""
         if not self.available:
             raise RuntimeError("Hugging Face provider not available")
         
+        trace_id = trace_id or str(uuid.uuid4())
+        logger.info(f"[{trace_id}] Generating text with HuggingFace model: {self.model_name}")
+
         # Build messages for chat completion
         messages = []
         if system_prompt:
@@ -312,22 +396,69 @@ class HuggingFaceProvider(LLMProvider):
             try:
                 result = await self._try_model(model, messages, max_tokens, temperature)
                 if model != self.model_name:
-                    logger.info(f"✓ LLM fallback succeeded with {model}")
+                    logger.info(f"[{trace_id}] ✓ LLM fallback succeeded with {model}")
                 return result
             except Exception as e:
-                logger.warning(f"⚠️ LLM model {model} failed: {e}")
+                logger.warning(f"[{trace_id}] ⚠️ LLM model {model} failed: {e}")
                 last_error = e
                 continue
         
         raise RuntimeError(f"All LLM models failed. Last error: {last_error}")
-    
-    async def _try_model_with_tools(self, model_name: str, messages: List[Dict], tools: List[Dict], max_tokens: int, temperature: float) -> Dict[str, Any]:
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        max_tokens: int = 1000,
+        temperature: float = 0.7,
+        system_prompt: Optional[str] = None,
+        trace_id: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """Generate text using Hugging Face with streaming and fallback."""
+        if not self.available:
+            raise RuntimeError("Hugging Face provider not available")
+
+        trace_id = trace_id or str(uuid.uuid4())
+        logger.info(f"[{trace_id}] Streaming text with HuggingFace model: {self.model_name}")
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        models_to_try = [self.model_name] + [m for m in self.FALLBACK_MODELS if m != self.model_name]
+        last_error = None
+
+        for model in models_to_try:
+            try:
+                stream_generator = self._try_model_stream(model, messages, max_tokens, temperature, trace_id)
+                # We need to actually try iterating to catch connection errors
+                first_chunk = await anext(stream_generator)
+                
+                async def combined_generator():
+                    yield first_chunk
+                    async for chunk in stream_generator:
+                        yield chunk
+
+                if model != self.model_name:
+                    logger.info(f"[{trace_id}] ✓ LLM stream fallback succeeded with {model}")
+                
+                return combined_generator()
+
+            except (StopAsyncIteration, Exception) as e:
+                logger.warning(f"[{trace_id}] ⚠️ LLM stream for model {model} failed: {e}")
+                last_error = e
+                continue
+        
+        raise RuntimeError(f"All LLM streaming models failed. Last error: {last_error}")
+
+    async def _try_model_with_tools(self, model_name: str, messages: List[Dict], tools: List[Dict], max_tokens: int, temperature: float, trace_id: str) -> Dict[str, Any]:
         """Try a single model with tools and return response or raise exception"""
         payload = {
             "model": model_name,
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "stream": False
         }
         
         # Get handler for this model
@@ -337,6 +468,7 @@ class HuggingFaceProvider(LLMProvider):
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
+            "X-Trace-Id": trace_id
         }
         
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -356,12 +488,16 @@ class HuggingFaceProvider(LLMProvider):
         prompt: str,
         tools: List[Dict[str, Any]],
         max_tokens: int = 1000,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate with tool calling with automatic model fallback."""
         if not self.available:
             raise RuntimeError("Hugging Face provider not available")
         
+        trace_id = trace_id or str(uuid.uuid4())
+        logger.info(f"[{trace_id}] Generating with tools with HuggingFace model: {self.model_name}")
+
         messages = [{"role": "user", "content": prompt}]
         
         # Try primary model first, then fallbacks
@@ -370,12 +506,12 @@ class HuggingFaceProvider(LLMProvider):
         
         for model in models_to_try:
             try:
-                result = await self._try_model_with_tools(model, messages, tools, max_tokens, temperature)
+                result = await self._try_model_with_tools(model, messages, tools, max_tokens, temperature, trace_id)
                 if model != self.model_name:
-                    logger.info(f"✓ LLM tool-call fallback succeeded with {model}")
+                    logger.info(f"[{trace_id}] ✓ LLM tool-call fallback succeeded with {model}")
                 return result
             except Exception as e:
-                logger.warning(f"⚠️ LLM model {model} (tools) failed: {e}")
+                logger.warning(f"[{trace_id}] ⚠️ LLM model {model} (tools) failed: {e}")
                 last_error = e
                 continue
         
@@ -421,12 +557,16 @@ class OllamaProvider(LLMProvider):
         prompt: str,
         max_tokens: int = 1000,
         temperature: float = 0.7,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        trace_id: Optional[str] = None
     ) -> str:
         """Generate text using Ollama"""
         if not self.available:
             raise RuntimeError("Ollama provider not available")
         
+        trace_id = trace_id or str(uuid.uuid4())
+        logger.info(f"[{trace_id}] Generating text with Ollama model: {self.model_name}")
+
         import httpx
         import json
         
@@ -443,10 +583,12 @@ class OllamaProvider(LLMProvider):
         if system_prompt:
             payload["system"] = system_prompt
         
+        headers = {"X-Trace-Id": trace_id}
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{self.base_url}/api/generate",
-                json=payload
+                json=payload,
+                headers=headers
             )
             
             if response.status_code == 200:
@@ -454,17 +596,65 @@ class OllamaProvider(LLMProvider):
             
             raise RuntimeError(f"Ollama error: {response.status_code}")
     
+    async def generate_stream(
+        self,
+        prompt: str,
+        max_tokens: int = 1000,
+        temperature: float = 0.7,
+        system_prompt: Optional[str] = None,
+        trace_id: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """Generate text using Ollama with streaming."""
+        if not self.available:
+            raise RuntimeError("Ollama provider not available")
+
+        trace_id = trace_id or str(uuid.uuid4())
+        logger.info(f"[{trace_id}] Streaming text with Ollama model: {self.model_name}")
+
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": True,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens
+            }
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+
+        headers = {"X-Trace-Id": trace_id}
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("POST", f"{self.base_url}/api/generate", json=payload, headers=headers) as response:
+                if response.status_code != 200:
+                    error_content = await response.aread()
+                    raise RuntimeError(f"Ollama stream error: {response.status_code} - {error_content.decode()}")
+                
+                async for line in response.aiter_lines():
+                    if line:
+                        try:
+                            chunk = json.loads(line)
+                            yield chunk.get("response", "")
+                            if chunk.get("done"):
+                                break
+                        except json.JSONDecodeError:
+                            logger.warning(f"[{trace_id}] Failed to decode Ollama stream chunk: {line}")
+                            continue
+
     async def generate_with_tools(
         self,
         prompt: str,
         tools: List[Dict[str, Any]],
         max_tokens: int = 1000,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate with tool calling"""
         import json
+        trace_id = trace_id or str(uuid.uuid4())
+        logger.info(f"[{trace_id}] Generating with tools with Ollama model: {self.model_name}")
         tool_prompt = f"{prompt}\n\nAvailable tools:\n{json.dumps(tools, indent=2)}\n\nRespond with the tool to use and parameters."
-        response = await self.generate(tool_prompt, max_tokens, temperature)
+        response = await self.generate(tool_prompt, max_tokens, temperature, trace_id=trace_id)
         
         return {
             "text": response,
@@ -530,7 +720,8 @@ class LLMManager:
         prompt: str,
         max_tokens: int = 1000,
         temperature: float = 0.7,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        trace_id: Optional[str] = None
     ) -> str:
         """Generate text with automatic fallback"""
         # Debug log for runtime state
@@ -546,7 +737,7 @@ class LLMManager:
 
             if provider and provider.available:
                 try:
-                    return await provider.generate(prompt, max_tokens, temperature, system_prompt)
+                    return await provider.generate(prompt, max_tokens, temperature, system_prompt, trace_id=trace_id)
                 except Exception as e:
                     logger.warning(f"⚠ {llm_type.value} failed: {e}, trying next provider...")
                     continue
@@ -580,7 +771,8 @@ class LLMManager:
         prompt: str,
         tools: List[Dict[str, Any]],
         max_tokens: int = 1000,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate with tool calling and automatic fallback"""
         
@@ -597,7 +789,7 @@ class LLMManager:
             
             if provider and provider.available:
                 try:
-                    return await provider.generate_with_tools(prompt, tools, max_tokens, temperature)
+                    return await provider.generate_with_tools(prompt, tools, max_tokens, temperature, trace_id=trace_id)
                 except Exception as e:
                     logger.warning(f"⚠ {llm_type.value} failed: {e}, trying next provider...")
                     continue
@@ -608,8 +800,8 @@ class LLMManager:
             "tool_calls": []
         }
     
-    def get_active_provider_info(self) -> Dict[str, str]:
-        """Get info about active provider"""
+    def get_active_provider_info(self) -> Optional[Dict[str, str]]:
+        """Get info about the currently active LLM provider."""
         if self.mock_mode:
             return {
                 "provider": "mock",

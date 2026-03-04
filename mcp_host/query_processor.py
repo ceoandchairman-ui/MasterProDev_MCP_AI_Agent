@@ -4,14 +4,15 @@ import yaml
 from fuzzywuzzy import process
 import re
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import os
 import json
+import uuid
 from .agent_logic import handle_pending_action
 from .state import state_manager, ConversationState
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # List of confirmation phrases
 CONFIRMATION_PHRASES = [
@@ -27,7 +28,7 @@ class AliasManager:
             for canonical, aliases in alias_config.items():
                 for alias in aliases:
                     self.alias_map[alias.lower()] = canonical
-        logging.info(f"AliasManager initialized with {len(self.alias_map)} aliases.")
+        logger.info(f"AliasManager initialized with {len(self.alias_map)} aliases.")
 
     def expand_aliases(self, text: str) -> str:
         """Expands known aliases in the text to their canonical form."""
@@ -46,14 +47,14 @@ class SpellingCorrector:
         dictionary_path = pkg_resources.resource_filename("symspellpy", "frequency_dictionary_en_82_765.txt")
         # term_index is the column of the term and count_index is the column of the term frequency
         self.sym_spell.load_dictionary(dictionary_path, term_index=0, count_index=1)
-        logging.info("SpellingCorrector initialized with default dictionary.")
+        logger.info("SpellingCorrector initialized with default dictionary.")
 
     def correct(self, text: str) -> str:
         """Corrects spelling in the given text."""
         suggestions = self.sym_spell.lookup_compound(text, max_edit_distance=2)
         if suggestions:
             corrected_text = suggestions[0].term
-            logging.info(f"Spelling correction: '{text}' -> '{corrected_text}'")
+            logger.info(f"Spelling correction: '{text}' -> '{corrected_text}'")
             return corrected_text
         return text
 
@@ -77,17 +78,18 @@ class QueryProcessor:
                 alias_config = yaml.safe_load(f).get('aliases', {})
                 self.alias_manager = AliasManager(alias_config)
         except FileNotFoundError:
-            logging.warning(f"Alias config file not found at {alias_config_path}. No aliases will be used.")
+            logger.warning(f"Alias config file not found at {alias_config_path}. No aliases will be used.")
             self.alias_manager = AliasManager({})
         except Exception as e:
-            logging.error(f"Error loading alias config: {e}")
+            logger.error(f"Error loading alias config: {e}")
             self.alias_manager = AliasManager({})
 
-    async def process_query(self, query: str, session_id: str) -> str:
+    async def process_query(self, query: str, session_id: str, trace_id: Optional[str] = None) -> str:
         """
         Processes a raw query through preprocessing steps.
         Does NOT check for pending actions - that's handled separately.
         """
+        trace_id = trace_id or str(uuid.uuid4())
         # Step 1: Expand aliases (case-insensitive matching)
         processed_query = self.alias_manager.expand_aliases(query)
         
@@ -100,22 +102,23 @@ class QueryProcessor:
         if any(len(word) > 2 for word in words):
             corrected = self.spelling_corrector.correct(processed_query)
             if corrected != processed_query:
-                logging.info(f"Spelling correction: '{processed_query}' -> '{corrected}'")
+                logger.info(f"[{trace_id}] Spelling correction: '{processed_query}' -> '{corrected}'")
                 processed_query = corrected
         
-        logging.info(f"Original Query: '{query}' | Processed Query: '{processed_query}'")
+        logger.info(f"[{trace_id}] Original Query: '{query}' | Processed Query: '{processed_query}'")
         return processed_query
 
-    async def check_and_handle_pending_action(self, query: str, session_id: str):
+    async def check_and_handle_pending_action(self, query: str, session_id: str, trace_id: Optional[str] = None):
         """Checks for and handles a pending action if the user confirms."""
+        trace_id = trace_id or str(uuid.uuid4())
         state = await state_manager.get_conversation_state(session_id)
         if state and state.pending_action:
             # Check if the user's query is a confirmation
             if query.lower().strip() in CONFIRMATION_PHRASES:
-                logging.info(f"User confirmed pending action for session {session_id}.")
+                logger.info(f"[{trace_id}] User confirmed pending action for session {session_id}.")
                 
                 # Handle the pending action
-                result = await handle_pending_action(session_id)
+                result = await handle_pending_action(session_id, trace_id=trace_id)
                 
                 # Clear the pending action from the state
                 state.pending_action = None

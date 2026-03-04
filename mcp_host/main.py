@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.openapi.utils import get_openapi
+import uuid  # Import uuid for trace_id generation
 try:
     from slowapi import Limiter
     from slowapi.util import get_remote_address
@@ -26,7 +27,6 @@ from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from pydantic_settings import BaseSettings
 import logging
-import uuid
 import httpx
 import os
 import asyncio
@@ -410,6 +410,10 @@ async def voice_chat(
     """
     if not _VOICE_SERVICE_AVAILABLE or voice_service is None:
         raise HTTPException(status_code=503, detail="Voice service unavailable (openai package missing)")
+    
+    trace_id = str(uuid.uuid4())
+    logger.info(f"[{trace_id}] Initiating new voice chat request.")
+
     try:
         # Get session (same as /chat endpoint)
         if authorization:
@@ -442,19 +446,20 @@ async def voice_chat(
         audio_bytes = await audio.read()
         filename = audio.filename or "audio.webm"
         
-        logger.info(f"🎤 Voice input received: {len(audio_bytes)} bytes, format: {filename}")
+        logger.info(f"[{trace_id}] 🎤 Voice input received: {len(audio_bytes)} bytes, format: {filename}")
         user_message = await voice_service.speech_to_text(audio_bytes, filename)
-        logger.info(f"📝 Transcribed: {user_message}")
+        logger.info(f"[{trace_id}] 📝 Transcribed: {user_message}")
         
         # Step 2: Process through agent
         agent_result = await mcp_agent.process_message(
             message=user_message,
             session_id=session_id,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            trace_id=trace_id
         )
         
         response_text = agent_result.get("response", "I couldn't process that.")
-        logger.info(f"💬 Agent response: {response_text[:100]}...")
+        logger.info(f"[{trace_id}] 💬 Agent response: {response_text[:100]}...")
         
         # Step 3: TTS - Convert text to speech (returns tuple: audio_bytes, content_type)
         audio_response, audio_content_type = await voice_service.text_to_speech(response_text)
@@ -471,7 +476,7 @@ async def voice_chat(
         
         # Return audio if available, otherwise return JSON for browser TTS
         if audio_response:
-            logger.info(f"🔊 Generated audio response: {len(audio_response)} bytes ({audio_content_type})")
+            logger.info(f"[{trace_id}] 🔊 Generated audio response: {len(audio_response)} bytes ({audio_content_type})")
             return Response(
                 content=audio_response,
                 media_type=audio_content_type or "audio/mpeg",
@@ -482,8 +487,8 @@ async def voice_chat(
                 }
             )
         else:
-            # No audio - return JSON with text for browser TTS fallback
-            logger.info("🔊 No server TTS, returning text for browser TTS")
+            # No audio - return JSON with browser TTS fallback
+            logger.info(f"[{trace_id}] 🔊 No server TTS, returning text for browser TTS")
             return JSONResponse(
                 content={
                     "transcription": user_message,
@@ -497,7 +502,7 @@ async def voice_chat(
             )
         
     except Exception as e:
-        logger.error(f"❌ Voice chat error: {e}", exc_info=True)
+        logger.error(f"[{trace_id}] ❌ Voice chat error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Voice processing failed: {str(e)}"
@@ -887,71 +892,442 @@ async def chat(
     )
 
 
-@app.post("/chat/stream")
-async def chat_stream(
+@app.post("/chat/stream", tags=["Chat"], summary="Stream chat responses")
+async def stream_chat(
+    request: Request,
+    chat_request: ChatRequest = Depends(get_chat_request),
+    token: str = Depends(get_token_from_header)
+):
+    """Main endpoint for processing chat messages, supporting streaming."""
+    trace_id = str(uuid.uuid4())
+    logger.info(f"[{trace_id}] Initiating new stream chat request.")
+    user_id = None
+    try:
+        if token:
+            user_id = await auth_manager.get_user_id_from_token(token)
+    except HTTPException:
+        # Token is invalid or expired, proceed as guest
+        pass
+
+    async def event_stream():
+        try:
+            # Pass trace_id to the agent
+            async for chunk in agent.process_message_stream(
+                message=chat_request.message,
+                session_id=chat_request.session_id,
+                file=chat_request.file,
+                user_id=user_id,
+                trace_id=trace_id
+            ):
+                yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as e:
+            logger.error(f"[{trace_id}] Error during chat stream: {e}", exc_info=True)
+            error_chunk = {"type": "error", "text": "An unexpected error occurred."}
+            yield f"data: {json.dumps(error_chunk)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/voice", tags=["Chat"], summary="Process voice input and get a voice response")
+async def voice_chat(
+    audio: UploadFile = File(...),
+    authorization: Optional[str] = Header(None)
+):
+    """Voice chat endpoint - accepts audio, returns audio response
+    
+    Workflow:
+    1. Receive audio file (webm/mp3/wav)
+    2. Convert speech to text (STT via Whisper)
+    3. Process through agent (same as text chat)
+    4. Convert response to speech (TTS via OpenAI)
+    5. Return audio file
+    """
+    if not _VOICE_SERVICE_AVAILABLE or voice_service is None:
+        raise HTTPException(status_code=503, detail="Voice service unavailable (openai package missing)")
+    
+    trace_id = str(uuid.uuid4())
+    logger.info(f"[{trace_id}] Initiating new voice chat request.")
+
+    try:
+        # Get session (same as /chat endpoint)
+        if authorization:
+            try:
+                token = get_token_from_header(authorization)
+                session = await state_manager.get_session(token)
+                if session:
+                    session_id = session["session_id"]
+                    user_id = session["user_id"]
+                    conversation_id = session.get("conversation_id")
+                    conversation_history = await state_manager.get_conversation_history(session_id)
+                else:
+                    session_id = str(uuid.uuid4())
+                    user_id = "guest"
+                    conversation_id = str(uuid.uuid4())
+                    conversation_history = []
+            except:
+                session_id = str(uuid.uuid4())
+                user_id = "guest"
+                conversation_id = str(uuid.uuid4())
+                conversation_history = []
+        else:
+            # No token - guest mode
+            session_id = str(uuid.uuid4())
+            user_id = "guest"
+            conversation_id = str(uuid.uuid4())
+            conversation_history = []
+        
+        # Step 1: STT - Convert audio to text
+        audio_bytes = await audio.read()
+        filename = audio.filename or "audio.webm"
+        
+        logger.info(f"[{trace_id}] 🎤 Voice input received: {len(audio_bytes)} bytes, format: {filename}")
+        user_message = await voice_service.speech_to_text(audio_bytes, filename)
+        logger.info(f"[{trace_id}] 📝 Transcribed: {user_message}")
+        
+        # Step 2: Process through agent
+        agent_result = await mcp_agent.process_message(
+            message=user_message,
+            session_id=session_id,
+            conversation_history=conversation_history,
+            trace_id=trace_id
+        )
+        
+        response_text = agent_result.get("response", "I couldn't process that.")
+        logger.info(f"[{trace_id}] 💬 Agent response: {response_text[:100]}...")
+        
+        # Step 3: TTS - Convert text to speech (returns tuple: audio_bytes, content_type)
+        audio_response, audio_content_type = await voice_service.text_to_speech(response_text)
+        
+        # Step 4: Save conversation (if authenticated)
+        if user_id != "guest":
+            await state_manager.save_conversation_turn(
+                session_id, user_id, conversation_id, user_message, response_text
+            )
+        
+        # Helper to sanitize text for HTTP headers (ASCII only)
+        def sanitize_header(text: str) -> str:
+            return text.encode('ascii', 'replace').decode('ascii')[:200]
+        
+        # Return audio if available, otherwise return JSON for browser TTS
+        if audio_response:
+            logger.info(f"[{trace_id}] 🔊 Generated audio response: {len(audio_response)} bytes ({audio_content_type})")
+            return Response(
+                content=audio_response,
+                media_type=audio_content_type or "audio/mpeg",
+                headers={
+                    "Content-Disposition": "attachment; filename=response.mp3",
+                    "X-Transcription": sanitize_header(user_message),
+                    "X-Response-Text": sanitize_header(response_text)
+                }
+            )
+        else:
+            # No audio - return JSON with browser TTS fallback
+            logger.info(f"[{trace_id}] 🔊 No server TTS, returning text for browser TTS")
+            return JSONResponse(
+                content={
+                    "transcription": user_message,
+                    "response": response_text,
+                    "use_browser_tts": True
+                },
+                headers={
+                    "X-Transcription": sanitize_header(user_message),
+                    "X-Response-Text": sanitize_header(response_text)
+                }
+            )
+        
+    except Exception as e:
+        logger.error(f"[{trace_id}] ❌ Voice chat error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Voice processing failed: {str(e)}"
+        )
+
+
+@app.get("/voice-chat")
+async def voice_chat_page():
+    """Serve voice chat UI with avatar (now unified in chat-widget)"""
+    return FileResponse(str(STATIC_DIR / "widget-demo.html"))
+
+
+@app.get("/evaluation")
+async def get_evaluation_metrics(authorization: Optional[str] = Header(None)):
+    """Get agent evaluation metrics and task completion report
+    
+    Returns comprehensive evaluation data including:
+    - Task completion rates by category (Calendar, Knowledge, Email, Conversation)
+    - Overall success rate and production readiness
+    - Individual task results
+    """
+    token = get_token_from_header(authorization)
+    payload = decode_token(token)
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+    
+    # Get evaluation metrics
+    metrics = evaluator.get_metrics()
+    
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "overall_success_rate": round(metrics.overall_success_rate, 2),
+            "total_tasks": metrics.total_tasks,
+            "total_passed": metrics.total_passed,
+            "production_ready": metrics.production_ready,
+            "production_gate_threshold": 85.0
+        },
+        "categories": {
+            "calendar": {
+                "success_rate": round(metrics.calendar_success_rate, 2),
+                "total": metrics.calendar_total,
+                "passed": metrics.calendar_passed,
+                "threshold": 90.0,
+                "meets_threshold": metrics.calendar_success_rate >= 90.0 if metrics.calendar_total > 0 else None
+            },
+            "knowledge": {
+                "success_rate": round(metrics.knowledge_success_rate, 2),
+                "total": metrics.knowledge_total,
+                "passed": metrics.knowledge_passed,
+                "threshold": 85.0,
+                "meets_threshold": metrics.knowledge_success_rate >= 85.0 if metrics.knowledge_total > 0 else None
+            },
+            "email": {
+                "success_rate": round(metrics.email_success_rate, 2),
+                "total": metrics.email_total,
+                "passed": metrics.email_passed,
+                "threshold": 80.0,
+                "meets_threshold": metrics.email_success_rate >= 80.0 if metrics.email_total > 0 else None
+            },
+            "conversation": {
+                "success_rate": round(metrics.conversation_success_rate, 2),
+                "total": metrics.conversation_total,
+                "passed": metrics.conversation_passed,
+                "threshold": 95.0,
+                "meets_threshold": metrics.conversation_success_rate >= 95.0 if metrics.conversation_total > 0 else None
+            }
+        },
+        "recent_tasks": [
+            {
+                "task_id": task.task_id,
+                "category": task.category,
+                "task_type": task.task_type,
+                "user_request": task.user_request,
+                "tools_used": task.tool_calls,
+                "success": task.success,
+                "reason": task.reason,
+                "timestamp": task.timestamp
+            }
+            for task in evaluator.results[-20:]  # Last 20 tasks
+        ]
+    }
+
+
+
+# ============================================================================
+# OAuth Proxy Endpoints (Routes calendar/gmail OAuth through mcp_host)
+# ============================================================================
+
+@app.get("/integrations/google/calendar/auth")
+async def calendar_auth_proxy():
+    """Proxy calendar OAuth - redirects to Google with correct callback URI"""
+    try:
+        callback_uri = f"{settings.PUBLIC_DOMAIN}/integrations/google/calendar/callback"
+        logger.info(f"📅 Calendar OAuth: callback_uri={callback_uri}, calendar_server={settings.CALENDAR_SERVER_URL}")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings.CALENDAR_SERVER_URL}/auth",
+                params={"redirect_uri": callback_uri}
+            )
+        logger.info(f"📅 Calendar server responded with status {response.status_code}")
+        return HTMLResponse(content=response.text)
+    except Exception as e:
+        logger.error(f"❌ Calendar auth proxy error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Calendar auth failed: {str(e)}")
+
+
+@app.get("/integrations/google/calendar/callback")
+async def calendar_callback_proxy(code: str = None, state: str = None, error: str = None):
+    """Proxy calendar OAuth callback - passes code to calendar-server"""
+    if error:
+        return HTMLResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Denied</h1>
+                    <p>Error: {error}</p>
+                </body>
+            </html>
+            """
+        )
+    
+    try:
+        logger.info(f"📅 Calendar callback: code={code[:10] if code else 'None'}...")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings.CALENDAR_SERVER_URL}/callback",
+                params={"code": code, "state": state}
+            )
+        logger.info(f"📅 Calendar callback processed, status={response.status_code}")
+        return HTMLResponse(content=response.text)
+    except Exception as e:
+        logger.error(f"❌ Calendar callback proxy error: {e}", exc_info=True)
+        return HTMLResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Failed</h1>
+                    <p>Error: {str(e)}</p>
+                </body>
+            </html>
+            """
+        )
+
+
+@app.get("/integrations/google/gmail/auth")
+async def gmail_auth_proxy():
+    """Proxy Gmail OAuth - redirects to Google with correct callback URI"""
+    try:
+        callback_uri = f"{settings.PUBLIC_DOMAIN}/integrations/google/gmail/callback"
+        logger.info(f"📧 Gmail OAuth: callback_uri={callback_uri}, gmail_server={settings.GMAIL_SERVER_URL}")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings.GMAIL_SERVER_URL}/auth",
+                params={"redirect_uri": callback_uri}
+            )
+        logger.info(f"📧 Gmail server responded with status {response.status_code}")
+        return HTMLResponse(content=response.text)
+    except Exception as e:
+        logger.error(f"❌ Gmail auth proxy error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Gmail auth failed: {str(e)}")
+
+
+@app.get("/integrations/google/gmail/callback")
+async def gmail_callback_proxy(code: str = None, state: str = None, error: str = None):
+    """Proxy Gmail OAuth callback - passes code to gmail-server"""
+    if error:
+        return HTMLResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Denied</h1>
+                    <p>Error: {error}</p>
+                </body>
+            </html>
+            """
+        )
+    
+    try:
+        logger.info(f"📧 Gmail callback: code={code[:10] if code else 'None'}...")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings.GMAIL_SERVER_URL}/callback",
+                params={"code": code, "state": state}
+            )
+        logger.info(f"📧 Gmail callback processed, status={response.status_code}")
+        return HTMLResponse(content=response.text)
+    except Exception as e:
+        logger.error(f"❌ Gmail callback proxy error: {e}", exc_info=True)
+        logger.error(f"Gmail callback proxy error: {e}")
+        return HTMLResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Failed</h1>
+                    <p>Error: {str(e)}</p>
+                </body>
+            </html>
+            """
+        )
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(
     message: str = Form(...),
     conversation_id: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     authorization: Optional[str] = Header(None)
 ):
-    """Streaming chat endpoint — returns SSE (text/event-stream).
-    Same logic as /chat but streams the final response word-by-word
-    and emits heartbeat events while the agent is thinking.
+    """Chat endpoint - PUBLIC - guests allowed, authentication optional
+    
+    Supports text messages and file uploads:
+    - Audio files: Transcribed to text
+    - Video files: Audio extracted and transcribed
+    - Images: Analyzed with vision model
+    - PDFs/Word: Text extracted
     """
-    import json as _json
-
-    # ── File processing ────────────────────────────────────────────────────
+    
+    # Process file if uploaded
     file_content = None
-    extracted_text_s = None
-    file_type_s = None
+    extracted_text = None
+    file_type = None
     if file:
         try:
             file_data = await file.read()
+            logger.info(f"📎 File received: '{file.filename}' ({len(file_data):,} bytes)")
+
             from .file_processor import file_processor
-            extracted_text_s, file_type_s = await file_processor.process_file(
-                file_data, file.filename, user_query=message
+            extracted_text, file_type = await file_processor.process_file(
+                file_data,
+                file.filename,
+                user_query=message,   # lets vision models focus on what the user asked
             )
-            file_content = f"\n\n{extracted_text_s}"
+            file_content = f"\n\n{extracted_text}"
+            logger.info(f"✓ File processed ({file_type}): {len(extracted_text):,} chars")
         except ValueError as e:
+            logger.warning(f"⚠️ File rejected: {e}")
             file_content = f"\n\n[File not processed: {e}]"
         except Exception as e:
+            logger.error(f"❌ File processing error: {e}", exc_info=True)
             file_content = f"\n\n[File upload failed: {e}]"
-
+    
+    # Combine message with file content
     full_message = message + (file_content or "")
-
-    # ── Session resolution ─────────────────────────────────────────────────
+    
+    # Check if user is authenticated (optional)
     if authorization:
         try:
             token = get_token_from_header(authorization)
             session = await state_manager.get_session(token)
+            
             if session:
+                # Authenticated user - has history, can save conversations
                 session_id = session["session_id"]
                 user_id = session["user_id"]
                 conv_id = conversation_id or str(uuid.uuid4())
                 conversation_history = await state_manager.get_conversation_history(session_id)
             else:
+                # Invalid session - fall back to guest mode with persistent conv_id
                 conv_id = conversation_id or str(uuid.uuid4())
-                session_id = f"guest_{conv_id}"
+                session_id = f"guest_{conv_id}"  # Use conv_id to persist history
                 user_id = "guest"
                 conversation_history = await state_manager.get_conversation_history(session_id)
         except HTTPException:
+            # Token validation failed - use guest mode with persistent conv_id
             conv_id = conversation_id or str(uuid.uuid4())
             session_id = f"guest_{conv_id}"
             user_id = "guest"
             conversation_history = await state_manager.get_conversation_history(session_id)
     else:
+        # No token provided - guest mode with persistent conv_id
         conv_id = conversation_id or str(uuid.uuid4())
-        session_id = f"guest_{conv_id}"
+        session_id = f"guest_{conv_id}"  # Use conv_id to persist history
         user_id = "guest"
         conversation_history = await state_manager.get_conversation_history(session_id)
-
-    # ── File context persistence / injection ───────────────────────────────
-    if file and extracted_text_s and file_type_s:
+    
+    # ── Store new file context in session OR inject previous file context ──
+    if file and extracted_text and file_type:
+        # New file successfully processed — persist so follow-up turns can reference it
         try:
-            await state_manager.set_file_context(session_id, file.filename, file_type_s, extracted_text_s)
+            await state_manager.set_file_context(session_id, file.filename, file_type, extracted_text)
         except Exception:
             pass
     elif not file:
+        # No file this turn — check if a previous upload exists in this session
         try:
             stored_fc = await state_manager.get_file_context(session_id)
             if stored_fc:
@@ -963,114 +1339,259 @@ async def chat_stream(
         except Exception:
             pass
 
-    # ── Name capture: if guest is replying with their name ──────────────────────────
+    # ── Name capture: if guest is replying with their name ─────────────────────
     if user_id == "guest":
         try:
-            _cs_s = await state_manager.get_conversation_state(session_id)
-            if _cs_s and not _cs_s.user_name:
-                _extracted_s = mcp_agent._extract_name_from_message(
-                    message.strip(), require_explicit=not _cs_s.name_asked
+            _cs = await state_manager.get_conversation_state(session_id)
+            if _cs and not _cs.user_name:
+                # Accept explicit phrases ("my name is X") at any time;
+                # also accept short direct replies once we've asked.
+                _extracted = mcp_agent._extract_name_from_message(
+                    message.strip(), require_explicit=not _cs.name_asked
                 )
-                if _extracted_s:
-                    _cs_s.user_name = _extracted_s
-                    _cs_s.name_used = False
-                    await state_manager.update_conversation_state(session_id, _cs_s)
-                    _name_reply_s = (
-                        f"Nice to meet you, **{_extracted_s}**! \U0001f60a "
+                if _extracted:
+                    _cs.user_name = _extracted
+                    _cs.name_used = False
+                    await state_manager.update_conversation_state(session_id, _cs)
+                    _name_reply = (
+                        f"Nice to meet you, **{_extracted}**! \U0001f60a "
                         "I'm here to help whenever you need me. What can I assist you with?"
                     )
                     await state_manager.save_conversation_turn(
-                        session_id, user_id, conv_id, full_message, _name_reply_s
+                        session_id, user_id, conv_id, full_message, _name_reply
                     )
+                    return ChatResponse(response=_name_reply, conversation_id=conv_id)
+        except Exception as _e:
+            logger.warning(f"\u26a0\ufe0f Name-capture check failed (non-critical): {_e}")
 
-                    async def _name_ack_stream():
-                        import json as _j
-                        for _w in _name_reply_s.split(" "):
-                            yield f"data: {_j.dumps({'type': 'chunk', 'text': _w + ' '})}\n\n"
-                            await asyncio.sleep(0.022)
-                        yield f"data: {_j.dumps({'type': 'done', 'conversation_id': conv_id})}\n\n"
-
-                    return StreamingResponse(
-                        _name_ack_stream(),
-                        media_type="text/event-stream",
-                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-                    )
-        except Exception as _e_s:
-            logger.warning(f"\u26a0\ufe0f Stream name-capture failed (non-critical): {_e_s}")
-
-    # ── Run agent (runs fully before streaming; SSE heartbeats keep connection alive) ──
-    agent_task = asyncio.create_task(
-        mcp_agent.process_message(
+    # Process message through LangChain agent
+    try:
+        agent_result = await mcp_agent.process_message(
             message=full_message,
             session_id=session_id,
-            conversation_history=conversation_history,
+            conversation_history=conversation_history
         )
+    except Exception as e:
+        logger.error(f"❌ Agent processing error: {e}", exc_info=True)
+        return ChatResponse(
+            response=f"I'm having trouble processing your request right now. Please try again later.",
+            conversation_id=conv_id
+        )
+    
+    # Log full result for analytics/debugging
+    logger.info(f"🔍 Agent execution: tool_calls={len(agent_result.get('tool_calls', []))}, "
+                f"execution_time={agent_result.get('execution_time', 0):.2f}s, "
+                f"success={agent_result.get('success', False)}")
+    if agent_result.get("tool_calls"):
+        logger.debug(f"📋 Tools executed: {[tc.get('tool') for tc in agent_result['tool_calls']]}")
+    
+    response_text = agent_result.get("response", "I couldn't process that request.")
+
+    # ── Personalization: inject name (once per session) + ask for name (guests) ───
+    if user_id == "guest":
+        try:
+            _cs = await state_manager.get_conversation_state(session_id)
+            if not _cs:
+                _cs = ConversationState(session_id, conv_id)
+            _state_changed = False
+            if _cs.user_name and not _cs.name_used:
+                # Use name once — append warm sign-off
+                response_text += f"\n\nLet me know if you need anything else, **{_cs.user_name}**! \U0001f60a"
+                _cs.name_used = True
+                _state_changed = True
+            elif not _cs.name_asked and not _cs.user_name:
+                # First reply to this guest — ask for name at the end
+                response_text += "\n\nBy the way, may I know your name so I can address you properly? \U0001f60a"
+                _cs.name_asked = True
+                _state_changed = True
+            if _state_changed:
+                await state_manager.update_conversation_state(session_id, _cs)
+        except Exception as _e:
+            logger.warning(f"\u26a0\ufe0f Personalization failed (non-critical): {_e}")
+
+    # Save conversation for ALL users (guests save to Redis only, authenticated to PostgreSQL too)
+    try:
+        await state_manager.save_conversation_turn(
+            session_id, user_id, conv_id, full_message, response_text
+        )
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to save conversation: {e}")
+        # Don't fail the request if conversation save fails
+    
+    return ChatResponse(
+        response=response_text,
+        conversation_id=conv_id,
+        pending_auth=agent_result.get("pending_auth", False),
+        auth_url=agent_result.get("auth_url")
     )
+
+
+@app.post("/chat/stream", tags=["Chat"], summary="Stream chat responses")
+async def stream_chat(
+    request: Request,
+    chat_request: ChatRequest = Depends(get_chat_request),
+    token: str = Depends(get_token_from_header)
+):
+    """Main endpoint for processing chat messages, supporting streaming."""
+    trace_id = str(uuid.uuid4())
+    logger.info(f"[{trace_id}] Initiating new stream chat request.")
+    user_id = None
+    try:
+        if token:
+            user_id = await auth_manager.get_user_id_from_token(token)
+    except HTTPException:
+        # Token is invalid or expired, proceed as guest
+        pass
 
     async def event_stream():
-        # Heartbeat while agent is thinking
-        tick = 0
-        while not agent_task.done():
-            await asyncio.sleep(0.4)
-            tick += 1
-            yield f"data: {_json.dumps({'type': 'thinking', 'tick': tick})}\n\n"
-
         try:
-            agent_result = agent_task.result()
+            # Pass trace_id to the agent
+            async for chunk in agent.process_message_stream(
+                message=chat_request.message,
+                session_id=chat_request.session_id,
+                file=chat_request.file,
+                user_id=user_id,
+                trace_id=trace_id
+            ):
+                yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:
-            logger.error(f"Agent error in stream: {e}")
-            yield f"data: {_json.dumps({'type': 'error', 'text': 'I had trouble processing that. Please try again.'})}\n\n"
-            return
+            logger.error(f"[{trace_id}] Error during chat stream: {e}", exc_info=True)
+            error_chunk = {"type": "error", "text": "An unexpected error occurred."}
+            yield f"data: {json.dumps(error_chunk)}\n\n"
 
-        response_text = agent_result.get("response", "I couldn't process that request.")
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-        # ── Personalization: name inject (once) or name ask (first reply) ────────
-        if user_id == "guest":
+
+@app.post("/voice", tags=["Chat"], summary="Process voice input and get a voice response")
+async def voice_chat(
+    audio: UploadFile = File(...),
+    authorization: Optional[str] = Header(None)
+):
+    """Voice chat endpoint - accepts audio, returns audio response
+    
+    Workflow:
+    1. Receive audio file (webm/mp3/wav)
+    2. Convert speech to text (STT via Whisper)
+    3. Process through agent (same as text chat)
+    4. Convert response to speech (TTS via OpenAI)
+    5. Return audio file
+    """
+    if not _VOICE_SERVICE_AVAILABLE or voice_service is None:
+        raise HTTPException(status_code=503, detail="Voice service unavailable (openai package missing)")
+    
+    trace_id = str(uuid.uuid4())
+    logger.info(f"[{trace_id}] Initiating new voice chat request.")
+
+    try:
+        # Get session (same as /chat endpoint)
+        if authorization:
             try:
-                _cs_ev = await state_manager.get_conversation_state(session_id)
-                if not _cs_ev:
-                    _cs_ev = ConversationState(session_id, conv_id)
-                _changed_ev = False
-                if _cs_ev.user_name and not _cs_ev.name_used:
-                    response_text += f"\n\nLet me know if you need anything else, **{_cs_ev.user_name}**! \U0001f60a"
-                    _cs_ev.name_used = True
-                    _changed_ev = True
-                elif not _cs_ev.name_asked and not _cs_ev.user_name:
-                    response_text += "\n\nBy the way, may I know your name so I can address you properly? \U0001f60a"
-                    _cs_ev.name_asked = True
-                    _changed_ev = True
-                if _changed_ev:
-                    await state_manager.update_conversation_state(session_id, _cs_ev)
-            except Exception as _e_ev:
-                logger.warning(f"\u26a0\ufe0f Stream personalization failed (non-critical): {_e_ev}")
-
-        # Persist conversation turn
-        try:
+                token = get_token_from_header(authorization)
+                session = await state_manager.get_session(token)
+                if session:
+                    session_id = session["session_id"]
+                    user_id = session["user_id"]
+                    conversation_id = session.get("conversation_id")
+                    conversation_history = await state_manager.get_conversation_history(session_id)
+                else:
+                    session_id = str(uuid.uuid4())
+                    user_id = "guest"
+                    conversation_id = str(uuid.uuid4())
+                    conversation_history = []
+            except:
+                session_id = str(uuid.uuid4())
+                user_id = "guest"
+                conversation_id = str(uuid.uuid4())
+                conversation_history = []
+        else:
+            # No token - guest mode
+            session_id = str(uuid.uuid4())
+            user_id = "guest"
+            conversation_id = str(uuid.uuid4())
+            conversation_history = []
+        
+        # Step 1: STT - Convert audio to text
+        audio_bytes = await audio.read()
+        filename = audio.filename or "audio.webm"
+        
+        logger.info(f"[{trace_id}] 🎤 Voice input received: {len(audio_bytes)} bytes, format: {filename}")
+        user_message = await voice_service.speech_to_text(audio_bytes, filename)
+        logger.info(f"[{trace_id}] 📝 Transcribed: {user_message}")
+        
+        # Step 2: Process through agent
+        agent_result = await mcp_agent.process_message(
+            message=user_message,
+            session_id=session_id,
+            conversation_history=conversation_history,
+            trace_id=trace_id
+        )
+        
+        response_text = agent_result.get("response", "I couldn't process that.")
+        logger.info(f"[{trace_id}] 💬 Agent response: {response_text[:100]}...")
+        
+        # Step 3: TTS - Convert text to speech (returns tuple: audio_bytes, content_type)
+        audio_response, audio_content_type = await voice_service.text_to_speech(response_text)
+        
+        # Step 4: Save conversation (if authenticated)
+        if user_id != "guest":
             await state_manager.save_conversation_turn(
-                session_id, user_id, conv_id, full_message, response_text
+                session_id, user_id, conversation_id, user_message, response_text
             )
-        except Exception as e:
-            logger.warning(f"Failed to save conversation turn: {e}")
+        
+        # Helper to sanitize text for HTTP headers (ASCII only)
+        def sanitize_header(text: str) -> str:
+            return text.encode('ascii', 'replace').decode('ascii')[:200]
+        
+        # Return audio if available, otherwise return JSON for browser TTS
+        if audio_response:
+            logger.info(f"[{trace_id}] 🔊 Generated audio response: {len(audio_response)} bytes ({audio_content_type})")
+            return Response(
+                content=audio_response,
+                media_type=audio_content_type or "audio/mpeg",
+                headers={
+                    "Content-Disposition": "attachment; filename=response.mp3",
+                    "X-Transcription": sanitize_header(user_message),
+                    "X-Response-Text": sanitize_header(response_text)
+                }
+            )
+        else:
+            # No audio - return JSON with browser TTS fallback
+            logger.info(f"[{trace_id}] 🔊 No server TTS, returning text for browser TTS")
+            return JSONResponse(
+                content={
+                    "transcription": user_message,
+                    "response": response_text,
+                    "use_browser_tts": True
+                },
+                headers={
+                    "X-Transcription": sanitize_header(user_message),
+                    "X-Response-Text": sanitize_header(response_text)
+                }
+            )
+        
+    except Exception as e:
+        logger.error(f"[{trace_id}] ❌ Voice chat error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Voice processing failed: {str(e)}"
+        )
 
-        # Stream the response word-by-word
-        words = response_text.split(" ")
-        for i, word in enumerate(words):
-            chunk = word + (" " if i < len(words) - 1 else "")
-            yield f"data: {_json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
-            await asyncio.sleep(0.022)
 
-        # Final done event
-        yield f"data: {_json.dumps({'type': 'done', 'conversation_id': conv_id, 'pending_auth': agent_result.get('pending_auth', False), 'auth_url': agent_result.get('auth_url')})}\n\n"
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+@app.get("/voice-chat")
+async def voice_chat_page():
+    """Serve voice chat UI with avatar (now unified in chat-widget)"""
+    return FileResponse(str(STATIC_DIR / "widget-demo.html"))
 
 
-async def get_conversations(authorization: Optional[str] = Header(None)):
-    """Get user conversations"""
+@app.get("/evaluation")
+async def get_evaluation_metrics(authorization: Optional[str] = Header(None)):
+    """Get agent evaluation metrics and task completion report
+    
+    Returns comprehensive evaluation data including:
+    - Task completion rates by category (Calendar, Knowledge, Email, Conversation)
+    - Overall success rate and production readiness
+    - Individual task results
+    """
     token = get_token_from_header(authorization)
     payload = decode_token(token)
     
@@ -1080,34 +1601,179 @@ async def get_conversations(authorization: Optional[str] = Header(None)):
             detail="Invalid token"
         )
     
-    # TODO: Retrieve from database
-    return {"conversations": []}
+    # Get evaluation metrics
+    metrics = evaluator.get_metrics()
+    
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "overall_success_rate": round(metrics.overall_success_rate, 2),
+            "total_tasks": metrics.total_tasks,
+            "total_passed": metrics.total_passed,
+            "production_ready": metrics.production_ready,
+            "production_gate_threshold": 85.0
+        },
+        "categories": {
+            "calendar": {
+                "success_rate": round(metrics.calendar_success_rate, 2),
+                "total": metrics.calendar_total,
+                "passed": metrics.calendar_passed,
+                "threshold": 90.0,
+                "meets_threshold": metrics.calendar_success_rate >= 90.0 if metrics.calendar_total > 0 else None
+            },
+            "knowledge": {
+                "success_rate": round(metrics.knowledge_success_rate, 2),
+                "total": metrics.knowledge_total,
+                "passed": metrics.knowledge_passed,
+                "threshold": 85.0,
+                "meets_threshold": metrics.knowledge_success_rate >= 85.0 if metrics.knowledge_total > 0 else None
+            },
+            "email": {
+                "success_rate": round(metrics.email_success_rate, 2),
+                "total": metrics.email_total,
+                "passed": metrics.email_passed,
+                "threshold": 80.0,
+                "meets_threshold": metrics.email_success_rate >= 80.0 if metrics.email_total > 0 else None
+            },
+            "conversation": {
+                "success_rate": round(metrics.conversation_success_rate, 2),
+                "total": metrics.conversation_total,
+                "passed": metrics.conversation_passed,
+                "threshold": 95.0,
+                "meets_threshold": metrics.conversation_success_rate >= 95.0 if metrics.conversation_total > 0 else None
+            }
+        },
+        "recent_tasks": [
+            {
+                "task_id": task.task_id,
+                "category": task.category,
+                "task_type": task.task_type,
+                "user_request": task.user_request,
+                "tools_used": task.tool_calls,
+                "success": task.success,
+                "reason": task.reason,
+                "timestamp": task.timestamp
+            }
+            for task in evaluator.results[-20:]  # Last 20 tasks
+        ]
+    }
 
 
-@app.get("/")
-async def root():
-    """Serve full page chat (default view)"""
-    return FileResponse(str(STATIC_DIR / "full-page.html"))
+
+# ============================================================================
+# OAuth Proxy Endpoints (Routes calendar/gmail OAuth through mcp_host)
+# ============================================================================
+
+@app.get("/integrations/google/calendar/auth")
+async def calendar_auth_proxy():
+    """Proxy calendar OAuth - redirects to Google with correct callback URI"""
+    try:
+        callback_uri = f"{settings.PUBLIC_DOMAIN}/integrations/google/calendar/callback"
+        logger.info(f"📅 Calendar OAuth: callback_uri={callback_uri}, calendar_server={settings.CALENDAR_SERVER_URL}")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings.CALENDAR_SERVER_URL}/auth",
+                params={"redirect_uri": callback_uri}
+            )
+        logger.info(f"📅 Calendar server responded with status {response.status_code}")
+        return HTMLResponse(content=response.text)
+    except Exception as e:
+        logger.error(f"❌ Calendar auth proxy error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Calendar auth failed: {str(e)}")
 
 
-@app.get("/chat")
-async def chat_page():
-    """Serve full page chat"""
-    return FileResponse(str(STATIC_DIR / "full-page.html"))
+@app.get("/integrations/google/calendar/callback")
+async def calendar_callback_proxy(code: str = None, state: str = None, error: str = None):
+    """Proxy calendar OAuth callback - passes code to calendar-server"""
+    if error:
+        return HTMLResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Denied</h1>
+                    <p>Error: {error}</p>
+                </body>
+            </html>
+            """
+        )
+    
+    try:
+        logger.info(f"📅 Calendar callback: code={code[:10] if code else 'None'}...")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings.CALENDAR_SERVER_URL}/callback",
+                params={"code": code, "state": state}
+            )
+        logger.info(f"📅 Calendar callback processed, status={response.status_code}")
+        return HTMLResponse(content=response.text)
+    except Exception as e:
+        logger.error(f"❌ Calendar callback proxy error: {e}", exc_info=True)
+        return HTMLResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Failed</h1>
+                    <p>Error: {str(e)}</p>
+                </body>
+            </html>
+            """
+        )
 
 
-@app.get("/widget")
-async def widget_page():
-    """Serve embeddable chat widget"""
-    return FileResponse(str(STATIC_DIR / "widget-demo.html"))
+@app.get("/integrations/google/gmail/auth")
+async def gmail_auth_proxy():
+    """Proxy Gmail OAuth - redirects to Google with correct callback URI"""
+    try:
+        callback_uri = f"{settings.PUBLIC_DOMAIN}/integrations/google/gmail/callback"
+        logger.info(f"📧 Gmail OAuth: callback_uri={callback_uri}, gmail_server={settings.GMAIL_SERVER_URL}")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings.GMAIL_SERVER_URL}/auth",
+                params={"redirect_uri": callback_uri}
+            )
+        logger.info(f"📧 Gmail server responded with status {response.status_code}")
+        return HTMLResponse(content=response.text)
+    except Exception as e:
+        logger.error(f"❌ Gmail auth proxy error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Gmail auth failed: {str(e)}")
 
 
-@app.get("/embed")
-async def embed_page():
-    """Serve embeddable chat widget (alias)"""
-    return FileResponse(str(STATIC_DIR / "widget-demo.html"))
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host=settings.HOST, port=settings.PORT)
+@app.get("/integrations/google/gmail/callback")
+async def gmail_callback_proxy(code: str = None, state: str = None, error: str = None):
+    """Proxy Gmail OAuth callback - passes code to gmail-server"""
+    if error:
+        return HTMLResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Denied</h1>
+                    <p>Error: {error}</p>
+                </body>
+            </html>
+            """
+        )
+    
+    try:
+        logger.info(f"📧 Gmail callback: code={code[:10] if code else 'None'}...")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings.GMAIL_SERVER_URL}/callback",
+                params={"code": code, "state": state}
+            )
+        logger.info(f"📧 Gmail callback processed, status={response.status_code}")
+        return HTMLResponse(content=response.text)
+    except Exception as e:
+        logger.error(f"❌ Gmail callback proxy error: {e}", exc_info=True)
+        logger.error(f"Gmail callback proxy error: {e}")
+        return HTMLResponse(
+            content=f"""
+            <html>
+                <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
+                    <h1>✗ Authorization Failed</h1>
+                    <p>Error: {str(e)}</p>
+                </body>
+            </html>
+            """
+        )

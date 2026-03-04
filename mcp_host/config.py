@@ -1,12 +1,9 @@
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
 from typing import Optional
-import json
-
-
 class Settings(BaseSettings):
     """Application settings"""
-
+    
     # Server
     ENV: str = "development"
     DEBUG: bool = True
@@ -14,15 +11,15 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     ALLOWED_ORIGINS: list = ["http://localhost:8000", "http://localhost:3000"]  # Override via .env
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+    SECRET_KEY: str
     PUBLIC_DOMAIN: str = "http://localhost:8000"  # Set to your Railway domain in production
 
     # Database
-    DATABASE_URL: str = "postgresql://mcpagent:mcpagent_dev_password@postgres:5432/mcpagent"
+    DATABASE_URL: str
 
     # Redis
-    REDIS_URL: str = "redis://:mcpagent_dev_password@redis:6379/0"
-    REDIS_PASSWORD: str = "mcpagent_dev_password"
+    REDIS_URL: str
+    REDIS_PASSWORD: str
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
@@ -37,8 +34,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    ADMIN_EMAIL: str = "ceo_and_chairman@masterprodev.com"
-    ADMIN_PASSWORD: str = "Happy@123"  # Change in production via environment variable
+    ADMIN_EMAIL: str
+    ADMIN_PASSWORD: str
 
     # MCP Servers (localhost since all services in same container)
     CALENDAR_SERVER_URL: str = "http://localhost:8001"
