@@ -510,10 +510,10 @@ class MCPAgent:
                         return extracted_text, file_type
                     except ValueError as e:
                         logger.warning(f"[{trace_id}] ⚠️ File rejected: {e}")
-                        yield {"type": "error", "text": f"File Error: {e}"
+                        yield {"type": "error", "text": f"File Error: {e}"}
                     except Exception as e:
                         logger.error(f"[{trace_id}] ❌ File processing error: {e}", exc_info=True)
-                        yield {"type": "error", "text": f"File upload failed: {e}"
+                        yield {"type": "error", "text": f"File upload failed: {e}"}
                     return None, None
                 file_processing_task = process_file_task()
 
