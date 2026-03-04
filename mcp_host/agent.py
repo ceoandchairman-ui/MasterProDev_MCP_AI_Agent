@@ -563,7 +563,7 @@ class MCPAgent:
             logger.info(f"[{trace_id}] 📊 Context tokens budgeted: {self.token_budget.get_context_tokens()} tokens")
 
             # 4. Plan actions
-            yield {"type": "status", "text": "Thinking...")
+            yield {"type": "status", "text": "Thinking..."}
             plan = await self._plan_actions(full_message, history_text, trace_id=trace_id)
             actions = plan.get("actions", [])
             logger.info(f"[{trace_id}] 🧭 Planner decided on actions: {[a.get('tool') for a in actions]}")
