@@ -572,7 +572,7 @@ class MCPAgent:
                 yield {"type": "status", "text": "Formulating response..."}
 
             # 6. Synthesize final response and stream it
-            yield {"type": "status", "text": "Creating final response...")
+            yield {"type": "status", "text": "Creating final response..."}
             final_response_text = ""
             had_errors = any("error" in run for run in tool_runs)
             planner_hint = None if had_errors else plan.get("final_response")
