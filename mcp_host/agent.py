@@ -2,10 +2,11 @@
 
 import logging
 import os
+import uuid
 from typing import Optional, List, Dict, Any, AsyncGenerator
 from datetime import datetime, timedelta, timezone
 import json
-
+from fastapi import UploadFile
 from langchain.tools import BaseTool
 from dateutil import parser as date_parser
 
@@ -592,7 +593,7 @@ class MCPAgent:
 
             # 7. Save conversation turn
             # PII SCANNING: Redact user message and agent response before saving to history
-            redacted_user_turn = pii_scanner.scan_and_redact(user_turn_content, "USER_MESSAGE")
+            redacted_user_turn = pii_scanner.scan_and_redact(message, "USER_MESSAGE")
             redacted_final_response = pii_scanner.scan_and_redact(final_response_text, "AGENT_RESPONSE")
             
             await self.state_manager.save_conversation_turn(

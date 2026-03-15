@@ -1,5 +1,6 @@
 """LLM Provider - Multi-model abstraction layer with fallback and mock support"""
 
+import asyncio
 import logging
 from typing import Optional, Dict, Any, List, AsyncGenerator
 from abc import ABC, abstractmethod

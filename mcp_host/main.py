@@ -42,6 +42,13 @@ from .models import (
 from .auth import hash_password, verify_password, create_access_token, decode_token
 from .state import state_manager, ConversationState
 from .agent import mcp_agent
+
+
+def get_token_from_header(authorization: str) -> Optional[str]:
+    """Extract bearer token from Authorization header."""
+    if authorization and authorization.startswith("Bearer "):
+        return authorization[7:]
+    return None
 from .rag_service import rag_service
 from .evaluator import evaluator
 from .quality_gate import initialize_quality_gate, quality_gate
@@ -249,31 +256,7 @@ async def root():
         return FileResponse(login_path)
     return HTMLResponse("<h1>MCP Host</h1><p>Login page not found.</p>")
 
-@app.get("/health", response_model=HealthResponse, tags=["General"], summary="Health check endpoint")
-async def health_check():
-    """Provides a health check endpoint for monitoring."""
-    return {
-        "status": "ok",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "services": {
-            "database": await state_manager.is_healthy(),
-            "llm": mcp_agent.llm_manager.is_healthy(),
-            "rag": rag_service.is_healthy(),
-            "calendar": await _check_service_health(settings.CALENDAR_SERVER_URL),
-            "gmail": await _check_service_health(settings.GMAIL_SERVER_URL),
-        }
-    }
 
-async def _check_service_health(service_url: Optional[str]) -> str:
-    """Helper to check the health of a downstream service."""
-    if not service_url:
-        return "not_configured"
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            response = await client.get(f"{service_url}/health")
-            return "ok" if response.status_code == 200 else "unhealthy"
-    except httpx.RequestError:
-        return "unreachable"
 
 @app.get("/login-docs", include_in_schema=False)
 async def login_docs():
