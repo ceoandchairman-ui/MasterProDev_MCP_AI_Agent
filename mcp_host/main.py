@@ -9,6 +9,8 @@ import uuid  # Import uuid for trace_id generation
 try:
     from slowapi import Limiter
     from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    from slowapi._http_serialization import _rate_limit_exceeded_handler
     _SLOWAPI_AVAILABLE = True
 except ImportError:
     _SLOWAPI_AVAILABLE = False
@@ -240,7 +242,7 @@ if STATIC_DIR.exists():
 # Apply rate limiter to all routes
 if _SLOWAPI_AVAILABLE:
     app.state.limiter = limiter
-    app.add_exception_handler(HTTPException, limiter.http_exception_handler)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     logger.info("✓ Rate limiting enabled.")
 
 
