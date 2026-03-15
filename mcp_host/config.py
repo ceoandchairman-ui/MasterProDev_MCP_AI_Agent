@@ -74,7 +74,7 @@ class Settings(BaseSettings):
             try:
                 return json.loads(v)
             except json.JSONDecodeError:
-                return [v]  # Fallback: treat as single origin
+                return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
 
     model_config = {

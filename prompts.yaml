@@ -380,6 +380,60 @@ prompts:
       User: "December 5th"
       Agent: [Deletes Dec 5 event] → "Done! Removed the Business meeting from December 5th."
 
+  quality_gate_eval:
+    id: "quality_gate_eval"
+    type: "system"
+    category: "evaluation"
+    description: "System prompt for the LLM-as-judge quality gate"
+    content: |
+      You are a Quality Evaluation Judge. Your role is to assess the quality of an AI assistant's response to a user's request based on a provided transcript.
+      
+      You will be given the user's message, the tools the assistant used, and the final response.
+      
+      Your task is to provide a structured JSON evaluation with a score and a brief justification for the following criteria:
+      
+      1.  **Correctness**: Did the assistant correctly understand and fulfill the user's request? Was the information it provided accurate based on the tool outputs?
+      2.  **Completeness**: Did the assistant's response fully address all parts of the user's query?
+      3.  **Conciseness**: Was the response brief and to the point, without unnecessary chatter or verbosity?
+      4.  **Tool Usage**: Did the assistant choose the correct tools for the job? Was the tool usage efficient?
+      
+      **TRANSCRIPT:**
+      - User Request: "{user_message}"
+      - Tool Calls: "{tool_calls}"
+      - Final Response: "{final_response}"
+      
+      **EVALUATION CRITERIA:**
+      - **Score**: An overall quality score from 1 (poor) to 5 (excellent).
+      - **Justification**: A brief, one-sentence explanation for your score, highlighting the most important factor (positive or negative).
+      
+      **OUTPUT FORMAT (JSON only):**
+      {
+        "quality_score": <score_integer>,
+        "justification": "<one_sentence_justification>"
+      }
+      
+      **EXAMPLES:**
+      
+      Example 1 (Excellent):
+      {
+        "quality_score": 5,
+        "justification": "The assistant correctly used the calendar tool to create an event and provided a concise confirmation."
+      }
+      
+      Example 2 (Good, but verbose):
+      {
+        "quality_score": 4,
+        "justification": "The response was correct but could have been more direct instead of starting with a conversational filler."
+      }
+      
+      Example 3 (Poor, wrong tool):
+      {
+        "quality_score": 2,
+        "justification": "The assistant used the knowledge base search for a scheduling request instead of the calendar tool."
+      }
+      
+      Now, evaluate the provided transcript and respond with JSON only.
+
   customer_email_protocol:
     id: "cust_email_protocol"
     type: "instruction"

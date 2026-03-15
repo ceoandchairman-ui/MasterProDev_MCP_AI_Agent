@@ -18,6 +18,7 @@ from mcp_host.multi_turn_processor import multi_turn_processor, initialize_multi
 from mcp_host.query_processor import QueryProcessor
 from mcp_host.intent_router import IntentRouter, Intent
 from mcp_host.evaluator import evaluator  # Task evaluation metrics
+from mcp_host.pii_scanner import pii_scanner
 
 try:
     from langdetect import detect as _detect_lang, LangDetectException
@@ -225,7 +226,11 @@ class MCPAgent:
         Supports multi-turn processing for complex requests.
         """
         trace_id = trace_id or str(uuid.uuid4())
-        logger.info(f"[{trace_id}] 📥 Processing message: {message[:100]}...")
+        
+        # PII SCANNING: Redact sensitive info from user message before logging/processing
+        redacted_message = pii_scanner.scan_and_redact(message, "USER_MESSAGE")
+        
+        logger.info(f"[{trace_id}] 📥 Processing message: {redacted_message[:100]}...")
         if not self.initialized:
             logger.warning(f"[{trace_id}] ⚠ Agent not initialized, initializing now...")
             await self.initialize()
@@ -313,6 +318,10 @@ class MCPAgent:
                             trace_id=trace_id
                         )
                         execution_time = (datetime.utcnow() - start_time).total_seconds()
+                        
+                        # PII SCANNING: Redact final response before returning
+                        final_response = pii_scanner.scan_and_redact(final_response, "AGENT_RESPONSE")
+
                         return {
                             "response": (final_response or "I couldn't craft a response.").strip(),
                             "tool_calls": [],
@@ -337,6 +346,10 @@ class MCPAgent:
                 trace_id=trace_id
             )
             execution_time = (datetime.utcnow() - start_time).total_seconds()
+            
+            # PII SCANNING: Redact final response before returning and logging
+            final_response = pii_scanner.scan_and_redact(final_response, "AGENT_RESPONSE")
+            
             return {
                 "response": (final_response or "I couldn't craft a response.").strip(),
                 "tool_calls": [],
@@ -408,6 +421,9 @@ class MCPAgent:
                     )
 
             final_response = (final_response or "I couldn't craft a response.").strip()
+
+            # PII SCANNING: Redact final response before returning and logging
+            final_response = pii_scanner.scan_and_redact(final_response, "AGENT_RESPONSE")
 
             # Format response
             execution_time = (datetime.utcnow() - start_time).total_seconds()
@@ -484,7 +500,11 @@ class MCPAgent:
         This is the primary method for real-time, interactive chat.
         """
         trace_id = trace_id or str(uuid.uuid4())
-        logger.info(f"[{trace_id}] 📥 Streaming message: {message[:100]}...")
+        
+        # PII SCANNING: Redact sensitive info from user message before logging/processing
+        redacted_message = pii_scanner.scan_and_redact(message, "USER_MESSAGE")
+        
+        logger.info(f"[{trace_id}] 📥 Streaming message: {redacted_message[:100]}...")
         if not self.initialized:
             logger.warning(f"[{trace_id}] ⚠ Agent not initialized, initializing now...")
             await self.initialize()
@@ -493,59 +513,32 @@ class MCPAgent:
         user_id = user_id or "guest"
 
         try:
-            # 1. Asynchronously process file upload if present
-            file_processing_task = None
-            if file:
-                async def process_file_task():
-                    try:
-                        file_data = await file.read()
-                        logger.info(f"[{trace_id}] 📎 File received: '{file.filename}' ({len(file_data):,} bytes)")
-                        yield {"type": "status", "text": f"Processing file: {file.filename}"}
-
-                        extracted_text, file_type = await self.file_processor.process_file(
-                            file_data, file.filename, user_query=message
-                        )
-                        logger.info(f"[{trace_id}] ✓ File processed ({file_type}): {len(extracted_text):,} chars")
-                        yield {"type": "status", "text": "File analysis complete."}
-                        return extracted_text, file_type
-                    except ValueError as e:
-                        logger.warning(f"[{trace_id}] ⚠️ File rejected: {e}")
-                        yield {"type": "error", "text": f"File Error: {e}"}
-                    except Exception as e:
-                        logger.error(f"[{trace_id}] ❌ File processing error: {e}", exc_info=True)
-                        yield {"type": "error", "text": f"File upload failed: {e}"}
-                    return None, None
-                file_processing_task = process_file_task()
-
-            # 2. Handle file content and combine with message
+            # 1 & 2. Handle file upload and combine with message
             full_message = message
             file_context_for_history = ""
-            if file_processing_task:
-                extracted_text = None
-                async for chunk in file_processing_task:
-                    yield chunk
-                    if chunk.get("type") == "status" and chunk.get("text") == "File analysis complete.":
-                        # This is a bit of a hack to get the return value
-                        # A better solution would be to refactor process_file_task
-                        # to not be a generator or to use a different mechanism.
-                        # For now, we assume the last yielded value before completion is not what we want.
-                        # The `return` statement in the async generator is the final result.
-                        pass
-                # The correct way to get the return value from an async generator
-                # is not straightforward. Let's re-run the processing part that returns the value.
-                # This is inefficient and should be refactored.
-                file.file.seek(0)
-                file_data = await file.read()
+            
+            if file:
                 try:
+                    file_data = await file.read()
+                    logger.info(f"[{trace_id}] 📎 File received: '{file.filename}' ({len(file_data):,} bytes)")
+                    yield {"type": "status", "text": f"Processing file: {file.filename}"}
+
                     extracted_text, file_type = await self.file_processor.process_file(
                         file_data, file.filename, user_query=message
                     )
+                    logger.info(f"[{trace_id}] ✓ File processed ({file_type}): {len(extracted_text):,} chars")
+                    yield {"type": "status", "text": "File analysis complete."}
+                    
                     if extracted_text:
                         full_message += f"\n\n{extracted_text}"
                         file_context_for_history = f"\n\n[User uploaded file '{file.filename}' ({file_type})]"
                         await self.state_manager.set_file_context(session_id, file.filename, file_type, extracted_text)
-                except Exception:
-                    pass # Errors already yielded
+                except ValueError as e:
+                    logger.warning(f"[{trace_id}] ⚠️ File rejected: {e}")
+                    yield {"type": "error", "text": f"File Error: {e}"}
+                except Exception as e:
+                    logger.error(f"[{trace_id}] ❌ File processing error: {e}", exc_info=True)
+                    yield {"type": "error", "text": f"File upload failed: {e}"}
 
             # Add context from previous files if no new file is uploaded
             if not file:
@@ -579,7 +572,7 @@ class MCPAgent:
                 yield {"type": "status", "text": "Formulating response..."}
 
             # 6. Synthesize final response and stream it
-            yield {"type": "status", "text": "Creating final response..."}
+            yield {"type": "status", "text": "Creating final response...")
             final_response_text = ""
             had_errors = any("error" in run for run in tool_runs)
             planner_hint = None if had_errors else plan.get("final_response")
@@ -598,9 +591,12 @@ class MCPAgent:
                 final_response_text += chunk
 
             # 7. Save conversation turn
-            user_turn_content = full_message + file_context_for_history
+            # PII SCANNING: Redact user message and agent response before saving to history
+            redacted_user_turn = pii_scanner.scan_and_redact(user_turn_content, "USER_MESSAGE")
+            redacted_final_response = pii_scanner.scan_and_redact(final_response_text, "AGENT_RESPONSE")
+            
             await self.state_manager.save_conversation_turn(
-                session_id, user_id, session_id, user_turn_content, final_response_text
+                session_id, user_id, session_id, redacted_user_turn, redacted_final_response
             )
             logger.info(f"[{trace_id}] ✔️ Streamed response finished and saved.")
 

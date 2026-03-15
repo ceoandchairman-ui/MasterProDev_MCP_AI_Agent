@@ -193,7 +193,8 @@ class ArmosaChatWidget {
         try {
             // Call logout endpoint if we have a token
             if (this.authToken) {
-                await fetch(`${window.location.origin}/logout`, {
+                const baseUrl = this.config.apiUrl.replace(/\/chat$/, '');
+                await fetch(`${baseUrl}/logout`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${this.authToken}` }
                 }).catch(() => {}); // Ignore errors

@@ -27,6 +27,8 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from prometheus_client import Counter, Gauge, Histogram
 
+from mcp_host.quality_gate import quality_gate
+
 logger = logging.getLogger(__name__)
 
 
@@ -133,6 +135,100 @@ class TaskEvaluator:
             "overall": 0.85  # PRODUCTION GATE
         }
     
+    # ========================================================================
+    # --- PRIMARY EVALUATION ORCHESTRATOR ---
+    # ========================================================================
+    
+    async def evaluate_task(
+        self,
+        session_id: str,
+        user_message: str,
+        tool_runs: List[Dict[str, Any]],
+        final_response: str,
+        elapsed_time: float,
+        trace_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Primary evaluation entry point.
+        Orchestrates all evaluation metrics for a given task.
+        """
+        trace_id = trace_id or session_id
+        logger.info(f"[{trace_id}] 📈 Starting end-to-end evaluation for task...")
+
+        # 1. Determine task category
+        task_category = self._determine_task_category(tool_runs, user_message)
+        
+        # 2. Basic Success/Failure Evaluation (Heuristic-based)
+        task_success, reason = self._evaluate_basic_success(tool_runs, final_response, task_category)
+
+        # 3. LLM-as-Judge Quality Score (if available)
+        quality_eval = None
+        if quality_gate:
+            quality_eval = await quality_gate.evaluate(
+                user_message=user_message,
+                tool_calls=[{"tool": r.get("tool"), "input": r.get("arguments")} for r in tool_runs],
+                final_response=final_response,
+                trace_id=trace_id
+            )
+        
+        # Log results
+        task_counter.labels(category=task_category, status="success" if task_success else "failure").inc()
+        task_duration_histogram.labels(category=task_category).observe(elapsed_time)
+        self._update_gauges()
+
+        # Combine results into a final evaluation object
+        evaluation_summary = {
+            "trace_id": trace_id,
+            "task_category": task_category,
+            "heuristic_success": task_success,
+            "heuristic_reason": reason,
+            "quality_gate_eval": quality_eval,
+            "elapsed_time": elapsed_time,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        logger.info(f"[{trace_id}] 📊 Evaluation complete: Success={task_success}, Quality Score={quality_eval.get('quality_score') if quality_eval else 'N/A'}")
+        
+        # For now, we can store this summary or push it to a monitoring service.
+        # Let's just log it for demonstration.
+        # In a real system, this would go to a database or analytics platform.
+        
+        return evaluation_summary
+
+    def _determine_task_category(self, tool_runs: List[Dict[str, Any]], user_message: str) -> str:
+        """Determines the primary category of the task based on tools used."""
+        if not tool_runs:
+            return "conversation"
+        
+        tool_names = {run.get("tool") for run in tool_runs}
+        
+        if any(cal_tool in tool_names for cal_tool in ["search_calendar", "create_calendar_event", "delete_calendar_event"]):
+            return "calendar"
+        if any(email_tool in tool_names for email_tool in ["search_emails", "send_email"]):
+            return "email"
+        if "search_knowledge_base" in tool_names:
+            return "knowledge"
+            
+        return "unknown"
+
+    def _evaluate_basic_success(self, tool_runs: List[Dict[str, Any]], final_response: str, category: str) -> (bool, str):
+        """A simple heuristic-based success evaluation."""
+        if any("error" in run for run in tool_runs):
+            errors = [run.get("error") for run in tool_runs if "error" in run]
+            return False, f"Tool execution failed: {errors[0]}"
+
+        if not final_response or len(final_response) < 10:
+            return False, "Generated response was empty or too short."
+
+        if category == "conversation":
+            return True, "Coherent conversational response provided."
+
+        if category != "unknown" and not tool_runs:
+            return False, "Expected tool usage for a non-conversational task, but no tools were called."
+
+        # If we have tool runs and a response, assume success for this basic check
+        return True, "Task completed with tool calls and a valid response."
+
     # ========================================================================
     # CALENDAR TASK EVALUATION
     # ========================================================================

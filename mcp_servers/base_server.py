@@ -1,7 +1,10 @@
 """Base MCP Server template"""
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Any, Dict, List
+import os
+import json
 
 
 class BaseMCPServer:
@@ -11,6 +14,22 @@ class BaseMCPServer:
         self.name = name
         self.description = description
         self.app = FastAPI(title=name, description=description)
+        
+        # Parse allowed origins from env or default to permissive for local dev
+        allowed_origins_env = os.environ.get("ALLOWED_ORIGINS", '["*"]')
+        try:
+            allowed_origins = json.loads(allowed_origins_env)
+        except json.JSONDecodeError:
+            allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        
         self._setup_routes()
 
     def _setup_routes(self):

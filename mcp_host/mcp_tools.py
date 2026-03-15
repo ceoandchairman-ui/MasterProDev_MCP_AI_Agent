@@ -6,10 +6,17 @@ from pydantic import BaseModel, Field
 from langchain.tools import BaseTool
 import httpx
 import uuid
+import time
+from functools import wraps
 
 from .config import settings
 from .rag_service import rag_service
 from .resilience import api_retry_strategy, get_breaker
+try:
+    from mcp_host.main import TOOL_CALL_DURATION, TOOL_CALL_COUNTER
+    _PROMETHEUS_AVAILABLE = True
+except ImportError:
+    _PROMETHEUS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +24,34 @@ logger = logging.getLogger(__name__)
 calendar_breaker = get_breaker("calendar_server")
 gmail_breaker = get_breaker("gmail_server")
 rag_breaker = get_breaker("rag_service")
+
+
+def instrumented_tool(func):
+    """
+    A decorator to instrument tool calls with Prometheus metrics.
+    It records the duration and the success/error status of each call.
+    """
+    @wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        tool_name = self.name
+        start_time = time.time()
+        status = "success"
+        try:
+            result = await func(self, *args, **kwargs)
+            # Check the result dict for an internal error status
+            if isinstance(result, dict) and result.get("status") == "error":
+                status = "error"
+            return result
+        except Exception:
+            status = "error"
+            # Re-raise the exception to be handled by the agent
+            raise
+        finally:
+            duration = time.time() - start_time
+            if _PROMETHEUS_AVAILABLE:
+                TOOL_CALL_DURATION.labels(tool_name=tool_name).observe(duration)
+                TOOL_CALL_COUNTER.labels(tool_name=tool_name, status=status).inc()
+    return wrapper
 
 
 # ============================================================================
@@ -51,6 +86,7 @@ class CalendarGetEventsTool(BaseTool):
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
+    @instrumented_tool
     @api_retry_strategy
     async def _arun(self, days: int = 7, days_back: int = 365, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Get calendar events asynchronously (both future and past)"""
@@ -97,6 +133,7 @@ class CalendarCreateEventTool(BaseTool):
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
+    @instrumented_tool
     @api_retry_strategy
     async def _arun(
         self, 
@@ -156,6 +193,7 @@ class CalendarDeleteEventTool(BaseTool):
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
+    @instrumented_tool
     @api_retry_strategy
     async def _arun(self, event_id: str, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Delete calendar event asynchronously"""
@@ -202,6 +240,7 @@ class KnowledgeSearchTool(BaseTool):
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
+    @instrumented_tool
     @api_retry_strategy
     async def _arun(self, query: str, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Search the knowledge base asynchronously"""
@@ -255,6 +294,7 @@ class GmailGetEmailsTool(BaseTool):
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
+    @instrumented_tool
     @api_retry_strategy
     async def _arun(self, limit: int = 10, query: str = "", session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Get emails asynchronously"""
@@ -311,6 +351,7 @@ class GmailSendEmailTool(BaseTool):
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
+    @instrumented_tool
     @api_retry_strategy
     async def _arun(
         self, 
@@ -370,6 +411,7 @@ class GmailReadEmailTool(BaseTool):
         """Synchronous run (not used in async context)"""
         raise NotImplementedError("Use async version")
     
+    @instrumented_tool
     @api_retry_strategy
     async def _arun(self, email_id: str, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Read email asynchronously"""
