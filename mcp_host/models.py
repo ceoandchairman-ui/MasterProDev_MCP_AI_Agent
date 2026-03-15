@@ -52,8 +52,10 @@ class Message(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     tool_used: Optional[str] = None
+    tool_calls: Optional[List[dict]] = None
     context: Optional[List[str]] = None
     conversation_id: str
+    execution_time: Optional[float] = None
     pending_auth: Optional[bool] = False
     auth_url: Optional[str] = None
 

@@ -2,9 +2,12 @@
 
 import logging
 import os
-from typing import Optional, List, Dict, Any
+import uuid
+from typing import Optional, List, Dict, Any, AsyncGenerator
 from datetime import datetime, timedelta, timezone
 import json
+
+from fastapi import UploadFile
 
 from langchain.tools import BaseTool
 from dateutil import parser as date_parser
@@ -177,7 +180,14 @@ class MCPAgent:
         self.token_budget = TokenBudget(total_tokens=4000)  # Default 4k token budget
         self.query_processor = QueryProcessor()
         self.intent_router = IntentRouter()
+        self.state_manager = state_manager
         self.initialized = False
+
+    @property
+    def file_processor(self):
+        """Lazily resolve the file_processor singleton (initialized after startup)."""
+        from mcp_host.file_processor import file_processor
+        return file_processor
     
     async def initialize(self):
         """Initialize the agent with LLM and tools"""
@@ -572,7 +582,7 @@ class MCPAgent:
                 yield {"type": "status", "text": "Formulating response..."}
 
             # 6. Synthesize final response and stream it
-            yield {"type": "status", "text": "Creating final response...")
+            yield {"type": "status", "text": "Creating final response..."}
             final_response_text = ""
             had_errors = any("error" in run for run in tool_runs)
             planner_hint = None if had_errors else plan.get("final_response")
@@ -592,7 +602,7 @@ class MCPAgent:
 
             # 7. Save conversation turn
             # PII SCANNING: Redact user message and agent response before saving to history
-            redacted_user_turn = pii_scanner.scan_and_redact(user_turn_content, "USER_MESSAGE")
+            redacted_user_turn = pii_scanner.scan_and_redact(message, "USER_MESSAGE")
             redacted_final_response = pii_scanner.scan_and_redact(final_response_text, "AGENT_RESPONSE")
             
             await self.state_manager.save_conversation_turn(
@@ -620,12 +630,25 @@ class MCPAgent:
     async def _plan_actions(self, user_message: str, history_text: str, norm_message: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Generates a plan of actions (tool calls) for the LLM to execute."""
         trace_id = trace_id or str(uuid.uuid4())
-        prompt = self.prompt_service.get_planner_prompt(
-            user_message=user_message,
+        
+        # Build planner prompt using prompt_library
+        tool_catalog = self._format_tool_catalog()
+        nm = norm_message or user_message.lower()
+        knowledge_intent = any(kw in nm for kw in ['company', 'policy', 'info', 'document', 'knowledge', 'about', 'services'])
+        calendar_intent = any(kw in nm for kw in ['calendar', 'schedule', 'meeting', 'event', 'appointment', 'book'])
+        email_intent = any(kw in nm for kw in ['email', 'send', 'inbox', 'mail', 'compose'])
+        
+        prompt = prompt_library.get_prompt(
+            'sys_planner',
+            tool_catalog=tool_catalog,
             history=history_text,
-            tools=self.tools,
-            norm_message=norm_message
+            message=user_message,
+            knowledge_intent=knowledge_intent,
+            calendar_intent=calendar_intent,
+            email_intent=email_intent
         )
+        if not prompt:
+            prompt = f"Plan actions for: {user_message}"
         
         raw_response = await self.llm_manager.generate(
             prompt=prompt,
@@ -635,7 +658,7 @@ class MCPAgent:
             trace_id=trace_id
         )
         
-        return self.prompt_service.parse_planner_response(raw_response)
+        return self._parse_planner_response(raw_response)
 
     async def _execute_plan(self, actions: List[Dict[str, Any]], session_id: str, trace_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Executes a list of tool actions."""
@@ -653,7 +676,7 @@ class MCPAgent:
                     if tool_name in ["search_calendar", "create_calendar_event", "delete_calendar_event", "search_emails", "send_email"]:
                         arguments["session_id"] = session_id
 
-                    output = await tool.run(arguments)
+                    output = await tool.arun(**arguments)
                     results.append({"tool": tool_name, "arguments": arguments, "output": output})
                 except Exception as e:
                     logger.error(f"[{trace_id}] ❌ Tool '{tool_name}' execution failed: {e}", exc_info=True)
@@ -682,7 +705,7 @@ class MCPAgent:
                     if tool_name in ["search_calendar", "create_calendar_event", "delete_calendar_event", "search_emails", "send_email"]:
                         arguments["session_id"] = session_id
 
-                    output = await tool.run(arguments)
+                    output = await tool.arun(**arguments)
                     result_data = {"tool": tool_name, "arguments": arguments, "output": output}
                     yield {"type": "tool_result", "data": result_data}
                 except Exception as e:
@@ -706,7 +729,7 @@ class MCPAgent:
     ) -> Optional[str]:
         """Synthesizes a final response from tool outputs."""
         trace_id = trace_id or str(uuid.uuid4())
-        prompt = self.prompt_service.get_synthesizer_prompt(
+        prompt = self._build_synthesis_prompt(
             user_message=user_message,
             history=history_text,
             tool_runs=tool_runs,
@@ -732,7 +755,7 @@ class MCPAgent:
     ) -> AsyncGenerator[str, None]:
         """Synthesizes a final response and streams it chunk by chunk."""
         trace_id = trace_id or str(uuid.uuid4())
-        prompt = self.prompt_service.get_synthesizer_prompt(
+        prompt = self._build_synthesis_prompt(
             user_message=user_message,
             history=history_text,
             tool_runs=tool_runs,
@@ -881,7 +904,6 @@ class MCPAgent:
             except Exception as e:
                 logger.debug(f"⚠ Failed to parse '{candidate}': {e}")
                 continue
-                continue
         return None
 
     def _looks_date_only(self, value: Optional[str]) -> bool:
@@ -912,6 +934,114 @@ class MCPAgent:
                 }
             )
         return json.dumps(catalog, indent=2)
+
+    def _parse_planner_response(self, raw_response: str) -> Dict[str, Any]:
+        """Parse the planner LLM response into a structured plan."""
+        if not raw_response:
+            return {"actions": [], "final_response": None}
+        try:
+            # Try to extract JSON from the response
+            text = raw_response.strip()
+            # Handle markdown-wrapped JSON
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0].strip()
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0].strip()
+            
+            plan = json.loads(text)
+            actions = plan.get("actions", [])
+            final_response = plan.get("final_response", None)
+            return {"actions": actions, "final_response": final_response}
+        except (json.JSONDecodeError, IndexError) as e:
+            logger.warning(f"⚠ Failed to parse planner response as JSON: {e}")
+            return {"actions": [], "final_response": raw_response}
+
+    def _build_synthesis_prompt(
+        self,
+        user_message: str,
+        history: str,
+        tool_runs: List[Dict[str, Any]],
+        planner_hint: Optional[str] = None,
+        had_errors: bool = False
+    ) -> str:
+        """Build the synthesis prompt from tool outputs."""
+        # Format tool outputs
+        tool_outputs_text = ""
+        for run in tool_runs:
+            tool_name = run.get("tool", "unknown")
+            if "error" in run:
+                tool_outputs_text += f"\n[{tool_name}] ERROR: {run['error']}\n"
+            else:
+                output = self._stringify_tool_output(run.get("output"))
+                tool_outputs_text += f"\n[{tool_name}] Result:\n{output}\n"
+
+        hint = planner_hint or "(none)"
+        resolution = "Explain clearly if any tool returned an error." if had_errors else "Synthesize a concise, helpful response."
+
+        prompt = prompt_library.get_prompt(
+            'sys_synthesis',
+            history=history or "(no prior turns)",
+            tool_outputs=tool_outputs_text or "(no tool output)",
+            planner_hint=hint,
+            user_message=user_message,
+            resolution_instruction=resolution
+        )
+        if not prompt:
+            prompt = f"Synthesize a response for: {user_message}\nTool outputs: {tool_outputs_text}"
+        return prompt
+
+    def _select_best_prompt(self, user_message: str) -> str:
+        """Select the best prompt ID based on message content."""
+        msg = user_message.lower().strip()
+
+        # Meta questions about the assistant
+        if any(kw in msg for kw in ['who are you', 'what are you', 'what can you do', 'your name']):
+            return 'conv_meta'
+
+        # Company info questions
+        if any(kw in msg for kw in ['company', 'masterprodev', 'services', 'about us', 'your team']):
+            return 'conv_company_info'
+
+        # Greeting patterns
+        if any(kw in msg for kw in ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening']):
+            return 'conv_greeting'
+
+        # Default: general conversation
+        return 'conv_general'
+
+    def _calculate_message_complexity(self, message: str) -> str:
+        """Estimate message complexity for multi-turn routing."""
+        word_count = len(message.split())
+        question_marks = message.count('?')
+        conjunctions = sum(1 for w in ['and', 'also', 'then', 'after', 'before', 'while', 'additionally']
+                          if w in message.lower().split())
+        if word_count > 100 or question_marks > 2 or conjunctions > 2:
+            return 'complex'
+        if word_count > 40 or question_marks > 1 or conjunctions > 0:
+            return 'moderate'
+        return 'simple'
+
+    async def _evaluate_task(
+        self,
+        session_id: str,
+        user_message: str,
+        tool_runs: List[Dict[str, Any]],
+        final_response: str,
+        elapsed_time: float,
+        trace_id: Optional[str] = None
+    ):
+        """Delegate task evaluation to the evaluator service."""
+        try:
+            await evaluator.evaluate_task(
+                session_id=session_id,
+                user_message=user_message,
+                tool_runs=tool_runs,
+                final_response=final_response,
+                elapsed_time=elapsed_time,
+                trace_id=trace_id
+            )
+        except Exception as e:
+            logger.warning(f"[{trace_id}] ⚠ Evaluation failed (non-blocking): {e}")
     
     async def get_available_tools(self) -> List[Dict[str, str]]:
         """Get list of available tools with descriptions"""

@@ -17,6 +17,10 @@ class RAGService:
         self.embeddings = None
         self.hf_api_key = settings.HUGGINGFACE_API_KEY
         self.embedding_model = settings.EMBEDDING_MODEL
+
+    def is_initialized(self) -> bool:
+        """Check if the RAG service has been initialized and connected."""
+        return self.client is not None and self.embeddings is not None
      
     def _sync_connect(self):
         """

@@ -7,9 +7,14 @@ Microsoft Presidio toolkit.
 """
 
 import logging
-from presidio_analyzer import AnalyzerEngine
-from presidio_anonymizer import AnonymizerEngine
-from presidio_anonymizer.entities import OperatorConfig
+
+try:
+    from presidio_analyzer import AnalyzerEngine
+    from presidio_anonymizer import AnonymizerEngine
+    from presidio_anonymizer.entities import OperatorConfig
+    _PRESIDIO_AVAILABLE = True
+except ImportError:
+    _PRESIDIO_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +22,17 @@ class PiiScanner:
     """A service to detect and redact PII in text."""
 
     def __init__(self):
+        if not _PRESIDIO_AVAILABLE:
+            logger.warning("Presidio not installed – PII scanning disabled.")
+            self.analyzer = None
+            self.anonymizer = None
+            return
         try:
-            # Initialize the analyzer with the downloaded spaCy model
             self.analyzer = AnalyzerEngine()
             self.anonymizer = AnonymizerEngine()
             logger.info("✓ PII Scanner initialized successfully.")
         except Exception as e:
             logger.error(f"✗ Failed to initialize PII Scanner: {e}", exc_info=True)
-            # Set to None to gracefully degrade
             self.analyzer = None
             self.anonymizer = None
 

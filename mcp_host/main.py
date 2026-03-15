@@ -28,6 +28,7 @@ from contextlib import asynccontextmanager
 from pydantic_settings import BaseSettings
 import logging
 import httpx
+import json
 import os
 import asyncio
 from typing import Optional
@@ -40,6 +41,13 @@ from .models import (
     UserProfileResponse, HealthResponse
 )
 from .auth import hash_password, verify_password, create_access_token, decode_token
+
+
+def get_token_from_header(authorization: str) -> Optional[str]:
+    """Extract Bearer token from Authorization header value."""
+    if authorization and authorization.startswith("Bearer "):
+        return authorization[7:]
+    return authorization
 from .state import state_manager, ConversationState
 from .agent import mcp_agent
 from .rag_service import rag_service
@@ -250,31 +258,6 @@ async def root():
         return FileResponse(login_path)
     return HTMLResponse("<h1>MCP Host</h1><p>Login page not found.</p>")
 
-@app.get("/health", response_model=HealthResponse, tags=["General"], summary="Health check endpoint")
-async def health_check():
-    """Provides a health check endpoint for monitoring."""
-    return {
-        "status": "ok",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "services": {
-            "database": await state_manager.is_healthy(),
-            "llm": mcp_agent.llm_manager.is_healthy(),
-            "rag": rag_service.is_healthy(),
-            "calendar": await _check_service_health(settings.CALENDAR_SERVER_URL),
-            "gmail": await _check_service_health(settings.GMAIL_SERVER_URL),
-        }
-    }
-
-async def _check_service_health(service_url: Optional[str]) -> str:
-    """Helper to check the health of a downstream service."""
-    if not service_url:
-        return "not_configured"
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            response = await client.get(f"{service_url}/health")
-            return "ok" if response.status_code == 200 else "unhealthy"
-    except httpx.RequestError:
-        return "unreachable"
 
 @app.get("/login-docs", include_in_schema=False)
 async def login_docs():
@@ -285,6 +268,11 @@ async def login_docs():
 async def login_page():
     """Login page for admin access"""
     return FileResponse(str(STATIC_DIR / "login.html"))
+
+@app.get("/chat", include_in_schema=False)
+async def chat_page():
+    """Serves the full-page chat UI."""
+    return FileResponse(str(STATIC_DIR / "full-page.html"))
 
 @app.get("/docs", include_in_schema=False)
 async def swagger_ui(
@@ -426,6 +414,131 @@ async def logout(authorization: Optional[str] = Header(None)):
     token = get_token_from_header(authorization)
     await state_manager.invalidate_session(token)
     return {"message": "Logged out successfully"}
+
+
+# ============================================================================
+# Chat Endpoints (used by widget and full-page UI)
+# ============================================================================
+
+@app.post("/chat", response_model=ChatResponse, tags=["Chat"])
+async def chat(
+    request: Request,
+    chat_req: ChatRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """Non-streaming chat endpoint. Accepts a message, returns a response."""
+    trace_id = str(uuid.uuid4())
+    logger.info(f"[{trace_id}] /chat request received")
+
+    # Resolve session
+    session_id = str(uuid.uuid4())
+    user_id = "guest"
+    conversation_history = []
+
+    if authorization:
+        try:
+            token = get_token_from_header(authorization)
+            session = await state_manager.get_session(token)
+            if session:
+                session_id = session["session_id"]
+                user_id = session["user_id"]
+                conversation_history = await state_manager.get_conversation_history(session_id)
+        except Exception:
+            pass  # Fall through to guest mode
+
+    result = await mcp_agent.process_message(
+        message=chat_req.message,
+        session_id=session_id,
+        conversation_history=conversation_history,
+        trace_id=trace_id
+    )
+
+    # Save conversation turn
+    try:
+        await state_manager.save_conversation_turn(
+            session_id, user_id, session_id,
+            chat_req.message, result.get("response", "")
+        )
+    except Exception as e:
+        logger.warning(f"[{trace_id}] Failed to save conversation turn: {e}")
+
+    return ChatResponse(
+        response=result.get("response", ""),
+        conversation_id=session_id,
+        tool_calls=result.get("tool_calls", []),
+        execution_time=result.get("execution_time", 0.0)
+    )
+
+
+@app.post("/chat/stream", tags=["Chat"])
+async def chat_stream(
+    request: Request,
+    message: str = Form(...),
+    conversation_id: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Streaming chat endpoint. Returns Server-Sent Events (SSE).
+    Used by the Armosa widget and full-page chat UI.
+    """
+    trace_id = str(uuid.uuid4())
+    logger.info(f"[{trace_id}] /chat/stream request received")
+
+    # Resolve session
+    session_id = conversation_id or str(uuid.uuid4())
+    user_id = "guest"
+
+    if authorization:
+        try:
+            token = get_token_from_header(authorization)
+            session = await state_manager.get_session(token)
+            if session:
+                session_id = session["session_id"]
+                user_id = session["user_id"]
+        except Exception:
+            pass  # Fall through to guest mode
+
+    async def event_generator():
+        try:
+            async for chunk in mcp_agent.process_message_stream(
+                message=message,
+                session_id=session_id,
+                file=file,
+                user_id=user_id,
+                trace_id=trace_id
+            ):
+                chunk_type = chunk.get("type", "status")
+
+                if chunk_type == "text_chunk":
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': chunk.get('text', '')})}\n\n"
+                elif chunk_type == "done":
+                    done_payload = {
+                        "type": "done",
+                        "conversation_id": session_id,
+                        "execution_time": chunk.get("execution_time"),
+                        "trace_id": trace_id
+                    }
+                    yield f"data: {json.dumps(done_payload)}\n\n"
+                elif chunk_type == "error":
+                    yield f"data: {json.dumps({'type': 'error', 'text': chunk.get('text', 'Unknown error')})}\n\n"
+                elif chunk_type == "tool_call":
+                    yield f"data: {json.dumps({'type': 'thinking', 'tool': chunk.get('data', {}).get('tool_name', '')})}\n\n"
+                elif chunk_type == "status":
+                    yield f"data: {json.dumps({'type': 'thinking', 'text': chunk.get('text', '')})}\n\n"
+        except Exception as e:
+            logger.error(f"[{trace_id}] SSE stream error: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'text': 'Stream processing failed'})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @app.get("/user/profile", response_model=UserProfileResponse)

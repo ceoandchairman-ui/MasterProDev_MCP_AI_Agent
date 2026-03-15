@@ -211,7 +211,7 @@ class TaskEvaluator:
             
         return "unknown"
 
-    def _evaluate_basic_success(self, tool_runs: List[Dict[str, Any]], final_response: str, category: str) -> (bool, str):
+    def _evaluate_basic_success(self, tool_runs: List[Dict[str, Any]], final_response: str, category: str) -> tuple:
         """A simple heuristic-based success evaluation."""
         if any("error" in run for run in tool_runs):
             errors = [run.get("error") for run in tool_runs if "error" in run]
