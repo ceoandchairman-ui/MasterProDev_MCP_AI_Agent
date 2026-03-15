@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, AsyncGenerator
 from datetime import datetime, timedelta, timezone
 import json
 
