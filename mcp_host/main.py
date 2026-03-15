@@ -103,11 +103,6 @@ async def lifespan(app: FastAPI):
     logger.info("Starting MCP Host...")
     await state_manager.initialize()
 
-    # Instrument the app with Prometheus if available
-    if _PROMETHEUS_AVAILABLE and Instrumentator:
-        Instrumentator().instrument(app).expose(app)
-        logger.info("✓ Prometheus instrumentation enabled.")
-
     # Initialize RAG service in background to avoid blocking startup
     asyncio.create_task(rag_service.initialize_async())
 
@@ -158,6 +153,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Instrument the app with Prometheus (must be done before app starts)
+if _PROMETHEUS_AVAILABLE and Instrumentator:
+    Instrumentator().instrument(app).expose(app)
+    logger.info("✓ Prometheus instrumentation enabled.")
 
 # Health check endpoint
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
