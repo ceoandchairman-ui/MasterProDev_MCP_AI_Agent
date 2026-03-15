@@ -166,6 +166,7 @@ async def health_check():
     overall_status = "ok"
 
     async def check_service(service_name: str, url: str):
+        nonlocal overall_status
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 # Use the health endpoint of the downstream service if it exists
@@ -180,12 +181,10 @@ async def health_check():
                     service_status[service_name] = "ok"
                 else:
                     service_status[service_name] = "error"
-                    nonlocal overall_status
                     overall_status = "error"
         except Exception as e:
             logger.warning(f"Health check for {service_name} failed: {e}")
             service_status[service_name] = "error"
-            nonlocal overall_status
             overall_status = "error"
 
     # Check downstream services
