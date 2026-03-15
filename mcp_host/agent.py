@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 import json
 
 from fastapi import UploadFile
-
 from langchain.tools import BaseTool
 from dateutil import parser as date_parser
 

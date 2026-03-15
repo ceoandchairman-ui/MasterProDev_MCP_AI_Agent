@@ -9,6 +9,8 @@ import uuid  # Import uuid for trace_id generation
 try:
     from slowapi import Limiter
     from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    from slowapi._http_serialization import _rate_limit_exceeded_handler
     _SLOWAPI_AVAILABLE = True
 except ImportError:
     _SLOWAPI_AVAILABLE = False
@@ -50,6 +52,13 @@ def get_token_from_header(authorization: str) -> Optional[str]:
     return authorization
 from .state import state_manager, ConversationState
 from .agent import mcp_agent
+
+
+def get_token_from_header(authorization: str) -> Optional[str]:
+    """Extract bearer token from Authorization header."""
+    if authorization and authorization.startswith("Bearer "):
+        return authorization[7:]
+    return None
 from .rag_service import rag_service
 from .evaluator import evaluator
 from .quality_gate import initialize_quality_gate, quality_gate
@@ -102,11 +111,6 @@ async def lifespan(app: FastAPI):
     logger.info("Starting MCP Host...")
     await state_manager.initialize()
 
-    # Instrument the app with Prometheus if available
-    if _PROMETHEUS_AVAILABLE and Instrumentator:
-        Instrumentator().instrument(app).expose(app)
-        logger.info("✓ Prometheus instrumentation enabled.")
-
     # Initialize RAG service in background to avoid blocking startup
     asyncio.create_task(rag_service.initialize_async())
 
@@ -158,6 +162,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Instrument the app with Prometheus (must be done before app starts)
+if _PROMETHEUS_AVAILABLE and Instrumentator:
+    Instrumentator().instrument(app).expose(app)
+    logger.info("✓ Prometheus instrumentation enabled.")
+
 # Health check endpoint
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
@@ -174,6 +183,7 @@ async def health_check():
     overall_status = "ok"
 
     async def check_service(service_name: str, url: str):
+        nonlocal overall_status
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 # Use the health endpoint of the downstream service if it exists
@@ -188,12 +198,10 @@ async def health_check():
                     service_status[service_name] = "ok"
                 else:
                     service_status[service_name] = "error"
-                    nonlocal overall_status
                     overall_status = "error"
         except Exception as e:
             logger.warning(f"Health check for {service_name} failed: {e}")
             service_status[service_name] = "error"
-            nonlocal overall_status
             overall_status = "error"
 
     # Check downstream services
@@ -242,7 +250,7 @@ if STATIC_DIR.exists():
 # Apply rate limiter to all routes
 if _SLOWAPI_AVAILABLE:
     app.state.limiter = limiter
-    app.add_exception_handler(HTTPException, limiter.http_exception_handler)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     logger.info("✓ Rate limiting enabled.")
 
 
