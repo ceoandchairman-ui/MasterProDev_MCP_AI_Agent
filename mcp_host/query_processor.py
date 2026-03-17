@@ -1,7 +1,11 @@
 import pkg_resources
-from symspellpy import SymSpell, Verbosity
+try:
+    from symspellpy import SymSpell
+    _SYMSPELL_AVAILABLE = True
+except ImportError:
+    SymSpell = None
+    _SYMSPELL_AVAILABLE = False
 import yaml
-from fuzzywuzzy import process
 import re
 import logging
 from typing import Dict, List, Any, Optional
@@ -43,14 +47,26 @@ class AliasManager:
 class SpellingCorrector:
     """Handles spelling correction for queries."""
     def __init__(self, max_edit_distance=2):
-        self.sym_spell = SymSpell(max_dictionary_edit_distance=max_edit_distance, prefix_length=7)
-        dictionary_path = pkg_resources.resource_filename("symspellpy", "frequency_dictionary_en_82_765.txt")
-        # term_index is the column of the term and count_index is the column of the term frequency
-        self.sym_spell.load_dictionary(dictionary_path, term_index=0, count_index=1)
-        logger.info("SpellingCorrector initialized with default dictionary.")
+        self.sym_spell = None
+        if not _SYMSPELL_AVAILABLE:
+            logger.warning("symspellpy not installed. Spelling correction disabled.")
+            return
+
+        try:
+            self.sym_spell = SymSpell(max_dictionary_edit_distance=max_edit_distance, prefix_length=7)
+            dictionary_path = pkg_resources.resource_filename("symspellpy", "frequency_dictionary_en_82_765.txt")
+            # term_index is the column of the term and count_index is the column of the term frequency
+            self.sym_spell.load_dictionary(dictionary_path, term_index=0, count_index=1)
+            logger.info("SpellingCorrector initialized with default dictionary.")
+        except Exception as e:
+            logger.warning(f"Failed to initialize spelling corrector: {e}")
+            self.sym_spell = None
 
     def correct(self, text: str) -> str:
         """Corrects spelling in the given text."""
+        if not self.sym_spell:
+            return text
+
         suggestions = self.sym_spell.lookup_compound(text, max_edit_distance=2)
         if suggestions:
             corrected_text = suggestions[0].term

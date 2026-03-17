@@ -1,6 +1,7 @@
 """LLM Provider - Multi-model abstraction layer with fallback and mock support"""
 
 import asyncio
+import inspect
 import logging
 from typing import Optional, Dict, Any, List, AsyncGenerator
 from abc import ABC, abstractmethod
@@ -722,6 +723,7 @@ class LLMManager:
         max_tokens: int = 1000,
         temperature: float = 0.7,
         system_prompt: Optional[str] = None,
+        stop_sequences: Optional[List[str]] = None,
         trace_id: Optional[str] = None
     ) -> str:
         """Generate text with automatic fallback"""
@@ -746,6 +748,59 @@ class LLMManager:
         # All providers failed, use mock
         logger.warning("⚠ All LLM providers failed, using mock response")
         return self._generate_mock_response(prompt)
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        max_tokens: int = 1000,
+        temperature: float = 0.7,
+        system_prompt: Optional[str] = None,
+        trace_id: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """Generate text as a stream with automatic fallback."""
+        if self.mock_mode:
+            logger.info("🤖 Using mock LLM streaming response (no providers configured)")
+            mock_text = self._generate_mock_response(prompt)
+            for token in mock_text.split():
+                yield token + " "
+            return
+
+        for llm_type in self.priority:
+            provider = self.providers.get(llm_type)
+
+            if provider and provider.available:
+                try:
+                    stream_result = provider.generate_stream(
+                        prompt,
+                        max_tokens,
+                        temperature,
+                        system_prompt,
+                        trace_id=trace_id
+                    )
+
+                    if hasattr(stream_result, "__aiter__"):
+                        async for chunk in stream_result:
+                            yield chunk
+                    elif inspect.isawaitable(stream_result):
+                        resolved = await stream_result
+                        if hasattr(resolved, "__aiter__"):
+                            async for chunk in resolved:
+                                yield chunk
+                        elif resolved:
+                            for token in str(resolved).split():
+                                yield token + " "
+                    else:
+                        logger.warning(f"⚠ {llm_type.value} stream returned unsupported type: {type(stream_result)}")
+                        continue
+                    return
+                except Exception as e:
+                    logger.warning(f"⚠ {llm_type.value} stream failed: {e}, trying next provider...")
+                    continue
+
+        logger.warning("⚠ All LLM providers failed for streaming, using mock response")
+        fallback_text = self._generate_mock_response(prompt)
+        for token in fallback_text.split():
+            yield token + " "
     
     def _generate_mock_response(self, prompt: str) -> str:
         """Generate a mock response when no LLM is available"""

@@ -23,7 +23,7 @@ class PromptLibrary:
                 logger.error(f"Prompts file not found: {self.prompts_file}")
                 return
             
-            with open(self.prompts_file, 'r') as f:
+            with open(self.prompts_file, 'r', encoding='utf-8') as f:
                 data = yaml.safe_load(f)
             
             # Index prompts by their 'id' field, not by YAML key

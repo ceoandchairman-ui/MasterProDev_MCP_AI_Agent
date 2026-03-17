@@ -1,6 +1,15 @@
-import weaviate
-from weaviate.classes.init import Auth, AdditionalConfig, Timeout
-from weaviate.classes.query import MetadataQuery, Filter
+try:
+    import weaviate
+    from weaviate.classes.init import AdditionalConfig, Timeout
+    from weaviate.classes.query import MetadataQuery, Filter
+    _WEAVIATE_AVAILABLE = True
+except ImportError:
+    weaviate = None
+    AdditionalConfig = None
+    Timeout = None
+    MetadataQuery = None
+    Filter = None
+    _WEAVIATE_AVAILABLE = False
 from mcp_host.config import settings
 from mcp_host.embeddings import MultiFallbackEmbeddings
 import logging
@@ -27,6 +36,12 @@ class RAGService:
         Synchronous connection logic to be run in a background thread.
         This ensures we don't block the main asyncio loop during startup.
         """
+        if not _WEAVIATE_AVAILABLE:
+            logger.warning("Weaviate package not installed. RAG service disabled.")
+            self.client = None
+            self.embeddings = None
+            return
+
         if not self.embedding_model:
             logger.error("Embedding model is not configured. RAG service will be disabled.")
             return

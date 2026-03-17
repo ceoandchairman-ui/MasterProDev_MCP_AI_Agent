@@ -25,7 +25,27 @@ import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from dataclasses import dataclass, field
-from prometheus_client import Counter, Gauge, Histogram
+try:
+    from prometheus_client import Counter, Gauge, Histogram
+except ImportError:
+    class _NoopMetric:
+        def labels(self, *args, **kwargs):
+            return self
+        def inc(self, *args, **kwargs):
+            pass
+        def observe(self, *args, **kwargs):
+            pass
+        def set(self, *args, **kwargs):
+            pass
+
+    def Counter(*args, **kwargs):
+        return _NoopMetric()
+
+    def Gauge(*args, **kwargs):
+        return _NoopMetric()
+
+    def Histogram(*args, **kwargs):
+        return _NoopMetric()
 
 from mcp_host.quality_gate import quality_gate
 
