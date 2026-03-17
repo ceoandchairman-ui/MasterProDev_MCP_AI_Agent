@@ -143,7 +143,12 @@ app = FastAPI(
     title="MCP Host - Master Control Program",
     description="Main server for the MCP Agent, handling chat, voice, and tool orchestration.",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    # Disable the auto-generated public docs/schema endpoints — we serve
+    # our own auth-protected versions below (/docs, /redoc, /openapi.json).
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 # Add CORS middleware
@@ -275,72 +280,155 @@ async def chat_page():
     """Serves the full-page chat UI."""
     return FileResponse(str(STATIC_DIR / "full-page.html"))
 
+def _resolve_docs_token(
+    token: Optional[str],
+    authorization: Optional[str],
+) -> Optional[str]:
+    """Return the raw JWT from either query param or Authorization header."""
+    if token:
+        return token
+    if authorization:
+        return get_token_from_header(authorization)
+    return None
+
+
+@app.get("/openapi.json", include_in_schema=False)
+async def protected_openapi(
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+):
+    """OpenAPI schema — requires a valid JWT (Authorization header or ?token=)."""
+    auth_token = _resolve_docs_token(token, authorization)
+    if not auth_token or not decode_token(auth_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to view the API schema.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return JSONResponse(app.openapi())
+
+
 @app.get("/docs", include_in_schema=False)
 async def swagger_ui(
     token: Optional[str] = None,
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
 ):
-    """Swagger UI (requires valid auth token)"""
-    # Try to get token from query parameter or header
-    auth_token = None
-    
-    if token:
-        # Token from URL query parameter
-        auth_token = token
-    elif authorization:
-        # Token from Authorization header
-        auth_token = get_token_from_header(authorization)
-    else:
-        # No token provided - redirect to login page
-        return FileResponse(str(STATIC_DIR / "login-docs.html"))
-    
-    # Validate token
-    payload = decode_token(auth_token)
-    
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token. Please login again.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    logger.info(f"📋 Swagger docs accessed by user {payload.get('sub')}")
-    
-    # Return Swagger UI HTML with token in header
-    from fastapi.openapi.docs import get_swagger_ui_html
-    from fastapi.responses import HTMLResponse
-    
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>MCP Host API Documentation</title>
-        <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />
-    </head>
-    <body>
-        <div id="swagger-ui"></div>
-        <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
-        <script>
-            window.onload = function() {{
-                window.ui = SwaggerUIBundle({{
-                    url: "/openapi.json",
-                    dom_id: '#swagger-ui',
-                    presets: [
-                        SwaggerUIBundle.presets.apis,
-                        SwaggerUIStandalonePreset
-                    ],
-                    layout: "StandaloneLayout",
-                    requestInterceptor: (req) => {{
-                        req.headers['Authorization'] = 'Bearer {auth_token}';
-                        return req;
-                    }}
-                }});
-            }};
-        </script>
-    </body>
-    </html>
+    """Swagger UI — requires a valid JWT.
+
+    Flow:
+      1. Login via /login-docs → token stored in sessionStorage + ?token= redirect.
+      2. Server validates token; if invalid/missing the login page is served.
+      3. The rendered HTML reads the token from sessionStorage so refreshing
+         the page works without exposing the token in the URL again.
     """
+    auth_token = _resolve_docs_token(token, authorization)
+
+    if not auth_token:
+        # No token anywhere — serve the login page (not a redirect so the URL stays /docs)
+        return FileResponse(str(STATIC_DIR / "login-docs.html"))
+
+    payload = decode_token(auth_token)
+    if not payload:
+        return FileResponse(str(STATIC_DIR / "login-docs.html"))
+
+    logger.info(f"📋 Swagger docs accessed by user {payload.get('sub')}")
+
+    # Serve Swagger UI.
+    # The token is written into sessionStorage by the JS so that:
+    #   - It is available for requestInterceptor on every API call.
+    #   - Refreshing /docs (without ?token=) still works via sessionStorage.
+    #   - The raw JWT is NOT kept permanently in the browser URL bar.
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>MCP Host — API Docs</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+    <style>
+        body {{ margin: 0; }}
+        .topbar {{ display: none; }}
+    </style>
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+<script>
+    // Persist token in sessionStorage so refreshing /docs works without ?token=
+    (function() {{
+        var incoming = "{auth_token}";
+        if (incoming) {{ sessionStorage.setItem("docs_token", incoming); }}
+
+        // Clean the token out of the URL bar without a page reload
+        if (window.history && window.history.replaceState) {{
+            window.history.replaceState({{}}, document.title, "/docs");
+        }}
+
+        var token = sessionStorage.getItem("docs_token");
+        if (!token) {{
+            window.location.href = "/login-docs";
+            return;
+        }}
+
+        window.onload = function() {{
+            SwaggerUIBundle({{
+                url: "/openapi.json?token=" + encodeURIComponent(token),
+                dom_id: "#swagger-ui",
+                deepLinking: true,
+                presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+                layout: "StandaloneLayout",
+                requestInterceptor: function(req) {{
+                    req.headers["Authorization"] = "Bearer " + token;
+                    return req;
+                }}
+            }});
+        }};
+    }})();
+</script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
+@app.get("/redoc", include_in_schema=False)
+async def redoc_ui(
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+):
+    """ReDoc UI — requires a valid JWT."""
+    auth_token = _resolve_docs_token(token, authorization)
+
+    if not auth_token:
+        return FileResponse(str(STATIC_DIR / "login-docs.html"))
+
+    payload = decode_token(auth_token)
+    if not payload:
+        return FileResponse(str(STATIC_DIR / "login-docs.html"))
+
+    logger.info(f"📖 ReDoc accessed by user {payload.get('sub')}")
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>MCP Host — API Reference</title>
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700|Roboto:300,400,700" rel="stylesheet">
+    <style>body {{ margin: 0; padding: 0; }}</style>
+</head>
+<body>
+<script>
+    (function() {{
+        var incoming = "{auth_token}";
+        if (incoming) {{ sessionStorage.setItem("docs_token", incoming); }}
+        if (window.history && window.history.replaceState) {{
+            window.history.replaceState({{}}, document.title, "/redoc");
+        }}
+    }})();
+</script>
+<redoc spec-url="/openapi.json?token={auth_token}"></redoc>
+<script src="https://cdn.jsdelivr.net/npm/redoc@latest/bundles/redoc.standalone.js"></script>
+</body>
+</html>"""
     return HTMLResponse(content=html)
 
 @app.post("/login", response_model=TokenResponse)

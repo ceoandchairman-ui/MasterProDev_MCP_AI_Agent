@@ -250,7 +250,7 @@ class KnowledgeSearchTool(BaseTool):
             # to protect against it becoming slow or unresponsive.
             logger.info(f"[{trace_id}] 🔍 Searching knowledge base for: '{query}'")
             
-            results = await rag_breaker.execute_async(rag_service.search, query=query)
+            results = rag_breaker.call(rag_service.search, query=query)
             
             logger.info(f"[{trace_id}] 📊 Knowledge base search returned {len(results)} result(s):")
             for i, result in enumerate(results, 1):

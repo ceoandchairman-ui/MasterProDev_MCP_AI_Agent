@@ -21,6 +21,7 @@ from mcp_host.query_processor import QueryProcessor
 from mcp_host.intent_router import IntentRouter, Intent
 from mcp_host.evaluator import evaluator  # Task evaluation metrics
 from mcp_host.pii_scanner import pii_scanner
+from mcp_host.config import settings
 
 try:
     from langdetect import detect as _detect_lang, LangDetectException
@@ -181,6 +182,21 @@ class MCPAgent:
         self.intent_router = IntentRouter()
         self.state_manager = state_manager
         self.initialized = False
+        self.pipeline_debug = settings.PIPELINE_DEBUG
+
+    def _debug_enabled(self) -> bool:
+        return bool(self.pipeline_debug)
+
+    def _debug_preview(self, payload: Any, limit: int = 2000) -> str:
+        try:
+            text = json.dumps(payload, ensure_ascii=False, default=str)
+        except Exception:
+            text = str(payload)
+        return text if len(text) <= limit else text[:limit] + "..."
+
+    def _debug_log(self, trace_id: str, stage: str, payload: Any):
+        if self._debug_enabled():
+            logger.info(f"[{trace_id}] [PIPELINE:{stage}] {self._debug_preview(payload)}")
 
     @property
     def file_processor(self):
@@ -348,12 +364,14 @@ class MCPAgent:
             tier1_tokens = 400 if is_elab else 150
             logger.info(f"[{trace_id}] 💬 Tier-1 conversation — direct LLM response ({tier1_tokens} tokens)")
             direct_prompt = self._build_direct_prompt(message, history_text)
+            self._debug_log(trace_id, "direct_prompt", direct_prompt)
             final_response = await self.llm_manager.generate(
                 prompt=direct_prompt,
                 max_tokens=tier1_tokens,
                 temperature=0.1,
                 trace_id=trace_id
             )
+            self._debug_log(trace_id, "llm_output", final_response)
             execution_time = (datetime.utcnow() - start_time).total_seconds()
             
             # PII SCANNING: Redact final response before returning and logging
@@ -422,12 +440,14 @@ class MCPAgent:
                 if not final_response:
                     logger.info(f"[{trace_id}] 📝 No tools needed - generating direct response...")
                     direct_prompt = self._build_direct_prompt(message, history_text)
+                    self._debug_log(trace_id, "direct_prompt", direct_prompt)
                     final_response = await self.llm_manager.generate(
                         prompt=direct_prompt,
                         max_tokens=500,
                         temperature=0.3,
                         trace_id=trace_id
                     )
+                    self._debug_log(trace_id, "llm_output", final_response)
 
             final_response = (final_response or "I couldn't craft a response.").strip()
 
@@ -699,6 +719,7 @@ class MCPAgent:
         )
         if not prompt:
             prompt = f"Plan actions for: {user_message}"
+        self._debug_log(trace_id, "planner_prompt", prompt)
         
         raw_response = await self.llm_manager.generate(
             prompt=prompt,
@@ -707,6 +728,7 @@ class MCPAgent:
             stop_sequences=["<observation>"],
             trace_id=trace_id
         )
+        self._debug_log(trace_id, "planner_output", raw_response)
         
         return self._parse_planner_response(raw_response)
 
@@ -726,10 +748,14 @@ class MCPAgent:
                     if tool_name in ["search_calendar", "create_calendar_event", "delete_calendar_event", "search_emails", "send_email"]:
                         arguments["session_id"] = session_id
 
-                    output = await tool.arun(**arguments)
+                    self._debug_log(trace_id, f"tool_input:{tool_name}", arguments)
+
+                    output = await tool.arun(tool_input=arguments)
+                    self._debug_log(trace_id, f"tool_output:{tool_name}", output)
                     results.append({"tool": tool_name, "arguments": arguments, "output": output})
                 except Exception as e:
                     logger.error(f"[{trace_id}] ❌ Tool '{tool_name}' execution failed: {e}", exc_info=True)
+                    self._debug_log(trace_id, f"tool_error:{tool_name}", str(e))
                     results.append({"tool": tool_name, "arguments": arguments, "error": str(e)})
             else:
                 logger.warning(f"[{trace_id}] ⚠️ Tool '{tool_name}' not found.")
@@ -755,11 +781,15 @@ class MCPAgent:
                     if tool_name in ["search_calendar", "create_calendar_event", "delete_calendar_event", "search_emails", "send_email"]:
                         arguments["session_id"] = session_id
 
-                    output = await tool.arun(**arguments)
+                    self._debug_log(trace_id, f"tool_input:{tool_name}", arguments)
+
+                    output = await tool.arun(tool_input=arguments)
+                    self._debug_log(trace_id, f"tool_output:{tool_name}", output)
                     result_data = {"tool": tool_name, "arguments": arguments, "output": output}
                     yield {"type": "tool_result", "data": result_data}
                 except Exception as e:
                     logger.error(f"[{trace_id}] ❌ Tool '{tool_name}' execution failed: {e}", exc_info=True)
+                    self._debug_log(trace_id, f"tool_error:{tool_name}", str(e))
                     error_data = {"tool": tool_name, "arguments": arguments, "error": str(e)}
                     yield {"type": "tool_result", "data": error_data}
             else:
@@ -786,13 +816,17 @@ class MCPAgent:
             planner_hint=planner_hint,
             had_errors=had_errors
         )
-        
-        return await self.llm_manager.generate(
+
+        self._debug_log(trace_id, "augmented_prompt", prompt)
+
+        llm_output = await self.llm_manager.generate(
             prompt=prompt,
             max_tokens=1500,
             temperature=0.2,
             trace_id=trace_id
         )
+        self._debug_log(trace_id, "llm_output", llm_output)
+        return llm_output
 
     async def _synthesize_response_stream(
         self,
@@ -813,12 +847,15 @@ class MCPAgent:
             had_errors=had_errors
         )
 
+        self._debug_log(trace_id, "augmented_prompt", prompt)
+
         async for chunk in self.llm_manager.generate_stream(
             prompt=prompt,
             max_tokens=1500,
             temperature=0.2,
             trace_id=trace_id
         ):
+            self._debug_log(trace_id, "llm_output_chunk", chunk)
             yield chunk
 
     def _build_direct_prompt(self, user_message: str, history_text: str) -> str:

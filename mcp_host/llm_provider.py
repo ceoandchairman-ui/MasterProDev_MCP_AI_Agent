@@ -39,7 +39,7 @@ class LLMProvider(ABC):
         self,
         prompt: str,
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         trace_id: Optional[str] = None
     ) -> str:
@@ -51,7 +51,7 @@ class LLMProvider(ABC):
         self,
         prompt: str,
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         trace_id: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
@@ -64,7 +64,7 @@ class LLMProvider(ABC):
         prompt: str,
         tools: List[Dict[str, Any]],
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate with tool calling capability"""
@@ -187,7 +187,7 @@ class BedrockProvider(LLMProvider):
         self,
         prompt: str,
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         trace_id: Optional[str] = None
     ) -> str:
@@ -221,7 +221,7 @@ class BedrockProvider(LLMProvider):
         self,
         prompt: str,
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         trace_id: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
@@ -243,7 +243,7 @@ class BedrockProvider(LLMProvider):
         prompt: str,
         tools: List[Dict[str, Any]],
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate with tool calling"""
@@ -261,6 +261,9 @@ class BedrockProvider(LLMProvider):
 
 class HuggingFaceProvider(LLMProvider):
     """Hugging Face Inference API Provider using a factory for model-specific handlers."""
+
+    KIMI_TEMP_MIN = 0.1
+    KIMI_TEMP_MAX = 0.2
     
     # Fallback models in order of preference (free inference models)
     FALLBACK_MODELS = [
@@ -278,6 +281,18 @@ class HuggingFaceProvider(LLMProvider):
         self.api_url = "https://router.huggingface.co/v1/chat/completions"
         self.handler = self._get_model_handler(model_name)
         self.current_model_index = 0
+        self.pipeline_debug = settings.PIPELINE_DEBUG
+
+    def _debug_log(self, trace_id: Optional[str], stage: str, payload: Any):
+        if not self.pipeline_debug:
+            return
+        try:
+            text = json.dumps(payload, ensure_ascii=False, default=str)
+        except Exception:
+            text = str(payload)
+        if len(text) > 2000:
+            text = text[:2000] + "..."
+        logger.info(f"[{trace_id or 'no-trace'}] [LLM:{stage}] {text}")
     
     def _get_model_handler(self, model_name: str) -> HuggingFaceModelHandler:
         """Factory to select the appropriate model handler."""
@@ -288,6 +303,15 @@ class HuggingFaceProvider(LLMProvider):
         else:
             logger.info("Instantiating LlamaModelHandler as fallback.")
             return LlamaModelHandler()
+
+    def _effective_temperature(self, model_name: str, requested_temperature: float) -> float:
+        """Apply model-specific temperature policy.
+
+        For Kimi models we clamp to a conservative range to reduce hallucinations.
+        """
+        if "kimi" in (model_name or "").lower():
+            return max(self.KIMI_TEMP_MIN, min(self.KIMI_TEMP_MAX, requested_temperature))
+        return requested_temperature
 
     async def initialize(self) -> bool:
         """Initialize Hugging Face client."""
@@ -307,14 +331,16 @@ class HuggingFaceProvider(LLMProvider):
             self.available = False
             return False
     
-    async def _try_model(self, model_name: str, messages: List[Dict], max_tokens: int, temperature: float) -> str:
+    async def _try_model(self, model_name: str, messages: List[Dict], max_tokens: int, temperature: float, trace_id: Optional[str] = None) -> str:
         """Try a single model and return response or raise exception"""
+        effective_temperature = self._effective_temperature(model_name, temperature)
         payload = {
             "model": model_name,
             "messages": messages,
             "max_tokens": max_tokens,
-            "temperature": temperature
+            "temperature": effective_temperature
         }
+        self._debug_log(trace_id, "request_payload", payload)
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -330,17 +356,21 @@ class HuggingFaceProvider(LLMProvider):
         if not data.get("choices"):
             raise RuntimeError(f"Model {model_name} response missing choices")
 
-        return data["choices"][0]["message"]["content"]
+        output_text = data["choices"][0]["message"]["content"]
+        self._debug_log(trace_id, "response_text", output_text)
+        return output_text
     
     async def _try_model_stream(self, model_name: str, messages: List[Dict], max_tokens: int, temperature: float, trace_id: str) -> AsyncGenerator[str, None]:
         """Try a single model and stream the response."""
+        effective_temperature = self._effective_temperature(model_name, temperature)
         payload = {
             "model": model_name,
             "messages": messages,
             "max_tokens": max_tokens,
-            "temperature": temperature,
+            "temperature": effective_temperature,
             "stream": True
         }
+        self._debug_log(trace_id, "stream_request_payload", payload)
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -364,6 +394,7 @@ class HuggingFaceProvider(LLMProvider):
                                 delta = chunk["choices"][0].get("delta", {})
                                 content = delta.get("content")
                                 if content:
+                                    self._debug_log(trace_id, "stream_chunk", content)
                                     yield content
                         except json.JSONDecodeError:
                             logger.warning(f"[{trace_id}] Failed to decode stream chunk: {line_data}")
@@ -373,7 +404,7 @@ class HuggingFaceProvider(LLMProvider):
         self,
         prompt: str,
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         trace_id: Optional[str] = None
     ) -> str:
@@ -396,7 +427,7 @@ class HuggingFaceProvider(LLMProvider):
         
         for model in models_to_try:
             try:
-                result = await self._try_model(model, messages, max_tokens, temperature)
+                result = await self._try_model(model, messages, max_tokens, temperature, trace_id=trace_id)
                 if model != self.model_name:
                     logger.info(f"[{trace_id}] ✓ LLM fallback succeeded with {model}")
                 return result
@@ -411,7 +442,7 @@ class HuggingFaceProvider(LLMProvider):
         self,
         prompt: str,
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         trace_id: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
@@ -455,17 +486,19 @@ class HuggingFaceProvider(LLMProvider):
 
     async def _try_model_with_tools(self, model_name: str, messages: List[Dict], tools: List[Dict], max_tokens: int, temperature: float, trace_id: str) -> Dict[str, Any]:
         """Try a single model with tools and return response or raise exception"""
+        effective_temperature = self._effective_temperature(model_name, temperature)
         payload = {
             "model": model_name,
             "messages": messages,
             "max_tokens": max_tokens,
-            "temperature": temperature,
+            "temperature": effective_temperature,
             "stream": False
         }
         
         # Get handler for this model
         handler = self._get_model_handler(model_name)
         handler.prepare_tool_payload(payload, tools)
+        self._debug_log(trace_id, "tools_request_payload", payload)
         
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -483,14 +516,16 @@ class HuggingFaceProvider(LLMProvider):
         if not data.get("choices"):
             raise RuntimeError(f"Model {model_name} response missing choices")
         
-        return handler.parse_tool_response(data["choices"][0], tools)
+        parsed = handler.parse_tool_response(data["choices"][0], tools)
+        self._debug_log(trace_id, "tools_response_parsed", parsed)
+        return parsed
     
     async def generate_with_tools(
         self,
         prompt: str,
         tools: List[Dict[str, Any]],
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate with tool calling with automatic model fallback."""
@@ -558,7 +593,7 @@ class OllamaProvider(LLMProvider):
         self,
         prompt: str,
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         trace_id: Optional[str] = None
     ) -> str:
@@ -602,7 +637,7 @@ class OllamaProvider(LLMProvider):
         self,
         prompt: str,
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         trace_id: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
@@ -648,7 +683,7 @@ class OllamaProvider(LLMProvider):
         prompt: str,
         tools: List[Dict[str, Any]],
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate with tool calling"""
@@ -671,6 +706,7 @@ class LLMManager:
         self.providers: Dict[LLMType, LLMProvider] = {}
         self.active_provider: Optional[LLMProvider] = None
         self.mock_mode = False  # Fallback to mock responses if no providers available
+        self.pipeline_debug = settings.PIPELINE_DEBUG
         
         # MAIN: Kimi-K2-Instruct (via HuggingFace Inference API)
         # FALLBACK: Llama-3-8B-Instruct (via HuggingFace Inference API)
@@ -721,12 +757,16 @@ class LLMManager:
         self,
         prompt: str,
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         stop_sequences: Optional[List[str]] = None,
         trace_id: Optional[str] = None
     ) -> str:
         """Generate text with automatic fallback"""
+        if self.pipeline_debug:
+            preview = prompt if len(prompt) <= 2000 else prompt[:2000] + "..."
+            logger.info(f"[{trace_id or 'no-trace'}] [LLM:input_prompt] {preview}")
+
         # Debug log for runtime state
         logger.info(f"[DEBUG] LLMManager.generate: mock_mode={self.mock_mode}, active_provider={self.active_provider}")
 
@@ -740,7 +780,11 @@ class LLMManager:
 
             if provider and provider.available:
                 try:
-                    return await provider.generate(prompt, max_tokens, temperature, system_prompt, trace_id=trace_id)
+                    result = await provider.generate(prompt, max_tokens, temperature, system_prompt, trace_id=trace_id)
+                    if self.pipeline_debug:
+                        preview = result if len(result) <= 2000 else result[:2000] + "..."
+                        logger.info(f"[{trace_id or 'no-trace'}] [LLM:output_text] {preview}")
+                    return result
                 except Exception as e:
                     logger.warning(f"⚠ {llm_type.value} failed: {e}, trying next provider...")
                     continue
@@ -753,11 +797,15 @@ class LLMManager:
         self,
         prompt: str,
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         trace_id: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         """Generate text as a stream with automatic fallback."""
+        if self.pipeline_debug:
+            preview = prompt if len(prompt) <= 2000 else prompt[:2000] + "..."
+            logger.info(f"[{trace_id or 'no-trace'}] [LLM:input_prompt_stream] {preview}")
+
         if self.mock_mode:
             logger.info("🤖 Using mock LLM streaming response (no providers configured)")
             mock_text = self._generate_mock_response(prompt)
@@ -827,7 +875,7 @@ class LLMManager:
         prompt: str,
         tools: List[Dict[str, Any]],
         max_tokens: int = 1000,
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         trace_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate with tool calling and automatic fallback"""

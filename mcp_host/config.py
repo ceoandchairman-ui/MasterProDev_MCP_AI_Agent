@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     ENV: str = "development"
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
+    PIPELINE_DEBUG: bool = False
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     ALLOWED_ORIGINS: list = ["http://localhost:8000", "http://localhost:3000"]  # Override via .env
