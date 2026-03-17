@@ -46,19 +46,12 @@ from .auth import hash_password, verify_password, create_access_token, decode_to
 
 
 def get_token_from_header(authorization: str) -> Optional[str]:
-    """Extract Bearer token from Authorization header value."""
-    if authorization and authorization.startswith("Bearer "):
-        return authorization[7:]
-    return authorization
-from .state import state_manager, ConversationState
-from .agent import mcp_agent
-
-
-def get_token_from_header(authorization: str) -> Optional[str]:
     """Extract bearer token from Authorization header."""
     if authorization and authorization.startswith("Bearer "):
         return authorization[7:]
     return None
+from .state import state_manager, ConversationState
+from .agent import mcp_agent
 from .rag_service import rag_service
 from .evaluator import evaluator
 from .quality_gate import initialize_quality_gate, quality_gate

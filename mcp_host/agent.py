@@ -564,6 +564,57 @@ class MCPAgent:
             history_text = self.token_budget.trim_context(history_text)
             logger.info(f"[{trace_id}] 📊 Context tokens budgeted: {self.token_budget.get_context_tokens()} tokens")
 
+            # 3a. Apply same Tier-0a/Tier-0 routing used in non-streaming mode
+            norm_message = self._normalize_message(message)
+
+            faq_answer = self._match_faq(norm_message, history_len=len(conversation_history or []))
+            if faq_answer:
+                yield {"type": "status", "text": "Formulating response..."}
+                final_response_text = ""
+                for token in faq_answer.split():
+                    chunk = token + " "
+                    final_response_text += chunk
+                    yield {"type": "text_chunk", "text": chunk}
+
+                redacted_user_turn = pii_scanner.scan_and_redact(message, "USER_MESSAGE")
+                redacted_final_response = pii_scanner.scan_and_redact(final_response_text.strip(), "AGENT_RESPONSE")
+                await self.state_manager.save_conversation_turn(
+                    session_id, user_id, session_id, redacted_user_turn, redacted_final_response
+                )
+
+                execution_time = (datetime.utcnow() - start_time).total_seconds()
+                yield {
+                    "type": "done",
+                    "execution_time": round(execution_time, 2),
+                    "llm_provider": "faq",
+                    "trace_id": trace_id
+                }
+                return
+
+            det_response = self._get_deterministic_response(norm_message)
+            if det_response:
+                yield {"type": "status", "text": "Formulating response..."}
+                final_response_text = ""
+                for token in det_response.split():
+                    chunk = token + " "
+                    final_response_text += chunk
+                    yield {"type": "text_chunk", "text": chunk}
+
+                redacted_user_turn = pii_scanner.scan_and_redact(message, "USER_MESSAGE")
+                redacted_final_response = pii_scanner.scan_and_redact(final_response_text.strip(), "AGENT_RESPONSE")
+                await self.state_manager.save_conversation_turn(
+                    session_id, user_id, session_id, redacted_user_turn, redacted_final_response
+                )
+
+                execution_time = (datetime.utcnow() - start_time).total_seconds()
+                yield {
+                    "type": "done",
+                    "execution_time": round(execution_time, 2),
+                    "llm_provider": "deterministic",
+                    "trace_id": trace_id
+                }
+                return
+
             # 4. Plan actions
             yield {"type": "status", "text": "Thinking..."}
             plan = await self._plan_actions(full_message, history_text, trace_id=trace_id)
