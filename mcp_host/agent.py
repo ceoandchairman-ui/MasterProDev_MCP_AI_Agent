@@ -895,13 +895,28 @@ class MCPAgent:
         return "\n".join(lines)
 
     def _stringify_tool_output(self, payload: Any) -> str:
-        """Convert tool output to a compact printable string."""
+        """Convert tool output to a readable string for LLM synthesis."""
+        # Special handling for knowledge search results - preserve full content
+        if isinstance(payload, dict) and payload.get("status") == "success":
+            results = payload.get("results", [])
+            if results:
+                text_parts = []
+                for i, result in enumerate(results, 1):
+                    content = result.get("content", "")
+                    source = result.get("source", "Unknown")
+                    score = result.get("relevance_score", "N/A")
+                    text_parts.append(f"[Result {i}] (Source: {source}, Score: {score})\n{content}")
+                return "\n\n---\n\n".join(text_parts)
+        
+        # Fallback for other tool outputs (calendar, email, etc.)
         try:
             text = json.dumps(payload, indent=2)
         except Exception:
             text = str(payload)
-        if len(text) > 500:
-            text = text[:497] + "..."
+        
+        # Increased limit from 500 to 2000 chars for better context
+        if len(text) > 2000:
+            text = text[:1997] + "..."
         return text
 
     def _normalize_tool_arguments(
