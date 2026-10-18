@@ -2,12 +2,15 @@
 
 
 import asyncio
+import html
+import logging
 import os
 import json
 from typing import Any, Dict, List
 from datetime import datetime, timedelta
 from mcp_servers.base_server import BaseMCPServer
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from services._common.mcp_common.service_auth import require_service_auth
 from fastapi.responses import HTMLResponse
 
 # Google Calendar API imports
@@ -47,7 +50,7 @@ class CalendarMCPServer(BaseMCPServer):
         }
         
         # Register OAuth callback endpoint
-        @self.app.get("/callback")
+        @self.app.get("/callback", dependencies=[Depends(require_service_auth)])
         async def oauth_callback(code: str = None, state: str = None, error: str = None):
             """Handle OAuth callback from Google"""
             if error:
@@ -55,7 +58,7 @@ class CalendarMCPServer(BaseMCPServer):
                 <html>
                     <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                         <h1>✗ Authorization Denied</h1>
-                        <p>Error: {error}</p>
+                        <p>Error: {html.escape(str(error))}</p>
                     </body>
                 </html>
                 """)
@@ -65,6 +68,8 @@ class CalendarMCPServer(BaseMCPServer):
             
             if not self._auth_flow:
                 raise HTTPException(status_code=400, detail="No pending authorization flow")
+            if not state or state != self._auth_state:
+                raise HTTPException(status_code=400, detail="Invalid OAuth state")
             
             try:
                 # Exchange code for token
@@ -90,18 +95,19 @@ class CalendarMCPServer(BaseMCPServer):
                 </html>
                 """)
             except Exception as e:
+                logging.getLogger(__name__).error('OAuth error: %s', e)
                 return HTMLResponse(f"""
                 <html>
                     <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                         <h1>✗ Authorization Failed</h1>
-                        <p>Error: {str(e)}</p>
+                        <p>Authorization could not be completed. Check the server logs.</p>
                         <p>Please try again.</p>
                     </body>
                 </html>
                 """)
         
         # Register OAuth login endpoint
-        @self.app.get("/auth")
+        @self.app.get("/auth", dependencies=[Depends(require_service_auth)])
         async def start_auth(redirect_uri: str = None):
             """Start OAuth flow and return authorization URL
             Args:
@@ -179,11 +185,12 @@ class CalendarMCPServer(BaseMCPServer):
                 </html>
                 """)
             except Exception as e:
+                logging.getLogger(__name__).error('OAuth error: %s', e)
                 return HTMLResponse(f"""
                 <html>
                     <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                         <h1>✗ Authorization Error</h1>
-                        <p>Error: {str(e)}</p>
+                        <p>Authorization could not be completed. Check the server logs.</p>
                         <p>Make sure credentials.json exists in the calendar_server directory.</p>
                     </body>
                 </html>

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     # MCP Servers (localhost since all services in same container)
     CALENDAR_SERVER_URL: str = "http://localhost:8001"
     GMAIL_SERVER_URL: str = "http://localhost:8002"
+    MCP_SERVICE_KEY: Optional[str] = None
 
     # HuggingFace LLM
     HUGGINGFACE_API_KEY: Optional[str] = None

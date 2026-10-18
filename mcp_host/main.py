@@ -28,6 +28,7 @@ except ImportError:
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from pydantic_settings import BaseSettings
+import html
 import logging
 import httpx
 import json
@@ -38,11 +39,12 @@ from pathlib import Path
 import time
 
 from .config import settings
+from .service_auth import service_headers
 from .models import (
     LoginRequest, ChatRequest, TokenResponse, ChatResponse,
     UserProfileResponse, HealthResponse
 )
-from .auth import hash_password, verify_password, create_access_token, decode_token
+from .auth import hash_password, verify_password, create_access_token, create_refresh_token, decode_token, verify_admin_credentials
 
 
 def get_token_from_header(authorization: str) -> Optional[str]:
@@ -441,17 +443,8 @@ async def login(request: Request, login_req: LoginRequest):
     Rate limited: 5 attempts per minute per IP address.
     """
     # Verify email
-    if login_req.email != settings.ADMIN_EMAIL:
-        logger.warning(f"✗ Failed login attempt: invalid email {login_req.email}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    # Verify password
-    if login_req.password != settings.ADMIN_PASSWORD:
-        logger.warning(f"✗ Failed login attempt for: {login_req.email} (incorrect password)")
+    if not verify_admin_credentials(login_req.email, login_req.password):
+        logger.warning("✗ Failed admin login attempt")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -465,9 +458,7 @@ async def login(request: Request, login_req: LoginRequest):
         data={"sub": user_id, "email": login_req.email},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    refresh_token = create_access_token(
-        data={"sub": user_id, "type": "refresh"}
-    )
+    refresh_token = create_refresh_token({"sub": user_id, "type": "refresh"})
     
     # Create session
     await state_manager.create_session(user_id, access_token, "employee")
@@ -510,6 +501,7 @@ async def logout(authorization: Optional[str] = Header(None)):
 # ============================================================================
 
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
+@limiter.limit("30/minute")
 async def chat(
     request: Request,
     chat_req: ChatRequest,
@@ -539,7 +531,8 @@ async def chat(
         message=chat_req.message,
         session_id=session_id,
         conversation_history=conversation_history,
-        trace_id=trace_id
+        trace_id=trace_id,
+        user_id=user_id
     )
 
     # Save conversation turn
@@ -560,6 +553,7 @@ async def chat(
 
 
 @app.post("/chat/stream", tags=["Chat"])
+@limiter.limit("30/minute")
 async def chat_stream(
     request: Request,
     message: str = Form(...),
@@ -652,7 +646,9 @@ async def get_profile(authorization: Optional[str] = Header(None)):
 
 
 @app.post("/voice")
+@limiter.limit("10/minute")
 async def voice_chat(
+    request: Request,
     audio: UploadFile = File(...),
     authorization: Optional[str] = Header(None)
 ):
@@ -762,7 +758,7 @@ async def voice_chat(
         logger.error(f"[{trace_id}] ❌ Voice chat error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Voice processing failed: {str(e)}"
+            detail="Voice processing failed"
         )
 
 
@@ -863,13 +859,14 @@ async def calendar_auth_proxy():
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 f"{settings.CALENDAR_SERVER_URL}/auth",
-                params={"redirect_uri": callback_uri}
+                params={"redirect_uri": callback_uri},
+                headers=service_headers()
             )
         logger.info(f"📅 Calendar server responded with status {response.status_code}")
         return HTMLResponse(content=response.text)
     except Exception as e:
         logger.error(f"❌ Calendar auth proxy error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Calendar auth failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Calendar auth failed")
 
 
 @app.get("/integrations/google/calendar/callback")
@@ -881,7 +878,7 @@ async def calendar_callback_proxy(code: str = None, state: str = None, error: st
             <html>
                 <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                     <h1>✗ Authorization Denied</h1>
-                    <p>Error: {error}</p>
+                    <p>Error: {html.escape(str(error))}</p>
                 </body>
             </html>
             """
@@ -892,7 +889,8 @@ async def calendar_callback_proxy(code: str = None, state: str = None, error: st
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 f"{settings.CALENDAR_SERVER_URL}/callback",
-                params={"code": code, "state": state}
+                params={"code": code, "state": state},
+                headers=service_headers()
             )
         logger.info(f"📅 Calendar callback processed, status={response.status_code}")
         return HTMLResponse(content=response.text)
@@ -903,7 +901,7 @@ async def calendar_callback_proxy(code: str = None, state: str = None, error: st
             <html>
                 <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                     <h1>✗ Authorization Failed</h1>
-                    <p>Error: {str(e)}</p>
+                    <p>Authorization could not be completed.</p>
                 </body>
             </html>
             """
@@ -920,13 +918,14 @@ async def gmail_auth_proxy():
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 f"{settings.GMAIL_SERVER_URL}/auth",
-                params={"redirect_uri": callback_uri}
+                params={"redirect_uri": callback_uri},
+                headers=service_headers()
             )
         logger.info(f"📧 Gmail server responded with status {response.status_code}")
         return HTMLResponse(content=response.text)
     except Exception as e:
         logger.error(f"❌ Gmail auth proxy error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Gmail auth failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Gmail auth failed")
 
 
 @app.get("/integrations/google/gmail/callback")
@@ -938,7 +937,7 @@ async def gmail_callback_proxy(code: str = None, state: str = None, error: str =
             <html>
                 <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                     <h1>✗ Authorization Denied</h1>
-                    <p>Error: {error}</p>
+                    <p>Error: {html.escape(str(error))}</p>
                 </body>
             </html>
             """
@@ -949,7 +948,8 @@ async def gmail_callback_proxy(code: str = None, state: str = None, error: str =
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 f"{settings.GMAIL_SERVER_URL}/callback",
-                params={"code": code, "state": state}
+                params={"code": code, "state": state},
+                headers=service_headers()
             )
         logger.info(f"📧 Gmail callback processed, status={response.status_code}")
         return HTMLResponse(content=response.text)
@@ -961,7 +961,7 @@ async def gmail_callback_proxy(code: str = None, state: str = None, error: str =
             <html>
                 <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                     <h1>✗ Authorization Failed</h1>
-                    <p>Error: {str(e)}</p>
+                    <p>Authorization could not be completed.</p>
                 </body>
             </html>
             """

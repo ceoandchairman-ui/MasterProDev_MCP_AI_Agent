@@ -10,6 +10,7 @@ import time
 from functools import wraps
 
 from .config import settings
+from .service_auth import service_headers
 from .rag_service import rag_service
 from .resilience import api_retry_strategy, get_breaker
 try:
@@ -91,7 +92,7 @@ class CalendarGetEventsTool(BaseTool):
     async def _arun(self, days: int = 7, days_back: int = 365, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Get calendar events asynchronously (both future and past)"""
         trace_id = trace_id or str(uuid.uuid4())
-        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
+        headers = service_headers(trace_id, session_id)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await calendar_breaker.execute_async(
@@ -146,7 +147,7 @@ class CalendarCreateEventTool(BaseTool):
     ) -> Dict[str, Any]:
         """Create calendar event asynchronously"""
         trace_id = trace_id or str(uuid.uuid4())
-        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
+        headers = service_headers(trace_id, session_id)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await calendar_breaker.execute_async(
@@ -198,7 +199,7 @@ class CalendarDeleteEventTool(BaseTool):
     async def _arun(self, event_id: str, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Delete calendar event asynchronously"""
         trace_id = trace_id or str(uuid.uuid4())
-        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
+        headers = service_headers(trace_id, session_id)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await calendar_breaker.execute_async(
@@ -299,7 +300,7 @@ class GmailGetEmailsTool(BaseTool):
     async def _arun(self, limit: int = 10, query: str = "", session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Get emails asynchronously"""
         trace_id = trace_id or str(uuid.uuid4())
-        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
+        headers = service_headers(trace_id, session_id)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await gmail_breaker.execute_async(
@@ -365,7 +366,7 @@ class GmailSendEmailTool(BaseTool):
     ) -> Dict[str, Any]:
         """Send email asynchronously"""
         trace_id = trace_id or str(uuid.uuid4())
-        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
+        headers = service_headers(trace_id, session_id)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await gmail_breaker.execute_async(
@@ -416,7 +417,7 @@ class GmailReadEmailTool(BaseTool):
     async def _arun(self, email_id: str, session_id: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
         """Read email asynchronously"""
         trace_id = trace_id or str(uuid.uuid4())
-        headers = {"X-Trace-Id": trace_id, "X-Session-Id": session_id}
+        headers = service_headers(trace_id, session_id)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await gmail_breaker.execute_async(

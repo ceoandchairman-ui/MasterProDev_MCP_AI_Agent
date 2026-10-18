@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 import bcrypt
+import hmac
 import uuid
 
 from .config import settings
@@ -57,3 +58,17 @@ def decode_token(token: str) -> Optional[dict]:
 def generate_session_id() -> str:
     """Generate unique session ID"""
     return str(uuid.uuid4())
+
+
+def verify_admin_credentials(email: str, password: str) -> bool:
+    """Constant-time check of the admin login. ADMIN_PASSWORD may be plaintext or a bcrypt hash."""
+    email_ok = hmac.compare_digest(email.strip().lower().encode(), settings.ADMIN_EMAIL.strip().lower().encode())
+    expected = settings.ADMIN_PASSWORD
+    if expected.startswith(("$2a$", "$2b$", "$2y$")):
+        try:
+            password_ok = verify_password(password, expected)
+        except ValueError:
+            password_ok = False
+    else:
+        password_ok = hmac.compare_digest(password.encode(), expected.encode())
+    return email_ok and password_ok

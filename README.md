@@ -1,42 +1,28 @@
-﻿# MasterProDev Multi-Agent AI Assistant
+﻿# MasterProDev AI Assistant
 
-A multilingual, multimodal conversational AI assistant built with LangGraph, PostgreSQL, and full observability. The system orchestrates seven specialized agents to qualify leads, schedule meetings, draft project scopes, and handle escalations.
+Multi-agent conversational assistant (LangGraph, FastAPI, MCP tool servers, Postgres, Redis, Weaviate) hosted on Railway.
 
-## Features
+## Status
 
-- **7 LLM Agents**: Concierge, Lead Conversion, Solution Architect, Quote, Comms & Scheduling, Escalation, Evaluator
-- **Response Modes**: Templated (fast), Generated (flexible), Reasoned (ReAct with planning)
-- **Multi-Turn Memory**: Short-term and long-term with consent and governance
-- **PII Protection**: Reversible pseudonymization and boundary enforcement
-- **User Verification**: Passwordless email OTP + SMS OTP
-- **Observability**: OpenTelemetry, Grafana, LangSmith, Ragas metrics
-- **Caching**: Exact-match, semantic, and tool-result caching
-- **Shared MCP Tools**: Calendar, Gmail, DB, Quoting (per-user OAuth)
-- **Hosted on Railway**: Production-ready infrastructure
+Under restructuring. The legacy application still lives in `mcp_host/` and `mcp_servers/` and is what the current Dockerfile runs. The new package is `src/mpd_assistant/`, migrated step by step behind the `USE_NEW_PIPELINE` flag.
 
-## Quick Start
+## Layout
 
-### Install
-`ash
+- `src/mpd_assistant/` new application package (core, api, graph, agents, routing, responses, memory, sessions, identity, privacy, cache, retrieval, tools, business, evaluation, observability, multimodal, ingestion, worker)
+- `services/` MCP services (calendar, gmail, db, quoting)
+- `mcp_host/`, `mcp_servers/` legacy code, removed once the new pipeline has parity
+- `migrations/`, `evals/`, `observability/`, `deploy/`, `tests/`, `docs/`
+
+## Develop
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
 pip install -e ".[dev]"
-`
-
-### Configure
-`ash
 cp .env.example .env
-`
+pytest
+```
 
-### Run
-`ash
-docker-compose -f deploy/compose.dev.yml up -d
-alembic upgrade head
-uvicorn mpd_assistant.api.main:app --reload
-`
+## Contributing
 
-## Project Structure
-
-See docs/ARCHITECTURE.md for the detailed system design.
-
-## License
-
-MIT
+See `CONTRIBUTING.md` and `SECURITY.md`.

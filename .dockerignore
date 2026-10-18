@@ -1,53 +1,36 @@
-﻿# Version control
-.git
-.gitignore
-.gitlab-ci.yml
+﻿.git
 .github
-
-# Development
 .venv
-venv/
+venv
+env
+__pycache__
+*.pyc
 *.egg-info
 .pytest_cache
 .mypy_cache
+.ruff_cache
 .coverage
-htmlcov/
-.env
-.env.local
-.env.*.local
+htmlcov
 
-# Documentation
-docs/
+# Secrets must never enter an image
+.env
+.env.*
+!.env.example
+credentials.json
+token.json
+*.pem
+*.key
+
+# Not needed at runtime
+tests
+evals
+docs
 *.md
 !README.md
-
-# OS
-.DS_Store
-.AppleDouble
-.LSOverride
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Logs and temp
-logs/
+logs
 *.log
-/tmp
-/temp
-
-# Node (if frontend)
-node_modules/
-dist/
-build/
-
-# Test files
-tests/
-evals/
-
-# Large files
-*.tar.gz
-*.zip
+node_modules
+.vscode
+.idea
+.DS_Store
+Thumbs.db
