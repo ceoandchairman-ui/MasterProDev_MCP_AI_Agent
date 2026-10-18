@@ -1,11 +1,13 @@
-"""One-time codes for email and SMS verification. Codes are stored only as keyed hashes."""
+"""One-time codes for email and SMS verification. Codes are stored only as keyed hashes, in a shared store."""
 
 import hashlib
 import hmac
 import secrets
 import time
-from dataclasses import dataclass
-from typing import Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Optional
+
+from mpd_assistant.core.kv import KeyValueStore, MemoryKV
 
 CODE_LENGTH = 6
 CODE_TTL_SECONDS = 600
@@ -13,25 +15,21 @@ MAX_ATTEMPTS = 5
 RESEND_COOLDOWN_SECONDS = 60
 
 
-@dataclass
-class _Challenge:
-    code_hash: str
-    expires_at: float
-    attempts: int = 0
-    issued_at: float = 0.0
-
-
 class OtpError(Exception):
     pass
 
 
 class OtpService:
-    """In-memory reference implementation; production swaps the dict for Redis with a TTL."""
+    """Challenges live in a KeyValueStore (Redis in deployments) so any replica can verify a code."""
 
-    def __init__(self, secret: str, clock: Callable[[], float] = time.time):
+    def __init__(self, secret: str, clock: Callable[[], float] = time.time, store: Optional[KeyValueStore] = None, namespace: str = "otp"):
         self._secret = secret.encode()
         self._clock = clock
-        self._challenges: Dict[str, _Challenge] = {}
+        self._store = store if store is not None else MemoryKV()
+        self._ns = namespace
+
+    def _key(self, target: str) -> str:
+        return f"{self._ns}:{hashlib.sha256(target.encode()).hexdigest()[:32]}"  # no raw email/phone in store keys
 
     def _hash(self, target: str, code: str) -> str:
         return hmac.new(self._secret, f"{target}:{code}".encode(), hashlib.sha256).hexdigest()
@@ -39,22 +37,25 @@ class OtpService:
     def issue(self, target: str) -> str:
         """target is a normalized email or E.164 phone. Returns the code for the sender to deliver."""
         now = self._clock()
-        existing = self._challenges.get(target)
-        if existing and now - existing.issued_at < RESEND_COOLDOWN_SECONDS:
+        existing = self._store.get(self._key(target))
+        if existing and now - existing["issued_at"] < RESEND_COOLDOWN_SECONDS:
             raise OtpError("Please wait before requesting another code")
         code = "".join(secrets.choice("0123456789") for _ in range(CODE_LENGTH))
-        self._challenges[target] = _Challenge(self._hash(target, code), now + CODE_TTL_SECONDS, 0, now)
+        challenge = {"code_hash": self._hash(target, code), "expires_at": now + CODE_TTL_SECONDS, "attempts": 0, "issued_at": now}
+        self._store.set(self._key(target), challenge, CODE_TTL_SECONDS + 60)
         return code
 
     def verify(self, target: str, code: str) -> bool:
-        challenge: Optional[_Challenge] = self._challenges.get(target)
+        key = self._key(target)
+        challenge = self._store.get(key)
         if challenge is None:
             return False
-        if self._clock() > challenge.expires_at or challenge.attempts >= MAX_ATTEMPTS:
-            self._challenges.pop(target, None)
+        if self._clock() > challenge["expires_at"] or challenge["attempts"] >= MAX_ATTEMPTS:
+            self._store.delete(key)
             return False
-        challenge.attempts += 1
-        if hmac.compare_digest(challenge.code_hash, self._hash(target, code.strip())):
-            self._challenges.pop(target, None)
+        challenge["attempts"] += 1
+        if hmac.compare_digest(challenge["code_hash"], self._hash(target, code.strip())):
+            self._store.delete(key)
             return True
+        self._store.set(key, challenge, CODE_TTL_SECONDS + 60)
         return False

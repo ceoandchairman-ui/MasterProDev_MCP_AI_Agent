@@ -7,5 +7,5 @@ healthcheckPath = "/health"
 healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
-# Keep at 1 until sessions, vault and users move from process memory to Postgres/Redis (see docs/ARCHITECTURE.md).
+# Keep at 1 until a staging run with two replicas passes against real Postgres and Redis (see docs/ARCHITECTURE.md).
 numReplicas = 1

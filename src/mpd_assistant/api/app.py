@@ -9,9 +9,11 @@ from mpd_assistant.agents.factory import build_runners
 from mpd_assistant.agents.lead_conversion.agent import MemoryLeadRepository
 from mpd_assistant.api.main import Services, create_app
 from mpd_assistant.business.catalog import load_catalog
+from mpd_assistant.business.leads_sql import SqlLeadRepository
 from mpd_assistant.channels.gateway import ChannelGateway
 from mpd_assistant.core.config import get_settings
 from mpd_assistant.core.crypto import FieldCipher
+from mpd_assistant.core.db import check_engine, ensure_tenant, make_engine
 from mpd_assistant.core.kv import KeyValueStore, MemoryKV, RedisKV
 from mpd_assistant.core.llm.client import OpenAICompatibleLLM
 from mpd_assistant.core.logging import configure_logging
@@ -20,13 +22,16 @@ from mpd_assistant.graph.service import ChatService
 from mpd_assistant.identity.otp import OtpService
 from mpd_assistant.identity.senders import ConsoleSender, UnconfiguredSender
 from mpd_assistant.identity.service import IdentityService, MemoryUserRepository
+from mpd_assistant.identity.sql import SqlUserRepository
 from mpd_assistant.messaging.confirmations import ConfirmationService
 from mpd_assistant.messaging.models import Channel
 from mpd_assistant.messaging.providers import SendGridProvider, TwilioProvider
 from mpd_assistant.messaging.service import MessengerSender, NotificationService
 from mpd_assistant.observability.otel import setup_tracing
-from mpd_assistant.privacy.vault import MemoryVaultStore, PiiVault
+from mpd_assistant.privacy.kv_store import KvVaultStore
+from mpd_assistant.privacy.vault import PiiVault
 from mpd_assistant.sessions.service import MemorySessionRepository, SessionService
+from mpd_assistant.sessions.sql import SqlSessionRepository
 from mpd_assistant.tools.executor import ToolExecutor, http_backend
 from mpd_assistant.tools.registry import default_registry
 
@@ -62,6 +67,18 @@ def _kv(redis_url: str, production: bool) -> KeyValueStore:
         return MemoryKV()
 
 
+def _repositories(database_url: str, production: bool):
+    """Postgres-backed repositories; in development an unreachable database falls back to process memory."""
+    engine = make_engine(database_url)
+    if check_engine(engine):
+        tenant = ensure_tenant(engine)
+        return SqlSessionRepository(engine, tenant), SqlUserRepository(engine, tenant), SqlLeadRepository(engine, tenant)
+    if production:
+        raise RuntimeError("Database is unreachable")
+    logger.warning("Database unavailable; using in-memory repositories (development only)")
+    return MemorySessionRepository(), MemoryUserRepository(), MemoryLeadRepository()
+
+
 def _notifications(settings, kv: KeyValueStore) -> NotificationService:
     providers = []
     if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN and (settings.TWILIO_SMS_FROM or settings.TWILIO_WHATSAPP_FROM):
@@ -92,17 +109,18 @@ def build_services() -> Services:
     else:
         sms_sender = UnconfiguredSender("sms") if prod else ConsoleSender("sms")
 
-    users = MemoryUserRepository()  # replaced by the SQL repository when the database wave lands
+    session_repo, users, leads = _repositories(settings.DATABASE_URL, prod)
     identity = IdentityService(
         cipher,
         settings.BLIND_INDEX_KEY,  # type: ignore[arg-type]
         users,
-        OtpService(settings.SECRET_KEY + ":email"),
-        OtpService(settings.SECRET_KEY + ":sms"),
+        OtpService(settings.SECRET_KEY + ":email", store=kv, namespace="otp-email"),
+        OtpService(settings.SECRET_KEY + ":sms", store=kv, namespace="otp-sms"),
         email_sender,
         sms_sender,
+        kv=kv,
     )
-    vault = PiiVault(cipher, MemoryVaultStore())
+    vault = PiiVault(cipher, KvVaultStore(kv))
     registry = default_registry()
 
     llm = None
@@ -126,11 +144,11 @@ def build_services() -> Services:
 
     # The retriever (Weaviate hybrid search) is wired in the retrieval wave; until then the concierge is not registered.
     catalog = load_catalog(settings.CATALOG_PATH) if settings.CATALOG_PATH else None
-    runners = build_runners(llm, None, executor, registry, leads=MemoryLeadRepository(), catalog=catalog,
+    runners = build_runners(llm, None, executor, registry, leads=leads, catalog=catalog,
                             on_booked=ConfirmationService(notifications, users, cipher).booking_confirmed)
     graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod))
     chat = ChatService(graph, vault)
-    sessions = SessionService(MemorySessionRepository())
+    sessions = SessionService(session_repo)
     gateway = ChannelGateway(chat, sessions, users, notifications, kv, settings.BLIND_INDEX_KEY)  # type: ignore[arg-type]
     return Services(
         chat=chat,

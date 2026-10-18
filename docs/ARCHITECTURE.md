@@ -51,7 +51,7 @@ Inbound SMS/WhatsApp arrive at `/v2/channels/twilio` (signature validated), are 
 user by phone blind index, and run through the same graph as the web widget. Not yet exercised against
 live Twilio/SendGrid accounts; WhatsApp needs an approved sender.
 
-## Built and tested (206 unit tests)
+## Built and tested (212 unit tests)
 
 Everything in the module map, plus: LLM client (OpenAI-compatible, fallback), guarded tool executor
 (permissions, confirmation, privacy-token rehydration at the tool boundary), five agents
@@ -61,9 +61,14 @@ and Railway config. All agents are tested with a fake LLM; none has run against 
 
 ## Not built yet (known gaps)
 
-- Sessions, PII vault, user records and leads are **process memory** in the new API. Until
-  Postgres/Redis repositories replace them, run **one replica** (set in `deploy/railway/api.toml`)
-  and do not route production traffic to `/v2`.
+- Shared state now lives in Postgres (sessions, users, leads, funnel events) and Redis (OTP
+  challenges, encrypted pending sign-ups, PII vault, caches, rate limits), and tests simulate two
+  replicas on one database and store. It has **not been run against real Postgres/Redis**, so
+  `deploy/railway/api.toml` stays at one replica and `/v2` should not take production traffic until
+  a staging run with two replicas passes. In development an unreachable database or Redis falls
+  back to process memory with a warning; production refuses to start instead.
+- Vault retention (7 days) is a placeholder; messages stored in checkpoints keep tokens that stop
+  resolving after the vault entry expires.
 - Concierge needs a retriever: the Weaviate hybrid search adapter and hosted reranker are not
   written, so the Concierge is not registered and knowledge questions get the "no reliable answer"
   template.
