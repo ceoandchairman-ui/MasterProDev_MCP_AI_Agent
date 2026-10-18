@@ -38,6 +38,7 @@ from mpd_assistant.retrieval.embeddings import OpenAICompatibleEmbedder
 from mpd_assistant.retrieval.pg import PgRetriever
 from mpd_assistant.sessions.service import MemorySessionRepository, SessionService
 from mpd_assistant.sessions.sql import SqlSessionRepository
+from mpd_assistant.sessions.turns import SqlTurnRecorder
 from mpd_assistant.tools.executor import ToolExecutor, http_backend
 from mpd_assistant.tools.registry import default_registry
 
@@ -176,6 +177,7 @@ def build_services() -> Services:
         public_url=settings.PUBLIC_DOMAIN,
         google=google,
         kv=kv,
+        turns=SqlTurnRecorder(engine) if engine is not None else None,
     )
 
 

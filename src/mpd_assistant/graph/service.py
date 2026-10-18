@@ -19,6 +19,10 @@ class ChatResult:
     escalated: bool
     reference: str | None
     eval_reasons: List[str]
+    safe_user_text: str = ""
+    intent: str = ""
+    agent: str = ""
+    mode: str = ""
 
 
 class ChatService:
@@ -47,4 +51,13 @@ class ChatService:
             escalated=bool(out.get("escalated")),
             reasons=reasons,
         )
-        return ChatResult(reply, bool(out.get("escalated")), out.get("reference"), reasons)
+        return ChatResult(
+            reply,
+            bool(out.get("escalated")),
+            out.get("reference"),
+            reasons,
+            safe_user_text=safe_text,
+            intent=out.get("intent", ""),
+            agent=out.get("agent", ""),
+            mode=out.get("mode", ""),
+        )
