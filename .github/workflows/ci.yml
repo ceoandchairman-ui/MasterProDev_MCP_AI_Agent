@@ -18,15 +18,32 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    env:
+      # Placeholder values so the legacy settings object can load during tests; no real services are used.
+      SECRET_KEY: ci-only-secret-key
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      REDIS_URL: redis://localhost:6379/0
+      REDIS_PASSWORD: ci
+      ADMIN_EMAIL: ci@example.com
+      ADMIN_PASSWORD: ci-only-password
+      MCP_ALLOW_UNAUTHENTICATED: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install
-        run: pip install -e ".[dev]"
+      - name: Install (new package and legacy dependencies)
+        run: |
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
       - name: Lint
-        run: ruff check src tests/unit
+        run: ruff check src services tests/unit scripts
       - name: Unit tests
         run: pytest tests/unit -q
+      - name: Migrations apply and roll back
+        env:
+          DATABASE_URL: sqlite:///./ci_migration.db
+        run: |
+          alembic upgrade head
+          alembic downgrade base
