@@ -65,7 +65,7 @@ and Railway config. All agents are tested with a fake LLM; none has run against 
   challenges, encrypted pending sign-ups, PII vault, caches, rate limits), and tests simulate two
   replicas on one database and store. It has **not been run against real Postgres/Redis**, so
   `deploy/railway/api.toml` stays at one replica and `/v2` should not take production traffic until
-  a staging run with two replicas passes. In development an unreachable database or Redis falls
+  a two-replica test passes against the production database and Redis. In development an unreachable database or Redis falls
   back to process memory with a warning; production refuses to start instead.
 - Vault retention (7 days) is a placeholder; messages stored in checkpoints keep tokens that stop
   resolving after the vault entry expires.
