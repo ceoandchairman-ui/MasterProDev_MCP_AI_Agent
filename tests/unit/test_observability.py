@@ -37,3 +37,14 @@ def test_dashboard_json_is_valid_and_uses_existing_metrics():
     for name in ("mpd_turns_total", "mpd_turn_latency_seconds_bucket", "mpd_eval_verdicts_total", "mpd_cache_events_total"):
         assert name in exprs
     assert len({p["id"] for p in dash["panels"]}) == len(dash["panels"])
+
+
+def test_second_dashboard_only_uses_metrics_that_exist():
+    import re
+
+    dash = json.loads((ROOT / "observability/grafana/dashboards/cost-delivery-quality.json").read_text())
+    exprs = " ".join(t["expr"] for p in dash["panels"] for t in p["targets"])
+    known = {m.name for m in metrics.REGISTRY.collect()}
+    for name in set(re.findall(r"mpd_[a-z_]+", exprs)):
+        base = re.sub(r"_(total|bucket|count|sum)$", "", name)
+        assert base in known, name

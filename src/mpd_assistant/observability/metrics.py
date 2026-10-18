@@ -1,6 +1,6 @@
 """Prometheus metrics. Labels are low-cardinality enums only: never user text, ids or personal data."""
 
-from prometheus_client import CollectorRegistry, Counter, Histogram
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 
 REGISTRY = CollectorRegistry()
 
@@ -21,6 +21,7 @@ EVAL_REASONS = Counter("mpd_eval_reasons_total", "Evaluator failure reasons", ["
 ESCALATIONS = Counter("mpd_escalations_total", "Escalations to a human", ["reason"], registry=REGISTRY)
 PII_DETECTIONS = Counter("mpd_pii_detections_total", "PII detected at a boundary", ["boundary", "type"], registry=REGISTRY)
 MESSAGES = Counter("mpd_messages_total", "Outbound messages", ["channel", "purpose", "status"], registry=REGISTRY)
+EVAL_SCORE = Gauge("mpd_eval_score", "Latest offline evaluation score", ["suite", "metric"], registry=REGISTRY)
 PRAR_PHASE = Histogram("mpd_prar_phase_seconds", "Plan/act/reflect phase time", ["agent", "phase"], registry=REGISTRY)
 
 

@@ -1,9 +1,13 @@
 """New API (v2). Built by a factory so tests and the deployment inject their own services."""
 
+import asyncio
 import hmac
+import json
+import re
 from dataclasses import dataclass
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -35,8 +39,18 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+KEEPALIVE_SECONDS = 5
 GUEST_DAILY_MESSAGES = 30
 VERIFIED_DAILY_MESSAGES = 300
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _sentences(text: str) -> list:
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    return [p for p in parts if p] or [text]
 
 
 class ChatIn(BaseModel):
@@ -122,8 +136,7 @@ def create_app(services: Services) -> FastAPI:
         reply = await services.gateway.handle(inbound) if inbound else None
         return Response(twiml_reply(reply) if reply else empty_twiml(), media_type="application/xml")
 
-    @app.post("/v2/chat", response_model=ChatOut)
-    async def chat(body: ChatIn):
+    async def _run_chat(body: ChatIn) -> ChatOut:
         session = services.sessions.resume(body.session_id) if body.session_id else None
         if session is None:
             session = services.sessions.create()
@@ -137,6 +150,34 @@ def create_app(services: Services) -> FastAPI:
         if services.turns is not None:
             services.turns.record(session.id, result.safe_user_text, result.reply, result.intent, result.agent, result.mode)
         return ChatOut(reply=result.reply, session_id=session.id, escalated=result.escalated, reference=result.reference)
+
+    @app.post("/v2/chat", response_model=ChatOut)
+    async def chat(body: ChatIn):
+        return await _run_chat(body)
+
+    @app.post("/v2/chat/stream")
+    async def chat_stream(body: ChatIn):
+        """Server-sent events: an immediate 'thinking' event, keepalives while the assistant works, then the reply in
+        sentence-sized chunks. The reply is produced whole and then split, so this is progressive display, not
+        token-level streaming."""
+        task = asyncio.create_task(_run_chat(body))
+
+        async def events():
+            yield _sse({"type": "thinking"})
+            try:
+                while not task.done():
+                    await asyncio.wait({task}, timeout=KEEPALIVE_SECONDS)
+                    if not task.done():
+                        yield ": keepalive\n\n"
+                out = task.result()
+            except Exception:
+                yield _sse({"type": "error", "text": render("temporary_error", "en")})
+                return
+            for piece in _sentences(out.reply):
+                yield _sse({"type": "chunk", "text": piece})
+            yield _sse({"type": "done", "session_id": out.session_id, "escalated": out.escalated, "reference": out.reference})
+
+        return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     def _verified_session(session_id: str):
         session = services.sessions.resume(session_id) if session_id else None
