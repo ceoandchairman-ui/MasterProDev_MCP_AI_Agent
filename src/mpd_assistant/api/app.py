@@ -10,6 +10,7 @@ from mpd_assistant.agents.lead_conversion.agent import MemoryLeadRepository
 from mpd_assistant.api.main import Services, create_app
 from mpd_assistant.business.catalog import load_catalog
 from mpd_assistant.business.leads_sql import SqlLeadRepository
+from mpd_assistant.cache.store import MemoryBackend, RedisBackend, ResponseCache
 from mpd_assistant.channels.gateway import ChannelGateway
 from mpd_assistant.core.config import get_settings
 from mpd_assistant.core.crypto import FieldCipher
@@ -19,7 +20,7 @@ from mpd_assistant.core.llm.client import OpenAICompatibleLLM
 from mpd_assistant.core.logging import configure_logging
 from mpd_assistant.core.startup import assert_production_ready
 from mpd_assistant.graph.builder import build_graph
-from mpd_assistant.graph.service import ChatService
+from mpd_assistant.graph.service import CacheSettings, ChatService
 from mpd_assistant.identity.abuse import SmsAbuseGuard
 from mpd_assistant.identity.otp import OtpService
 from mpd_assistant.identity.senders import ConsoleSender, UnconfiguredSender
@@ -84,6 +85,19 @@ def _repositories(database_url: str, production: bool):
         raise RuntimeError("Database is unreachable")
     logger.warning("Database unavailable; using in-memory repositories (development only)")
     return MemorySessionRepository(), MemoryUserRepository(), MemoryLeadRepository(), None, None
+
+
+def _response_cache(settings, production: bool):
+    if not settings.CACHE_ENABLED:
+        return None
+    try:
+        import redis.asyncio as aioredis
+
+        return ResponseCache(RedisBackend(aioredis.Redis.from_url(settings.REDIS_CACHE_URL or settings.REDIS_URL)))
+    except Exception:
+        if production:
+            raise
+        return ResponseCache(MemoryBackend())
 
 
 def _notifications(settings, kv: KeyValueStore) -> NotificationService:
@@ -164,7 +178,12 @@ def build_services() -> Services:
                             on_booked=ConfirmationService(notifications, users, cipher).booking_confirmed,
                             retrieval_min_score=settings.RETRIEVAL_MIN_SCORE, google_token_provider=token_provider)
     graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod))
-    chat = ChatService(graph, vault)
+    chat = ChatService(
+        graph,
+        vault,
+        cache=_response_cache(settings, prod),
+        cache_settings=CacheSettings(tenant=tenant or "default", prompt_version=settings.PROMPT_VERSION, corpus_version=settings.CORPUS_VERSION),
+    )
     sessions = SessionService(session_repo)
     gateway = ChannelGateway(chat, sessions, users, notifications, kv, settings.BLIND_INDEX_KEY)  # type: ignore[arg-type]
     return Services(

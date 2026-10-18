@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     LLM_MODEL_CHEAP: Optional[str] = None
     LLM_MODEL_REASONING: Optional[str] = None
     CATALOG_PATH: Optional[str] = None
+    CACHE_ENABLED: bool = True
+    PROMPT_VERSION: str = "v1"
+    CORPUS_VERSION: str = "1"
     SMS_ALLOWED_COUNTRIES: str = "CA,US"
     NEW_PIPELINE_PERCENT: int = 0
     GOOGLE_CLIENT_ID: Optional[str] = None

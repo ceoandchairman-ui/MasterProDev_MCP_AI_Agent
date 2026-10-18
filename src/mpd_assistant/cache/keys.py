@@ -7,6 +7,7 @@ from typing import Optional
 from mpd_assistant.privacy.detector import detect
 from mpd_assistant.routing.intents import Intent, Mode
 
+_TOKEN_RE = re.compile(r"<[A-Z_]+_\d+>")
 SHAREABLE_INTENTS = frozenset({Intent.FAQ, Intent.KNOWLEDGE_QUESTION, Intent.GREETING})
 
 
@@ -36,4 +37,6 @@ def may_cache(*, intent: Intent, query: str, response: str, evaluator_passed: bo
         return False
     if intent not in SHAREABLE_INTENTS:
         return False
+    if _TOKEN_RE.search(query) or _TOKEN_RE.search(response):
+        return False  # privacy tokens are session-specific; a shared entry would resolve to the wrong person
     return not detect(query) and not detect(response)
