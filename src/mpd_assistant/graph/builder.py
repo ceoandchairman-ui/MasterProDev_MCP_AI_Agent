@@ -34,7 +34,7 @@ async def supervisor(state: AgentState) -> Dict[str, Any]:
     pending = state.get("pending_action")
     if pending and state.get("verified") and (is_affirmative(text) or is_negative(text)):
         # A bare yes/no answers the agent that asked, not a fresh intent.
-        return {"mode": Mode.REASONED.value, "requires_identity": False, "steps": state.get("steps", 0) + 1, "response": None}
+        return {"evidence": None, "mode": Mode.REASONED.value, "requires_identity": False, "steps": state.get("steps", 0) + 1, "response": None}
     decision = route(_last_user_text(state), verified=state.get("verified", False), language=state.get("language"))
     return {
         "intent": decision.intent.value,
@@ -45,6 +45,7 @@ async def supervisor(state: AgentState) -> Dict[str, Any]:
         "steps": state.get("steps", 0) + 1,
         "response": None,
         "pending_action": None,
+        "evidence": None,
     }
 
 
@@ -97,10 +98,17 @@ def make_escalation_node(hook: Optional[EscalationHook] = None):
 escalation_node = make_escalation_node(None)
 
 
-def make_evaluate(escalate):
+def make_evaluate(escalate, judge=None):
     async def evaluate(state: AgentState) -> Dict[str, Any]:
         result = evaluate_response(state.get("response"), language=state.get("language", "en"), allow_tokens=True)
         update: Dict[str, Any] = {"eval_verdict": result.verdict.value, "eval_reasons": result.reasons}
+        if result.verdict is Verdict.PASS and judge is not None and state.get("evidence") and judge.should_judge():
+            review = await judge.review(state.get("response") or "", state["evidence"])
+            if review.judged and review.supported < judge.threshold:
+                update["eval_verdict"] = Verdict.REVISE.value
+                update["eval_reasons"] = ["unsupported_claim"]
+                update["response"] = render("no_answer", state.get("language", "en"))
+            return update
         if result.verdict is Verdict.REVISE:
             update["response"] = render("temporary_error", state.get("language", "en"))
         elif result.verdict is Verdict.ESCALATE:
@@ -132,7 +140,12 @@ def _agent_node(runner: Optional[Runner], language_key: str = "no_answer") -> Ru
     return node
 
 
-def build_graph(runners: Optional[Mapping[Agent, Runner]] = None, checkpointer: Any = None, escalation_hook: Optional[EscalationHook] = None):
+def build_graph(
+    runners: Optional[Mapping[Agent, Runner]] = None,
+    checkpointer: Any = None,
+    escalation_hook: Optional[EscalationHook] = None,
+    judge: Any = None,
+):
     runners = runners or {}
     graph = StateGraph(AgentState)
     escalate_node = make_escalation_node(escalation_hook)
@@ -159,7 +172,7 @@ def build_graph(runners: Optional[Mapping[Agent, Runner]] = None, checkpointer: 
         _after_supervisor,
         {"identity_gate": "identity_gate", "template": "template", "escalate": "escalate", **agent_targets},
     )
-    graph.add_node("evaluate", make_evaluate(escalate_node))
+    graph.add_node("evaluate", make_evaluate(escalate_node, judge))
     for name in ("identity_gate", "template", "escalate", *[n for n in agent_targets if n != "agent_escalation"]):
         graph.add_edge(name, "evaluate")
     graph.add_edge("evaluate", "persist")

@@ -20,8 +20,10 @@ from mpd_assistant.core.db import check_engine, ensure_tenant, make_engine
 from mpd_assistant.core.kv import KeyValueStore, MemoryKV, RedisKV
 from mpd_assistant.core.llm.budget import TokenBudget
 from mpd_assistant.core.llm.client import OpenAICompatibleLLM
+from mpd_assistant.core.llm.metered import MeteredLLM
 from mpd_assistant.core.logging import configure_logging
 from mpd_assistant.core.startup import assert_production_ready
+from mpd_assistant.evaluation.online.judge import LlmJudge
 from mpd_assistant.graph.builder import build_graph
 from mpd_assistant.graph.service import CacheSettings, ChatService
 from mpd_assistant.identity.abuse import SmsAbuseGuard
@@ -200,7 +202,9 @@ def build_services() -> Services:
     runners = build_runners(llm, retriever, executor, registry, leads=leads, catalog=catalog,
                             on_booked=ConfirmationService(notifications, users, cipher).booking_confirmed,
                             retrieval_min_score=min_score, google_token_provider=token_provider, on_quote_review=escalation_flow.hook, budget=budget)
-    graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod), escalation_hook=escalation_flow.hook)
+    graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod), escalation_hook=escalation_flow.hook,
+        judge=LlmJudge(MeteredLLM(llm, "judge", budget), settings.JUDGE_SAMPLE_RATE) if llm is not None and settings.JUDGE_SAMPLE_RATE > 0 else None,
+    )
     memory_store = MemoryStore(repo=SqlMemoryRepository(engine) if engine is not None else None)
     async def tell_old_contact(kind: str, old_value: str) -> None:
         channel = Channel.EMAIL if kind == "email" else Channel.SMS

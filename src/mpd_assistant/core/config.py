@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     LLM_MODEL_CHEAP: Optional[str] = None
     LLM_MODEL_REASONING: Optional[str] = None
     CATALOG_PATH: Optional[str] = None
+    JUDGE_SAMPLE_RATE: float = 0.2
     SESSION_DAILY_TOKENS: int = 60000
     GLOBAL_DAILY_TOKENS: int = 2000000
     ESCALATION_EMAIL: Optional[str] = None

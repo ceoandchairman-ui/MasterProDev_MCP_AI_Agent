@@ -48,6 +48,6 @@ def make_concierge(llm: LLM, retriever: Retriever, min_score: float = 0.2):
             return {"response": render("temporary_error", language)}
         sources = cite(grounding.hits[:4])
         footer = f"\n\nSources: {', '.join(sources)}" if sources else ""
-        return {"response": result.text.strip() + footer}
+        return {"response": result.text.strip() + footer, "evidence": context}
 
     return run
