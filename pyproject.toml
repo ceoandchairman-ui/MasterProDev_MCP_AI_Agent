@@ -28,6 +28,7 @@ dependencies = [
     "alembic>=1.13",
     "redis>=5.0.1",
     "langgraph>=0.2",
+    "langgraph-checkpoint-redis",
     "langchain-core>=0.2.3",
     "weaviate-client>=4.5.4",
     "presidio-analyzer",

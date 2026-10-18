@@ -1,0 +1,11 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "deploy/dockerfiles/api.Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+# Keep at 1 until sessions, vault and users move from process memory to Postgres/Redis (see docs/ARCHITECTURE.md).
+numReplicas = 1

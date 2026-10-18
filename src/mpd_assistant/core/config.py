@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     DATA_ENCRYPTION_KEY: Optional[str] = None
     BLIND_INDEX_KEY: Optional[str] = None
     MCP_SERVICE_KEY: Optional[str] = None
+    METRICS_TOKEN: Optional[str] = None
 
     ACTIVE_LLM_PROVIDER: str = "huggingface"
     USE_NEW_PIPELINE: bool = False
