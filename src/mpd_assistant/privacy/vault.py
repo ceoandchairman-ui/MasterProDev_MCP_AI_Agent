@@ -56,6 +56,9 @@ class PiiVault:
         self._store.save(session_id, data)
         return out
 
+    def known_values(self, session_id: str) -> tuple:
+        return tuple(self._cipher.decrypt(enc) for enc in self._store.load(session_id).values())
+
     def detokenize(self, session_id: str, text: str) -> str:
         """Replace only tokens this session issued; unknown tokens are left as-is."""
         data = self._store.load(session_id)

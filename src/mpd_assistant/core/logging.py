@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 _SECRET_PATTERNS = [
     (re.compile(r"hf_[A-Za-z0-9]{20,}"), "hf_[REDACTED]"),
@@ -31,7 +31,7 @@ class ScrubbingFilter(logging.Filter):
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
-            "ts": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
+            "ts": datetime.fromtimestamp(record.created, UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": scrub(record.getMessage()),

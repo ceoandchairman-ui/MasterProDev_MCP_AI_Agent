@@ -1,6 +1,6 @@
 """Templated responses with locale fallback. Templates live in YAML so non-engineers can review them."""
 
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from string import Template
 from typing import Any, Dict, Optional
@@ -15,7 +15,7 @@ class TemplateNotFound(KeyError):
     pass
 
 
-@lru_cache(maxsize=None)
+@cache
 def _load_locale(locale: str, directory: str = str(TEMPLATE_DIR)) -> Dict[str, str]:
     path = Path(directory) / f"{locale}.yaml"
     if not path.exists():

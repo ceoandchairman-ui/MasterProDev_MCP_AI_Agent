@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable, Dict, Mapping, Optional
 
 from langgraph.graph import END, START, StateGraph
 
+from mpd_assistant.evaluation.online.rules import Verdict, evaluate_response
 from mpd_assistant.graph.state import AgentState
 from mpd_assistant.responses.engine import TemplateNotFound, render
 from mpd_assistant.routing.intents import Agent, Intent, Mode
@@ -71,6 +72,16 @@ async def escalation_node(state: AgentState) -> Dict[str, Any]:
     }
 
 
+async def evaluate(state: AgentState) -> Dict[str, Any]:
+    result = evaluate_response(state.get("response"), language=state.get("language", "en"), allow_tokens=True)
+    update: Dict[str, Any] = {"eval_verdict": result.verdict.value, "eval_reasons": result.reasons}
+    if result.verdict is Verdict.REVISE:
+        update["response"] = render("temporary_error", state.get("language", "en"))
+    elif result.verdict is Verdict.ESCALATE:
+        update.update(await escalation_node(state))
+    return update
+
+
 async def persist(state: AgentState) -> Dict[str, Any]:
     reply = state.get("response") or render("temporary_error", state.get("language", "en"))
     return {"response": reply, "messages": [{"role": "assistant", "content": reply}]}
@@ -116,8 +127,10 @@ def build_graph(runners: Optional[Mapping[Agent, Runner]] = None, checkpointer: 
         _after_supervisor,
         {"identity_gate": "identity_gate", "template": "template", "escalate": "escalate", **agent_targets},
     )
+    graph.add_node("evaluate", evaluate)
     for name in ("identity_gate", "template", "escalate", *[n for n in agent_targets if n != "agent_escalation"]):
-        graph.add_edge(name, "persist")
+        graph.add_edge(name, "evaluate")
+    graph.add_edge("evaluate", "persist")
     graph.add_edge("persist", END)
 
     return graph.compile(checkpointer=checkpointer)

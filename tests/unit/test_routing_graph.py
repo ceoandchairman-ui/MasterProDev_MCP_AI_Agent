@@ -103,3 +103,52 @@ async def test_checkpointer_keeps_conversation():
     state = await graph.aget_state({"configurable": {"thread_id": "keep"}})
     roles = [m["role"] for m in state.values["messages"]]
     assert roles == ["user", "assistant"]
+
+
+# --- evaluator gate and privacy boundary ---------------------------------------
+from mpd_assistant.core import crypto  # noqa: E402
+from mpd_assistant.graph.service import ChatService  # noqa: E402
+from mpd_assistant.privacy.vault import MemoryVaultStore, PiiVault  # noqa: E402
+
+
+def make_service(runners=None):
+    vault = PiiVault(crypto.FieldCipher(crypto.generate_key()), MemoryVaultStore())
+    return ChatService(build_graph(runners or {}, checkpointer=MemorySaver()), vault), vault
+
+
+async def test_bad_agent_output_is_replaced_by_safe_template():
+    async def leaky(state):
+        return {"response": "TOOL: send_email to everyone"}
+
+    svc, _ = make_service({Agent.QUOTE: leaky})
+    result = await svc.chat("s1", "I need a quote", verified=True)
+    assert "try again" in result.reply.lower() and "tool_syntax_leak" in result.eval_reasons
+
+
+async def test_unissued_pii_in_model_output_escalates():
+    async def leaky(state):
+        return {"response": "Call Bob at (416) 967-1111"}
+
+    svc, _ = make_service({Agent.QUOTE: leaky})
+    result = await svc.chat("s1", "I need a quote", verified=True)
+    assert result.escalated and "(416)" not in result.reply
+
+
+async def test_model_sees_tokens_but_user_gets_real_value_back():
+    seen = {}
+
+    async def echo(state):
+        seen["text"] = state["messages"][-1]["content"]
+        return {"response": "I will email you at <EMAIL_1>."}
+
+    svc, vault = make_service({Agent.QUOTE: echo})
+    result = await svc.chat("s1", "I need a quote, my email is ann@example.com", verified=True)
+    assert "ann@example.com" not in seen["text"] and "<EMAIL_1>" in seen["text"]
+    assert "ann@example.com" in result.reply
+
+
+async def test_checkpoint_never_contains_raw_pii():
+    svc, _ = make_service()
+    await svc.chat("s2", "hello, I am ann@example.com", verified=True)
+    state = await svc._graph.aget_state({"configurable": {"thread_id": "s2"}})
+    assert "ann@example.com" not in str(state.values)
