@@ -17,8 +17,10 @@ from mpd_assistant.core.db import check_engine, ensure_tenant, make_engine
 from mpd_assistant.core.kv import KeyValueStore, MemoryKV, RedisKV
 from mpd_assistant.core.llm.client import OpenAICompatibleLLM
 from mpd_assistant.core.logging import configure_logging
+from mpd_assistant.core.startup import assert_production_ready
 from mpd_assistant.graph.builder import build_graph
 from mpd_assistant.graph.service import ChatService
+from mpd_assistant.identity.abuse import SmsAbuseGuard
 from mpd_assistant.identity.otp import OtpService
 from mpd_assistant.identity.senders import ConsoleSender, UnconfiguredSender
 from mpd_assistant.identity.service import IdentityService, MemoryUserRepository
@@ -123,6 +125,7 @@ def build_services() -> Services:
         email_sender,
         sms_sender,
         kv=kv,
+        abuse=SmsAbuseGuard(kv, countries=settings.SMS_ALLOWED_COUNTRIES.split(",")),
     )
     vault = PiiVault(cipher, KvVaultStore(kv))
     registry = default_registry()
@@ -172,11 +175,13 @@ def build_services() -> Services:
         twilio_auth_token=settings.TWILIO_AUTH_TOKEN,
         public_url=settings.PUBLIC_DOMAIN,
         google=google,
+        kv=kv,
     )
 
 
 def create():
     """ASGI factory: `uvicorn --factory mpd_assistant.api.app:create`."""
+    assert_production_ready()
     settings = get_settings()
     configure_logging(settings.LOG_LEVEL)
     setup_tracing("mpd-api")

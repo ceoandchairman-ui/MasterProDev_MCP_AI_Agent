@@ -10,12 +10,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from mpd_assistant.channels.gateway import ChannelGateway
 from mpd_assistant.channels.inbound import empty_twiml, parse_twilio_form, twiml_reply, validate_twilio_signature
+from mpd_assistant.core.kv import KeyValueStore
 from mpd_assistant.graph.service import ChatService
+from mpd_assistant.identity.abuse import AbuseBlocked
 from mpd_assistant.identity.normalize import InvalidIdentifier
 from mpd_assistant.identity.otp import OtpError
 from mpd_assistant.identity.service import IdentityService
 from mpd_assistant.integrations.google_oauth import GoogleOAuth, NotConfigured, OAuthError
 from mpd_assistant.observability.metrics import REGISTRY
+from mpd_assistant.responses.engine import render
 from mpd_assistant.sessions.service import SessionService
 
 MAX_MESSAGE_CHARS = 4000
@@ -30,6 +33,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
         response.headers.setdefault("Cache-Control", "no-store")
         return response
+
+
+GUEST_DAILY_MESSAGES = 30
+VERIFIED_DAILY_MESSAGES = 300
 
 
 class ChatIn(BaseModel):
@@ -69,6 +76,7 @@ class Services:
     metrics_token: str | None = None
     gateway: ChannelGateway | None = None
     google: GoogleOAuth | None = None
+    kv: KeyValueStore | None = None
     twilio_auth_token: str | None = None
     public_url: str | None = None  # externally visible base URL; Twilio signs the exact URL it called
 
@@ -106,6 +114,10 @@ def create_app(services: Services) -> FastAPI:
         session = services.sessions.resume(body.session_id) if body.session_id else None
         if session is None:
             session = services.sessions.create()
+        if services.kv is not None:
+            limit = VERIFIED_DAILY_MESSAGES if session.verified else GUEST_DAILY_MESSAGES
+            if services.kv.incr(f"quota:{session.id}", 86400) > limit:
+                return ChatOut(reply=render("rate_limited", "en"), session_id=session.id)
         result = await services.chat.chat(session.thread_id, body.message, verified=session.verified, user_id=session.user_id)
         return ChatOut(reply=result.reply, session_id=session.id, escalated=result.escalated, reference=result.reference)
 
@@ -148,13 +160,17 @@ def create_app(services: Services) -> FastAPI:
         return {"status": "disconnected" if removed else "not_connected"}
 
     @app.post("/v2/identity/start", status_code=202)
-    async def identity_start(body: StartIn):
+    async def identity_start(body: StartIn, request: Request):
         if services.sessions.resume(body.session_id) is None:
             raise HTTPException(status_code=401, detail="Unknown or expired session")
         try:
-            await services.identity.start(body.session_id, body.name, body.email, body.phone)
+            await services.identity.start(
+                body.session_id, body.name, body.email, body.phone, client_ip=request.client.host if request.client else None
+            )
         except InvalidIdentifier as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except AbuseBlocked as exc:
+            raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.") from exc
         except OtpError as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
         return {"status": "codes_sent"}

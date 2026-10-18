@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     LLM_MODEL_CHEAP: Optional[str] = None
     LLM_MODEL_REASONING: Optional[str] = None
     CATALOG_PATH: Optional[str] = None
+    SMS_ALLOWED_COUNTRIES: str = "CA,US"
+    NEW_PIPELINE_PERCENT: int = 0
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None
     GOOGLE_OAUTH_REDIRECT_URI: Optional[str] = None

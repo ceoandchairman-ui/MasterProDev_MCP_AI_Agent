@@ -40,6 +40,7 @@ import time
 
 from .config import settings
 from .service_auth import service_headers
+from .strangler import answer as strangler_answer, routes_to_new
 from .models import (
     LoginRequest, ChatRequest, TokenResponse, ChatResponse,
     UserProfileResponse, HealthResponse
@@ -527,13 +528,20 @@ async def chat(
         except Exception:
             pass  # Fall through to guest mode
 
-    result = await mcp_agent.process_message(
-        message=chat_req.message,
-        session_id=session_id,
-        conversation_history=conversation_history,
-        trace_id=trace_id,
-        user_id=user_id
-    )
+    if routes_to_new(session_id, settings.NEW_PIPELINE_PERCENT):
+        try:
+            result = await strangler_answer(session_id, chat_req.message, verified=bool(session_id and user_id not in (None, "guest")), user_id=None if user_id == "guest" else user_id)
+        except Exception:
+            logger.exception("[%s] new pipeline failed; answering with the legacy agent", trace_id)
+            result = await mcp_agent.process_message(message=chat_req.message, session_id=session_id, conversation_history=conversation_history, trace_id=trace_id, user_id=user_id)
+    else:
+        result = await mcp_agent.process_message(
+            message=chat_req.message,
+            session_id=session_id,
+            conversation_history=conversation_history,
+            trace_id=trace_id,
+            user_id=user_id
+        )
 
     # Save conversation turn
     try:

@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     CALENDAR_SERVER_URL: str = "http://localhost:8001"
     GMAIL_SERVER_URL: str = "http://localhost:8002"
     MCP_SERVICE_KEY: Optional[str] = None
+    NEW_PIPELINE_PERCENT: int = 0
 
     # HuggingFace LLM
     HUGGINGFACE_API_KEY: Optional[str] = None

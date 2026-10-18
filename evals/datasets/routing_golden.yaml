@@ -1,0 +1,18 @@
+# Golden routing set: the message, whether the user is verified, and the intent and agent the router must choose.
+version: 1
+cases:
+  - {id: greet-en, text: "Hello there", verified: false, intent: greeting, agent: concierge}
+  - {id: greet-fr, text: "Bonjour", verified: false, intent: greeting, agent: concierge}
+  - {id: faq-services, text: "What services do you offer?", verified: false, intent: faq, agent: concierge}
+  - {id: faq-location, text: "Where are you located?", verified: false, intent: faq, agent: concierge}
+  - {id: quote-en, text: "How much would a website cost?", verified: true, intent: quote_request, agent: quote}
+  - {id: quote-fr, text: "Quel est le prix d'un site web ?", verified: true, intent: quote_request, agent: quote}
+  - {id: book-en, text: "Can we schedule a call next week?", verified: true, intent: book_meeting, agent: comms_scheduling}
+  - {id: book-fr, text: "Je voudrais prendre rendez-vous", verified: true, intent: book_meeting, agent: comms_scheduling}
+  - {id: scope-en, text: "Please draft the project scope and roadmap", verified: true, intent: scope_request, agent: solution_architect}
+  - {id: project-en, text: "We want to build a mobile app for our fleet", verified: true, intent: project_inquiry, agent: lead_conversion}
+  - {id: human-en, text: "I want to speak to a real person", verified: true, intent: human_request, agent: escalation}
+  - {id: complaint-en, text: "This is unacceptable, I want a refund", verified: true, intent: complaint, agent: escalation}
+  - {id: email-en, text: "Send an email to the team", verified: true, intent: email_request, agent: comms_scheduling}
+  - {id: gated-quote, text: "How much would a website cost?", verified: false, intent: quote_request, agent: quote, gated: true}
+  - {id: history-word, text: "history of the high hire", verified: false, intent: unknown, agent: concierge}

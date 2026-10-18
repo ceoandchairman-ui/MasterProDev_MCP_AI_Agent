@@ -81,15 +81,19 @@ class IdentityService:
         email_sender: Sender,
         sms_sender: Sender,
         kv: Optional[KeyValueStore] = None,
+        abuse=None,
     ):
         self._cipher, self._key, self._users = cipher, blind_key, users
         self._email_otp, self._sms_otp = email_otp, sms_otp
         self._email_sender, self._sms_sender = email_sender, sms_sender
         self._kv = kv if kv is not None else MemoryKV()
+        self._abuse = abuse
 
-    async def start(self, session_id: str, name: str, email: str, phone: str) -> None:
+    async def start(self, session_id: str, name: str, email: str, phone: str, client_ip: Optional[str] = None) -> None:
         """Validate input and send both codes. Responses never reveal whether the email already exists."""
         pending = _Pending(normalize_name(name), normalize_email(email), normalize_phone(phone))
+        if self._abuse is not None:
+            self._abuse.check(pending.phone, client_ip)
         await _deliver(self._email_sender, pending.email, self._email_otp.issue(pending.email))
         await _deliver(self._sms_sender, pending.phone, self._sms_otp.issue(pending.phone))
         self._save_pending(session_id, pending)
