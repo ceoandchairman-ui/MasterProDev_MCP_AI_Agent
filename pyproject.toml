@@ -56,6 +56,9 @@ eval = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+mpd_assistant = ["**/*.yaml"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"

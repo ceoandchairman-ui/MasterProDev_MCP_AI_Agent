@@ -1,0 +1,8 @@
+greeting: "Bonjour ! Je suis l'assistant de MasterProDev. Comment puis-je vous aider ?"
+thanks: "Avec plaisir ! Puis-je vous aider avec autre chose ?"
+goodbye: "Merci de votre visite. Bonne journée !"
+identity_required: "Pour continuer, je dois vérifier votre identité. Veuillez indiquer votre nom, votre courriel et votre numéro de téléphone, et je vous enverrai un court code."
+escalation_notice: "Je vous mets en relation avec un membre de notre équipe. Il vous répondra sous peu. Référence : $reference"
+rate_limited: "Vous envoyez des messages très rapidement. Veuillez patienter un instant."
+temporary_error: "Une erreur est survenue de notre côté. Veuillez réessayer dans un instant."
+no_answer: "Je n'ai pas trouvé de réponse fiable. Souhaitez-vous que je vous mette en relation avec notre équipe ?"

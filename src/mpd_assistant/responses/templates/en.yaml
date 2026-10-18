@@ -1,0 +1,8 @@
+greeting: "Hello! I'm the MasterProDev assistant. How can I help you today?"
+thanks: "You're welcome! Is there anything else I can help with?"
+goodbye: "Thanks for stopping by. Have a great day!"
+identity_required: "To continue with that, I need to verify who you are. Please share your name, email and phone number and I'll send you a short code."
+escalation_notice: "I'm connecting you with a member of our team. They'll follow up shortly. Reference: $reference"
+rate_limited: "You're sending messages quickly. Please wait a moment and try again."
+temporary_error: "Something went wrong on our side. Please try again in a moment."
+no_answer: "I couldn't find a reliable answer to that. Would you like me to connect you with our team?"
