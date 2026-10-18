@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     EMBEDDING_BASE_URL: Optional[str] = None
     EMBEDDING_API_KEY: Optional[str] = None
     RETRIEVAL_MIN_SCORE: float = 0.35
+    RERANK_BASE_URL: Optional[str] = None
+    RERANK_API_KEY: Optional[str] = None
+    RERANK_MODEL: str = "rerank-multilingual-v3.0"
+    RERANK_MIN_SCORE: float = 0.3
     KNOWLEDGE_BASE_PATH: str = "Company_Documents"
     TWILIO_ACCOUNT_SID: Optional[str] = None
     TWILIO_AUTH_TOKEN: Optional[str] = None

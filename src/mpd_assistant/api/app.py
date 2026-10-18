@@ -43,6 +43,7 @@ from mpd_assistant.privacy.kv_store import KvVaultStore
 from mpd_assistant.privacy.vault import PiiVault
 from mpd_assistant.retrieval.embeddings import OpenAICompatibleEmbedder
 from mpd_assistant.retrieval.pg import PgRetriever
+from mpd_assistant.retrieval.rerank import HostedReranker
 from mpd_assistant.sessions.service import MemorySessionRepository, SessionService
 from mpd_assistant.sessions.sql import SqlSessionRepository
 from mpd_assistant.sessions.turns import SqlTurnRecorder
@@ -178,10 +179,13 @@ def build_services() -> Services:
         )
 
     retriever = None
+    min_score = settings.RETRIEVAL_MIN_SCORE
     embedding_key = settings.EMBEDDING_API_KEY or settings.HUGGINGFACE_API_KEY
     if engine is not None and embedding_key:
         embedder = OpenAICompatibleEmbedder(settings.EMBEDDING_BASE_URL or settings.LLM_BASE_URL, embedding_key, settings.EMBEDDING_MODEL)
-        retriever = PgRetriever(engine, tenant, embedder)
+        reranker = HostedReranker(settings.RERANK_BASE_URL, settings.RERANK_API_KEY, settings.RERANK_MODEL) if settings.RERANK_BASE_URL and settings.RERANK_API_KEY else None
+        retriever = PgRetriever(engine, tenant, embedder, reranker=reranker)
+        min_score = settings.RERANK_MIN_SCORE if reranker else settings.RETRIEVAL_MIN_SCORE
     catalog = load_catalog(settings.CATALOG_PATH) if settings.CATALOG_PATH else None
     escalation_repo = SqlEscalationRepository(engine) if engine is not None else InMemoryEscalations()
     escalation_flow = EscalationFlow(EscalationService(repo=escalation_repo), notifications, settings.ESCALATION_EMAIL)
@@ -191,7 +195,7 @@ def build_services() -> Services:
     token_provider = google.access_token if google and google.configured else None
     runners = build_runners(llm, retriever, executor, registry, leads=leads, catalog=catalog,
                             on_booked=ConfirmationService(notifications, users, cipher).booking_confirmed,
-                            retrieval_min_score=settings.RETRIEVAL_MIN_SCORE, google_token_provider=token_provider, on_quote_review=escalation_flow.hook)
+                            retrieval_min_score=min_score, google_token_provider=token_provider, on_quote_review=escalation_flow.hook)
     graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod), escalation_hook=escalation_flow.hook)
     memory_store = MemoryStore(repo=SqlMemoryRepository(engine) if engine is not None else None)
     chat = ChatService(

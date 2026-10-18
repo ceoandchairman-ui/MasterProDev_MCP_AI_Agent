@@ -65,6 +65,22 @@ class SessionService:
         self._repo.save(session)
         return session
 
+    def list_active(self, user_id: str) -> list:
+        now = self._clock()
+        return [
+            s for s in self._repo.for_user(user_id)
+            if not s.revoked and now - s.last_seen <= IDLE_TIMEOUT_SECONDS and now - s.created_at <= ABSOLUTE_TIMEOUT_SECONDS
+        ]
+
+    def revoke_others(self, user_id: str, keep_session_id: str) -> int:
+        count = 0
+        for s in self.list_active(user_id):
+            if s.id != keep_session_id:
+                s.revoked = True
+                self._repo.save(s)
+                count += 1
+        return count
+
     def revoke(self, session_id: str) -> None:
         session = self._repo.get(session_id)
         if session:

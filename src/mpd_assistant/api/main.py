@@ -63,6 +63,11 @@ class ConsentIn(BaseModel):
     enabled: bool
 
 
+class RevokeIn(BaseModel):
+    session_id: str = Field(max_length=64)
+    target_id: str | None = Field(default=None, max_length=64)
+
+
 class StatusIn(BaseModel):
     session_id: str = Field(max_length=64)
 
@@ -170,6 +175,28 @@ def create_app(services: Services) -> FastAPI:
         session = _verified_session(body.session_id)
         removed = _google().disconnect(session.user_id)
         return {"status": "disconnected" if removed else "not_connected"}
+
+    @app.get("/v2/account/sessions")
+    async def account_sessions(session_id: str):
+        session = _verified_session(session_id)
+        rows = services.sessions.list_active(session.user_id)
+        return {
+            "sessions": [
+                {"id": s.id[-6:], "current": s.id == session.id, "created_at": s.created_at, "last_seen": s.last_seen} for s in rows
+            ]
+        }
+
+    @app.post("/v2/account/sessions/revoke")
+    async def account_revoke(body: RevokeIn):
+        """Sign out one device (by the short id shown in the list) or, without a target, every other device."""
+        session = _verified_session(body.session_id)
+        if body.target_id is None:
+            return {"revoked": services.sessions.revoke_others(session.user_id, session.id)}
+        for s in services.sessions.list_active(session.user_id):
+            if s.id.endswith(body.target_id) and s.id != session.id:
+                services.sessions.revoke(s.id)
+                return {"revoked": 1}
+        raise HTTPException(status_code=404, detail="Session not found")
 
     @app.post("/v2/memory/consent")
     async def memory_consent(body: ConsentIn):
