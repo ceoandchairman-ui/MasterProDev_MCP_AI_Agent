@@ -20,6 +20,7 @@ class ToolOutcome:
     status: str  # ok | denied | needs_confirmation | error
     output: Dict[str, Any] = field(default_factory=dict)
     reason: str = ""
+    untrusted: bool = False
 
 
 @dataclass
@@ -46,6 +47,9 @@ def _map_strings(value: Any, fn: Callable[[str], str]) -> Any:
     if isinstance(value, list):
         return [_map_strings(v, fn) for v in value]
     return value
+
+
+UNTRUSTED_OUTPUT_TOOLS = frozenset({"get_emails", "read_email", "search_knowledge_base"})
 
 
 class ToolExecutor:
@@ -78,7 +82,7 @@ class ToolExecutor:
         except Exception as exc:
             output, status, reason = {}, "error", type(exc).__name__  # exception text may contain sensitive data
         TOOL_LATENCY.labels(tool).observe(time.perf_counter() - started)
-        return self._record(ToolOutcome(tool, status, output, reason))
+        return self._record(ToolOutcome(tool, status, output, reason, untrusted=tool in UNTRUSTED_OUTPUT_TOOLS and status == "ok"))
 
     def _record(self, outcome: ToolOutcome) -> ToolOutcome:
         TOOL_CALLS.labels(outcome.tool if self._registry.get(outcome.tool) else "unknown", outcome.status).inc()

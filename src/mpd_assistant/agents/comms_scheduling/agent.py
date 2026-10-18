@@ -32,8 +32,12 @@ def make_comms(llm: LLM, executor: ToolExecutor, registry, on_booked=None):
 
     async def execute(steps, language: str, confirmed: frozenset, session_id: str, state: AgentState) -> Dict[str, Any]:
         done = []
+        tainted = False
         for step in steps:
-            outcome = await executor.run(step.tool, step.args, ToolContext(Agent.COMMS_SCHEDULING, Role.VERIFIED, confirmed, session_id=session_id))
+            outcome = await executor.run(
+                step.tool, step.args, ToolContext(Agent.COMMS_SCHEDULING, Role.VERIFIED, confirmed, untrusted_content_in_context=tainted, session_id=session_id)
+            )
+            tainted = tainted or outcome.untrusted
             if outcome.status == "needs_confirmation":
                 pending = {"tool": step.tool, "args": step.args}
                 question = f"I'm ready to run {step.tool} with {step.args}. Shall I go ahead? (yes/no)"

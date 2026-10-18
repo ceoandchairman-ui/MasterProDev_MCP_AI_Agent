@@ -28,6 +28,7 @@ from mpd_assistant.messaging.models import Channel
 from mpd_assistant.messaging.providers import SendGridProvider, TwilioProvider
 from mpd_assistant.messaging.service import MessengerSender, NotificationService
 from mpd_assistant.observability.otel import setup_tracing
+from mpd_assistant.privacy.boundaries import GuardedLLM
 from mpd_assistant.privacy.kv_store import KvVaultStore
 from mpd_assistant.privacy.vault import PiiVault
 from mpd_assistant.retrieval.embeddings import OpenAICompatibleEmbedder
@@ -128,7 +129,7 @@ def build_services() -> Services:
     llm = None
     if settings.HUGGINGFACE_API_KEY and settings.HUGGINGFACE_MODEL:
         models = {"mid": settings.HUGGINGFACE_MODEL, "cheap": settings.LLM_MODEL_CHEAP or settings.HUGGINGFACE_MODEL, "reasoning": settings.LLM_MODEL_REASONING or settings.HUGGINGFACE_MODEL}
-        llm = OpenAICompatibleLLM(settings.LLM_BASE_URL, settings.HUGGINGFACE_API_KEY, models)
+        llm = GuardedLLM(OpenAICompatibleLLM(settings.LLM_BASE_URL, settings.HUGGINGFACE_API_KEY, models))
 
     executor = None
     if settings.CALENDAR_SERVER_URL and settings.GMAIL_SERVER_URL and settings.MCP_SERVICE_KEY:
