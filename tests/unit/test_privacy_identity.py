@@ -110,3 +110,8 @@ def test_log_scrubbing():
     assert "abc123" not in scrub("password=abc123 ok")
     rec = logging.LogRecord("t", logging.INFO, "f", 1, "Authorization: Bearer abcdefghijklmnopqrstuvwxyz", (), None)
     assert "abcdefghijklmnopqrstuvwxyz" not in JsonFormatter().format(rec)
+
+
+def test_grouped_sin_is_flagged_even_with_wrong_check_digit():
+    assert any(m.type == SIN for m in detect("my SIN is 123 456 789"))
+    assert not any(m.type == SIN for m in detect("order 12345678"))

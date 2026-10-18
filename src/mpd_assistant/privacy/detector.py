@@ -60,7 +60,8 @@ def detect(text: str, allowlist: Iterable[str] = ()) -> List[Match]:
 
     add(SECRET, _SECRET_RE)
     add(CARD, _CARD_RE, lambda v: 13 <= len(re.sub(r"\D", "", v)) <= 19 and luhn_valid(v))
-    add(SIN, _SIN_RE, lambda v: luhn_valid(v))
+    # Grouped 3-3-3 numbers are flagged even when the check digit is wrong (fail closed); bare digits must pass Luhn.
+    add(SIN, _SIN_RE, lambda v: luhn_valid(v) or bool(re.fullmatch(r"\d{3}[ -]\d{3}[ -]\d{3}", v)))
     add(EMAIL, _EMAIL_RE)
     add(PHONE, _PHONE_RE)
     add(POSTAL_CODE, _POSTAL_RE)
