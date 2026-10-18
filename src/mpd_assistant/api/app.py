@@ -9,6 +9,8 @@ from mpd_assistant.agents.factory import build_runners
 from mpd_assistant.agents.lead_conversion.agent import MemoryLeadRepository
 from mpd_assistant.api.main import Services, create_app
 from mpd_assistant.business.catalog import load_catalog
+from mpd_assistant.business.escalations import EscalationFlow, EscalationService, InMemoryEscalations
+from mpd_assistant.business.escalations_sql import SqlEscalationRepository
 from mpd_assistant.business.leads_sql import SqlLeadRepository
 from mpd_assistant.cache.store import MemoryBackend, RedisBackend, ResponseCache
 from mpd_assistant.channels.gateway import ChannelGateway
@@ -173,14 +175,16 @@ def build_services() -> Services:
         embedder = OpenAICompatibleEmbedder(settings.EMBEDDING_BASE_URL or settings.LLM_BASE_URL, embedding_key, settings.EMBEDDING_MODEL)
         retriever = PgRetriever(engine, tenant, embedder)
     catalog = load_catalog(settings.CATALOG_PATH) if settings.CATALOG_PATH else None
+    escalation_repo = SqlEscalationRepository(engine) if engine is not None else InMemoryEscalations()
+    escalation_flow = EscalationFlow(EscalationService(repo=escalation_repo), notifications, settings.ESCALATION_EMAIL)
     google = None
     if engine is not None:
         google = GoogleOAuth(engine, kv, cipher, settings.GOOGLE_CLIENT_ID, settings.GOOGLE_CLIENT_SECRET, settings.GOOGLE_OAUTH_REDIRECT_URI)
     token_provider = google.access_token if google and google.configured else None
     runners = build_runners(llm, retriever, executor, registry, leads=leads, catalog=catalog,
                             on_booked=ConfirmationService(notifications, users, cipher).booking_confirmed,
-                            retrieval_min_score=settings.RETRIEVAL_MIN_SCORE, google_token_provider=token_provider)
-    graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod))
+                            retrieval_min_score=settings.RETRIEVAL_MIN_SCORE, google_token_provider=token_provider, on_quote_review=escalation_flow.hook)
+    graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod), escalation_hook=escalation_flow.hook)
     memory_store = MemoryStore(repo=SqlMemoryRepository(engine) if engine is not None else None)
     chat = ChatService(
         graph,
@@ -188,6 +192,7 @@ def build_services() -> Services:
         cache=_response_cache(settings, prod),
         cache_settings=CacheSettings(tenant=tenant or "default", prompt_version=settings.PROMPT_VERSION, corpus_version=settings.CORPUS_VERSION),
         memory=MemoryWiring(memory_store, llm, users.memory_consent),
+        escalations=escalation_flow,
     )
     sessions = SessionService(session_repo)
     gateway = ChannelGateway(chat, sessions, users, notifications, kv, settings.BLIND_INDEX_KEY)  # type: ignore[arg-type]

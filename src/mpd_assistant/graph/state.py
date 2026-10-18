@@ -23,6 +23,7 @@ class AgentState(TypedDict, total=False):
     reference: Optional[str]
     pending_action: Optional[Dict[str, Any]]
     memory_context: str
+    session_row: Optional[str]
     lead_slots: Dict[str, str]
     lead_stage: str
     scope: Optional[Dict[str, Any]]

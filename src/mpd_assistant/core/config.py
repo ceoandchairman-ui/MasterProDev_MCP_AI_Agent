@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     LLM_MODEL_CHEAP: Optional[str] = None
     LLM_MODEL_REASONING: Optional[str] = None
     CATALOG_PATH: Optional[str] = None
+    ESCALATION_EMAIL: Optional[str] = None
     CACHE_ENABLED: bool = True
     PROMPT_VERSION: str = "v1"
     CORPUS_VERSION: str = "1"

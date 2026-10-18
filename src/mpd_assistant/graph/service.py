@@ -47,12 +47,14 @@ class ChatService:
         cache: Optional[ResponseCache] = None,
         cache_settings: Optional[CacheSettings] = None,
         memory: Any = None,
+        escalations: Any = None,
     ):
         self._graph = graph
         self._vault = vault
         self._cache = cache
         self._cache_settings = cache_settings or CacheSettings()
         self._memory = memory
+        self._escalations = escalations
 
     def _cache_key(self, decision, safe_text: str, user_id: Optional[str]) -> Optional[str]:
         if self._cache is None or decision.requires_identity or decision.mode is Mode.ESCALATE:
@@ -76,9 +78,24 @@ class ChatService:
         raw_text: str,
         verified: bool = False,
         user_id: str | None = None,
+        session_row: str | None = None,
     ) -> ChatResult:
         started = time.perf_counter()
         safe_text = self._vault.tokenize(session_id, raw_text)
+
+        if self._escalations is not None and session_row and self._escalations.is_paused(session_row):
+            # A person has been asked to take over: the assistant stays quiet instead of talking over them.
+            reference = self._escalations.open_reference(session_row)
+            return ChatResult(
+                render("escalation_paused", route(safe_text).language, {"reference": reference or ""}),
+                True,
+                reference,
+                [],
+                safe_user_text=safe_text,
+                intent="escalated",
+                agent="escalation",
+                mode="escalate",
+            )
 
         decision = route(safe_text, verified=verified)
         key = self._cache_key(decision, safe_text, user_id)
@@ -113,6 +130,7 @@ class ChatService:
                 "verified": verified,
                 "user_id": user_id,
                 "memory_context": memory_context,
+                "session_row": session_row,
             },
             config={"configurable": {"thread_id": session_id}},
         )

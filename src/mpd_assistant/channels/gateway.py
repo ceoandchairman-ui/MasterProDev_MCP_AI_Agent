@@ -59,7 +59,9 @@ class ChannelGateway:
             return render("rate_limited", "en")
 
         session = self._session_for(inbound)
-        result = await self._chat.chat(session.thread_id, inbound.text, verified=session.verified, user_id=session.user_id)
+        result = await self._chat.chat(
+            session.thread_id, inbound.text, verified=session.verified, user_id=session.user_id, session_row=session.id
+        )
         return format_for_channel(result.reply, inbound.channel)
 
 

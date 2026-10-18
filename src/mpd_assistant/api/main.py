@@ -126,7 +126,9 @@ def create_app(services: Services) -> FastAPI:
             limit = VERIFIED_DAILY_MESSAGES if session.verified else GUEST_DAILY_MESSAGES
             if services.kv.incr(f"quota:{session.id}", 86400) > limit:
                 return ChatOut(reply=render("rate_limited", "en"), session_id=session.id)
-        result = await services.chat.chat(session.thread_id, body.message, verified=session.verified, user_id=session.user_id)
+        result = await services.chat.chat(
+            session.thread_id, body.message, verified=session.verified, user_id=session.user_id, session_row=session.id
+        )
         if services.turns is not None:
             services.turns.record(session.id, result.safe_user_text, result.reply, result.intent, result.agent, result.mode)
         return ChatOut(reply=result.reply, session_id=session.id, escalated=result.escalated, reference=result.reference)

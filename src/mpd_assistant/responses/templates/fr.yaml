@@ -21,3 +21,4 @@ escalation_received: "Nous avons bien reçu votre demande et un membre de l'équ
 escalation_received_subject: "Nous avons reçu votre demande"
 opt_out_confirmed: "Vous êtes désabonné et ne recevrez plus de messages. Répondez START pour vous réabonner."
 google_connect_needed: "Pour faire cela, j'ai besoin d'accéder à votre compte Google. Veuillez le connecter depuis votre page de compte, puis redemandez-moi."
+escalation_paused: "Un membre de notre équipe a été informé et vous répondra ici. Référence : $reference"

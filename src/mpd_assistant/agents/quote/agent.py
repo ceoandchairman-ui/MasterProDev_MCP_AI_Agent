@@ -30,7 +30,7 @@ def render_quote(quote: Quote) -> str:
     return "\n".join(lines)
 
 
-def make_quote_agent(llm: LLM, catalog: Dict[str, CatalogItem], on_quote=None):
+def make_quote_agent(llm: LLM, catalog: Dict[str, CatalogItem], on_quote=None, on_review=None):
     skus = ", ".join(sorted(catalog))
 
     async def run(state: AgentState) -> Dict[str, Any]:
@@ -57,9 +57,13 @@ def make_quote_agent(llm: LLM, catalog: Dict[str, CatalogItem], on_quote=None):
         if on_quote:
             on_quote(state, quote)
         if quote.needs_approval:
+            reference = await on_review(state, "quote_review") if on_review else None
+            note = render("quote_needs_review", language)
             return {
-                "response": render("quote_needs_review", language),
+                "response": f"{note} ({reference})" if reference else note,
                 "quote_hash": quote.content_hash,
+                "escalated": bool(reference),
+                "reference": reference,
             }
         return {"response": render_quote(quote), "quote_hash": quote.content_hash}
 

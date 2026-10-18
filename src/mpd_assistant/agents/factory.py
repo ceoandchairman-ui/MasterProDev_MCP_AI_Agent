@@ -25,6 +25,7 @@ def build_runners(
     on_booked=None,
     retrieval_min_score: float = 0.2,
     google_token_provider=None,
+    on_quote_review=None,
 ) -> Dict[Agent, object]:
     runners: Dict[Agent, object] = {}
     if llm is None:
@@ -37,5 +38,5 @@ def build_runners(
         runners[Agent.LEAD_CONVERSION] = make_lead_conversion(MeteredLLM(llm, "lead_conversion"), leads)
     runners[Agent.SOLUTION_ARCHITECT] = make_solution_architect(MeteredLLM(llm, "solution_architect"))
     if catalog:
-        runners[Agent.QUOTE] = make_quote_agent(MeteredLLM(llm, "quote"), catalog)
+        runners[Agent.QUOTE] = make_quote_agent(MeteredLLM(llm, "quote"), catalog, on_review=on_quote_review)
     return runners

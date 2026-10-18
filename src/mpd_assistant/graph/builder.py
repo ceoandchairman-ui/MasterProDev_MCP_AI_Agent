@@ -70,23 +70,47 @@ async def template_node(state: AgentState) -> Dict[str, Any]:
     return {"response": render(key, state.get("language", "en"))}
 
 
-async def escalation_node(state: AgentState) -> Dict[str, Any]:
-    reference = state.get("reference") or uuid.uuid4().hex[:8].upper()
-    return {
-        "escalated": True,
-        "reference": reference,
-        "response": render("escalation_notice", state.get("language", "en"), {"reference": reference}),
-    }
+EscalationHook = Callable[[AgentState, str], Awaitable[Optional[str]]]
 
 
-async def evaluate(state: AgentState) -> Dict[str, Any]:
-    result = evaluate_response(state.get("response"), language=state.get("language", "en"), allow_tokens=True)
-    update: Dict[str, Any] = {"eval_verdict": result.verdict.value, "eval_reasons": result.reasons}
-    if result.verdict is Verdict.REVISE:
-        update["response"] = render("temporary_error", state.get("language", "en"))
-    elif result.verdict is Verdict.ESCALATE:
-        update.update(await escalation_node(state))
-    return update
+def make_escalation_node(hook: Optional[EscalationHook] = None):
+    """The hook saves the escalation and alerts staff; it returns the reference to show the user."""
+
+    async def node(state: AgentState) -> Dict[str, Any]:
+        reason = state.get("intent") or "evaluator"
+        reference = None
+        if hook is not None:
+            try:
+                reference = await hook(state, reason)
+            except Exception:
+                reference = None  # the user still gets a handover message; staff alerting failures are logged by the hook
+        reference = reference or state.get("reference") or uuid.uuid4().hex[:8].upper()
+        return {
+            "escalated": True,
+            "reference": reference,
+            "response": render("escalation_notice", state.get("language", "en"), {"reference": reference}),
+        }
+
+    return node
+
+
+escalation_node = make_escalation_node(None)
+
+
+def make_evaluate(escalate):
+    async def evaluate(state: AgentState) -> Dict[str, Any]:
+        result = evaluate_response(state.get("response"), language=state.get("language", "en"), allow_tokens=True)
+        update: Dict[str, Any] = {"eval_verdict": result.verdict.value, "eval_reasons": result.reasons}
+        if result.verdict is Verdict.REVISE:
+            update["response"] = render("temporary_error", state.get("language", "en"))
+        elif result.verdict is Verdict.ESCALATE:
+            update.update(await escalate({**state, "intent": "pii_leak"}))
+        return update
+
+    return evaluate
+
+
+evaluate = make_evaluate(escalation_node)
 
 
 async def persist(state: AgentState) -> Dict[str, Any]:
@@ -108,14 +132,15 @@ def _agent_node(runner: Optional[Runner], language_key: str = "no_answer") -> Ru
     return node
 
 
-def build_graph(runners: Optional[Mapping[Agent, Runner]] = None, checkpointer: Any = None):
+def build_graph(runners: Optional[Mapping[Agent, Runner]] = None, checkpointer: Any = None, escalation_hook: Optional[EscalationHook] = None):
     runners = runners or {}
     graph = StateGraph(AgentState)
+    escalate_node = make_escalation_node(escalation_hook)
 
     graph.add_node("supervisor", supervisor)
     graph.add_node("identity_gate", identity_gate)
     graph.add_node("template", template_node)
-    graph.add_node("escalate", escalation_node)
+    graph.add_node("escalate", escalate_node)
     graph.add_node("persist", persist)
 
     agent_targets = {}
@@ -134,7 +159,7 @@ def build_graph(runners: Optional[Mapping[Agent, Runner]] = None, checkpointer: 
         _after_supervisor,
         {"identity_gate": "identity_gate", "template": "template", "escalate": "escalate", **agent_targets},
     )
-    graph.add_node("evaluate", evaluate)
+    graph.add_node("evaluate", make_evaluate(escalate_node))
     for name in ("identity_gate", "template", "escalate", *[n for n in agent_targets if n != "agent_escalation"]):
         graph.add_edge(name, "evaluate")
     graph.add_edge("evaluate", "persist")
