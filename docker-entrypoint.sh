@@ -10,8 +10,11 @@ mkdir -p /app/logs
 export PYTHONPATH=/app
 
 # Default environment variables if not set (Railway provides these)
-export DATABASE_URL="${DATABASE_URL:-postgresql://mcpagent:mcpagent_dev_password@postgres:5432/mcpagent}"
-export REDIS_URL="${REDIS_URL:-redis://:mcpagent_dev_password@redis:6379/0}"
+# DATABASE_URL and REDIS_URL must be provided by the platform (no defaults with credentials)
+: "${DATABASE_URL:?DATABASE_URL is required}"
+: "${REDIS_URL:?REDIS_URL is required}"
+# Shared secret between the host and the in-container tool servers; generated if not provided
+export MCP_SERVICE_KEY="${MCP_SERVICE_KEY:-$(python -c 'import secrets; print(secrets.token_urlsafe(32))')}"
 export HUGGINGFACE_API_KEY="${HUGGINGFACE_API_KEY:-}"
 if [ -z "$HUGGINGFACE_API_KEY" ]; then
   echo "⚠️  WARNING: HUGGINGFACE_API_KEY not set - LLM calls will fail"

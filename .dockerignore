@@ -13,13 +13,13 @@ __pycache__
 htmlcov
 
 # Secrets must never enter an image
-.env
-.env.*
+**/.env
+**/.env.*
 !.env.example
-credentials.json
-token.json
-*.pem
-*.key
+**/credentials.json
+**/token.json
+**/*.pem
+**/*.key
 
 # Not needed at runtime
 tests

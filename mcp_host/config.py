@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     CLAUDE_MODEL: str = "claude-3-5-haiku-20241022"
     
     # Active LLM Provider
-    ACTIVE_LLM_PROVIDER: Optional[str] = "claude"  # Options: 'claude', 'bedrock', 'huggingface', 'ollama'
+    ACTIVE_LLM_PROVIDER: Optional[str] = "huggingface"  # Options: 'huggingface', 'bedrock', 'ollama'
 
     # Google OAuth
     GOOGLE_CLIENT_ID: Optional[str] = None
