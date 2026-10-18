@@ -1,60 +1,53 @@
-# Virtual environments
-.venv
-venv
-env
-ENV
-
-# Python cache
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.egg-info
-dist
-build
-.eggs
-
-# IDE & Editor
-.vscode
-.idea
-*.swp
-*.swo
-*~
-.DS_Store
-
-# Git
+﻿# Version control
 .git
 .gitignore
-.gitattributes
+.gitlab-ci.yml
+.github
 
-# Testing
+# Development
+.venv
+venv/
+*.egg-info
 .pytest_cache
+.mypy_cache
 .coverage
-htmlcov
-.tox
-
-# Dependencies
-node_modules
-package-lock.json
-yarn.lock
-
-# Docker
-Dockerfile*
-.docker
-
-# Documentation
-docs
-*.md
-!README.md
-
-# Environment files (commented out - .env needed in container)
-# .env
+htmlcov/
+.env
 .env.local
 .env.*.local
 
-# Misc
-.tmp
-*.log
+# Documentation
+docs/
+*.md
+!README.md
+
+# OS
 .DS_Store
+.AppleDouble
+.LSOverride
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and temp
+logs/
+*.log
+/tmp
+/temp
+
+# Node (if frontend)
+node_modules/
+dist/
+build/
+
+# Test files
+tests/
+evals/
+
+# Large files
+*.tar.gz
+*.zip

@@ -1,21 +1,33 @@
-# Security Policy
+﻿# Security Policy
 
-## Supported Versions
+## Reporting Security Issues
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Do **not** open a public issue for security vulnerabilities. Instead, email security@masterprodev.com with:
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+- Description of the vulnerability
+- Steps to reproduce
+- Potential impact
+- Suggested fix (if any)
 
-## Reporting a Vulnerability
+## Security Commitments
 
-Use this section to tell people how to report a vulnerability.
+This project follows these practices:
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+- **No secrets in code or images**: All credentials use environment variables and Railway secrets
+- **Secret scanning**: Pre-commit hooks and CI prevent key leaks
+- **Authentication required**: All side-effect tools require verified user identity
+- **PII protection**: Personal data is pseudonymized by default; third-party LLMs receive tokens only
+- **Dependency auditing**: Regular checks for known vulnerabilities
+- **Signed commits**: Git commits are signed with contributor keys
+
+## Deployment Security
+
+Production deployments must:
+
+1. Use Railway Pro with private networking
+2. Enable all CI quality gates (lint, type check, tests, secret scan)
+3. Rotate API keys and secrets on a schedule
+4. Maintain backups and test disaster recovery annually
+5. Run the security compliance checklist before launch
+
+See docs/SECURITY.md and runbooks/ for detailed guidance.

@@ -89,7 +89,3 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
-
-# Debug: Print after settings are loaded (after .env is parsed)
-print(f"[DEBUG] Settings.HUGGINGFACE_API_KEY: {settings.HUGGINGFACE_API_KEY}")
-print(f"[DEBUG] Settings.ACTIVE_LLM_PROVIDER: {settings.ACTIVE_LLM_PROVIDER}")
