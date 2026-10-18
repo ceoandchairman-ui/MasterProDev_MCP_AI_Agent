@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     LLM_MODEL_CHEAP: Optional[str] = None
     LLM_MODEL_REASONING: Optional[str] = None
     CATALOG_PATH: Optional[str] = None
+    SESSION_DAILY_TOKENS: int = 60000
+    GLOBAL_DAILY_TOKENS: int = 2000000
     ESCALATION_EMAIL: Optional[str] = None
     CACHE_ENABLED: bool = True
     PROMPT_VERSION: str = "v1"

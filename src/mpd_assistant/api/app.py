@@ -18,6 +18,7 @@ from mpd_assistant.core.config import get_settings
 from mpd_assistant.core.crypto import FieldCipher
 from mpd_assistant.core.db import check_engine, ensure_tenant, make_engine
 from mpd_assistant.core.kv import KeyValueStore, MemoryKV, RedisKV
+from mpd_assistant.core.llm.budget import TokenBudget
 from mpd_assistant.core.llm.client import OpenAICompatibleLLM
 from mpd_assistant.core.logging import configure_logging
 from mpd_assistant.core.startup import assert_production_ready
@@ -187,6 +188,7 @@ def build_services() -> Services:
         retriever = PgRetriever(engine, tenant, embedder, reranker=reranker)
         min_score = settings.RERANK_MIN_SCORE if reranker else settings.RETRIEVAL_MIN_SCORE
     catalog = load_catalog(settings.CATALOG_PATH) if settings.CATALOG_PATH else None
+    budget = TokenBudget(kv, settings.SESSION_DAILY_TOKENS, settings.GLOBAL_DAILY_TOKENS)
     escalation_repo = SqlEscalationRepository(engine) if engine is not None else InMemoryEscalations()
     escalation_flow = EscalationFlow(EscalationService(repo=escalation_repo), notifications, settings.ESCALATION_EMAIL)
     google = None
@@ -195,7 +197,7 @@ def build_services() -> Services:
     token_provider = google.access_token if google and google.configured else None
     runners = build_runners(llm, retriever, executor, registry, leads=leads, catalog=catalog,
                             on_booked=ConfirmationService(notifications, users, cipher).booking_confirmed,
-                            retrieval_min_score=min_score, google_token_provider=token_provider, on_quote_review=escalation_flow.hook)
+                            retrieval_min_score=min_score, google_token_provider=token_provider, on_quote_review=escalation_flow.hook, budget=budget)
     graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod), escalation_hook=escalation_flow.hook)
     memory_store = MemoryStore(repo=SqlMemoryRepository(engine) if engine is not None else None)
     chat = ChatService(
@@ -206,6 +208,7 @@ def build_services() -> Services:
         memory=MemoryWiring(memory_store, llm, users.memory_consent),
         escalations=escalation_flow,
         summarizer=RollingSummarizer(llm, kv) if llm is not None else None,
+        budget=budget,
     )
     sessions = SessionService(session_repo)
     gateway = ChannelGateway(chat, sessions, users, notifications, kv, settings.BLIND_INDEX_KEY)  # type: ignore[arg-type]

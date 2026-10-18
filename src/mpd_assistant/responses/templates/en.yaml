@@ -24,3 +24,5 @@ google_connect_needed: "To do that I need access to your Google account. Please 
 escalation_staff: "Escalation $reference ($reason)\n\n$summary"
 escalation_staff_subject: "Assistant escalation $reference"
 escalation_paused: "A member of our team has been notified and will reply here. Reference: $reference"
+budget_exceeded: "We have reached the daily limit for this conversation. Please try again tomorrow, or ask for a person and I will connect you with our team."
+service_busy: "We are very busy right now. Please try again later, or ask for a person and I will connect you with our team."

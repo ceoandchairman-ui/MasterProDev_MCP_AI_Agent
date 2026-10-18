@@ -10,6 +10,7 @@ from typing import Any, List, Optional
 
 from mpd_assistant.cache.keys import build_key, may_cache
 from mpd_assistant.cache.store import DEFAULT_TTL_SECONDS, ResponseCache
+from mpd_assistant.core.llm.budget import reset_scope, set_scope
 from mpd_assistant.evaluation.online.rules import Verdict, evaluate_response
 from mpd_assistant.observability.metrics import record_turn
 from mpd_assistant.privacy.vault import PiiVault
@@ -49,6 +50,7 @@ class ChatService:
         memory: Any = None,
         escalations: Any = None,
         summarizer: Any = None,
+        budget: Any = None,
     ):
         self._graph = graph
         self._vault = vault
@@ -57,6 +59,7 @@ class ChatService:
         self._memory = memory
         self._escalations = escalations
         self._summarizer = summarizer
+        self._budget = budget
 
     def _cache_key(self, decision, safe_text: str, user_id: Optional[str]) -> Optional[str]:
         if self._cache is None or decision.requires_identity or decision.mode is Mode.ESCALATE:
@@ -100,6 +103,20 @@ class ChatService:
             )
 
         decision = route(safe_text, verified=verified)
+
+        if self._budget is not None and decision.mode not in (Mode.TEMPLATED, Mode.ESCALATE):  # asking for a person never needs the model
+            spent = self._budget.exhausted(session_id)
+            if spent:
+                return ChatResult(
+                    render("budget_exceeded" if spent == "session" else "service_busy", decision.language),
+                    False,
+                    None,
+                    ["budget_" + spent],
+                    safe_user_text=safe_text,
+                    intent=decision.intent.value,
+                    agent=decision.agent.value,
+                    mode=decision.mode.value,
+                )
         key = self._cache_key(decision, safe_text, user_id)
         if key is not None:
             cached = await self._cache.get(key)
@@ -125,18 +142,22 @@ class ChatService:
                 )
 
         memory_context = await self._memory.before(user_id, safe_text) if self._memory else ""
-        out = await self._graph.ainvoke(
-            {
-                "messages": [{"role": "user", "content": safe_text}],
-                "session_id": session_id,
-                "verified": verified,
-                "user_id": user_id,
-                "memory_context": memory_context,
-                "thread_summary": self._summarizer.context_for(session_id) if self._summarizer else "",
-                "session_row": session_row,
-            },
-            config={"configurable": {"thread_id": session_id}},
-        )
+        marker = set_scope(session_id)  # every model call in this turn is charged to this conversation
+        try:
+            out = await self._graph.ainvoke(
+                {
+                    "messages": [{"role": "user", "content": safe_text}],
+                    "session_id": session_id,
+                    "verified": verified,
+                    "user_id": user_id,
+                    "memory_context": memory_context,
+                    "thread_summary": self._summarizer.context_for(session_id) if self._summarizer else "",
+                    "session_row": session_row,
+                },
+                config={"configurable": {"thread_id": session_id}},
+            )
+        finally:
+            reset_scope(marker)
         graph_reply = out.get("response") or ""
         reply = self._vault.detokenize(session_id, graph_reply)
         final = evaluate_response(reply, language=out.get("language", "en"), allowed_pii=self._vault.known_values(session_id))

@@ -26,17 +26,18 @@ def build_runners(
     retrieval_min_score: float = 0.2,
     google_token_provider=None,
     on_quote_review=None,
+    budget=None,
 ) -> Dict[Agent, object]:
     runners: Dict[Agent, object] = {}
     if llm is None:
         return runners
     if retriever is not None:
-        runners[Agent.CONCIERGE] = make_concierge(MeteredLLM(llm, "concierge"), retriever, retrieval_min_score)
+        runners[Agent.CONCIERGE] = make_concierge(MeteredLLM(llm, "concierge", budget), retriever, retrieval_min_score)
     if executor is not None:
-        runners[Agent.COMMS_SCHEDULING] = make_comms(MeteredLLM(llm, "comms_scheduling"), executor, registry, on_booked, google_token_provider)
+        runners[Agent.COMMS_SCHEDULING] = make_comms(MeteredLLM(llm, "comms_scheduling", budget), executor, registry, on_booked, google_token_provider)
     if leads is not None:
-        runners[Agent.LEAD_CONVERSION] = make_lead_conversion(MeteredLLM(llm, "lead_conversion"), leads)
-    runners[Agent.SOLUTION_ARCHITECT] = make_solution_architect(MeteredLLM(llm, "solution_architect"))
+        runners[Agent.LEAD_CONVERSION] = make_lead_conversion(MeteredLLM(llm, "lead_conversion", budget), leads)
+    runners[Agent.SOLUTION_ARCHITECT] = make_solution_architect(MeteredLLM(llm, "solution_architect", budget))
     if catalog:
-        runners[Agent.QUOTE] = make_quote_agent(MeteredLLM(llm, "quote"), catalog, on_review=on_quote_review)
+        runners[Agent.QUOTE] = make_quote_agent(MeteredLLM(llm, "quote", budget), catalog, on_review=on_quote_review)
     return runners
