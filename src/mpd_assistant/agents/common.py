@@ -41,8 +41,11 @@ def parse_json_object(text: str) -> Optional[Dict[str, Any]]:
 
 def memory_note(state) -> str:
     """Prompt block with what we remember about the user (empty without consent)."""
+    summary = (state.get("thread_summary") or "").strip()
     notes = (state.get("memory_context") or "").strip()
-    return f"Known about the user (from earlier conversations):\n{notes}\n\n" if notes else ""
+    head = f"Earlier in this conversation:\n{summary}\n\n" if summary else ""
+    body = f"Known about the user (from earlier conversations):\n{notes}\n\n" if notes else ""
+    return head + body
 
 
 @dataclass(frozen=True)

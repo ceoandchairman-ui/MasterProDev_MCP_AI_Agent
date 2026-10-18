@@ -32,6 +32,7 @@ from mpd_assistant.integrations.google_oauth import GoogleOAuth
 from mpd_assistant.memory.long_term.sql import SqlMemoryRepository
 from mpd_assistant.memory.long_term.store import MemoryStore
 from mpd_assistant.memory.pipeline import MemoryWiring
+from mpd_assistant.memory.short_term.summary import RollingSummarizer
 from mpd_assistant.messaging.confirmations import ConfirmationService
 from mpd_assistant.messaging.models import Channel
 from mpd_assistant.messaging.providers import SendGridProvider, TwilioProvider
@@ -45,6 +46,7 @@ from mpd_assistant.retrieval.pg import PgRetriever
 from mpd_assistant.sessions.service import MemorySessionRepository, SessionService
 from mpd_assistant.sessions.sql import SqlSessionRepository
 from mpd_assistant.sessions.turns import SqlTurnRecorder
+from mpd_assistant.tools.audit_sql import SqlToolAudit
 from mpd_assistant.tools.executor import ToolExecutor, http_backend
 from mpd_assistant.tools.registry import default_registry
 
@@ -167,7 +169,13 @@ def build_services() -> Services:
             "send_email": (mail, "send_email"),
         }
         backend = http_backend(routes, settings.MCP_SERVICE_KEY, httpx.AsyncClient())
-        executor = ToolExecutor(registry, backend, rehydrate=vault.detokenize, pseudonymize=vault.tokenize)
+        executor = ToolExecutor(
+            registry,
+            backend,
+            rehydrate=vault.detokenize,
+            pseudonymize=vault.tokenize,
+            audit_sink=SqlToolAudit(engine) if engine is not None else None,
+        )
 
     retriever = None
     embedding_key = settings.EMBEDDING_API_KEY or settings.HUGGINGFACE_API_KEY
@@ -193,6 +201,7 @@ def build_services() -> Services:
         cache_settings=CacheSettings(tenant=tenant or "default", prompt_version=settings.PROMPT_VERSION, corpus_version=settings.CORPUS_VERSION),
         memory=MemoryWiring(memory_store, llm, users.memory_consent),
         escalations=escalation_flow,
+        summarizer=RollingSummarizer(llm, kv) if llm is not None else None,
     )
     sessions = SessionService(session_repo)
     gateway = ChannelGateway(chat, sessions, users, notifications, kv, settings.BLIND_INDEX_KEY)  # type: ignore[arg-type]

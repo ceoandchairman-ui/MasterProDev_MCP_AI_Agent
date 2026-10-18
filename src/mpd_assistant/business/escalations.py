@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Dict, List, Optional, Protocol
 
+from mpd_assistant.graph.handoff import build_packet
 from mpd_assistant.memory.short_term.window import Message
 from mpd_assistant.messaging.models import Channel, OutboundMessage, Purpose
 from mpd_assistant.privacy.detector import redact
@@ -72,6 +73,9 @@ class EscalationService:
             self._notifier.notify(esc)
         return esc
 
+    def update(self, escalation: Escalation) -> None:
+        self._repo.save(escalation)
+
     def is_paused(self, session_id: str) -> bool:
         return self._repo.open_for_session(session_id) is not None
 
@@ -97,6 +101,11 @@ class EscalationFlow:
     async def hook(self, state, reason: str) -> Optional[str]:
         session_id = state.get("session_row") or state.get("session_id") or ""
         esc = self._service.raise_escalation(session_id, reason, state.get("messages", []))
+        if esc.is_new:
+            packet = build_packet(state)
+            if packet:
+                esc.summary = f"{packet}\n\n{esc.summary}"
+                self._service.update(esc)
         if esc.is_new and self._staff_email and self._notifications is not None:
             await self._notifications.send(
                 OutboundMessage(

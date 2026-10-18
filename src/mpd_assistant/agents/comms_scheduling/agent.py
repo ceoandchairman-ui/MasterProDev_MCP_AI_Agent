@@ -40,7 +40,7 @@ def make_comms(llm: LLM, executor: ToolExecutor, registry, on_booked=None, token
             outcome = await executor.run(
                 step.tool,
                 step.args,
-                ToolContext(Agent.COMMS_SCHEDULING, Role.VERIFIED, confirmed, untrusted_content_in_context=tainted, session_id=session_id, google_access_token=google_token),
+                ToolContext(Agent.COMMS_SCHEDULING, Role.VERIFIED, confirmed, untrusted_content_in_context=tainted, session_id=session_id, google_access_token=google_token, session_row=state.get("session_row") or ""),
             )
             tainted = tainted or outcome.untrusted
             if outcome.status == "needs_confirmation":

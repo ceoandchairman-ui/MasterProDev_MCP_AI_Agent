@@ -1,9 +1,10 @@
 """Runs tools through one choke point: permission, owner, confirmation, untrusted-content rule, metrics."""
 
 import time
+from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from mpd_assistant.integrations.context import current_token, reset_token, set_token
 from mpd_assistant.observability.metrics import TOOL_CALLS, TOOL_LATENCY
@@ -32,6 +33,7 @@ class ToolContext:
     untrusted_content_in_context: bool = False  # email bodies, uploads, retrieved text
     session_id: str = ""
     google_access_token: Optional[str] = None  # per-user, sent as a header to Google-backed servers only
+    session_row: str = ""
 
 
 def _truncate(output: Dict[str, Any]) -> Dict[str, Any]:
@@ -55,23 +57,30 @@ UNTRUSTED_OUTPUT_TOOLS = frozenset({"get_emails", "read_email", "search_knowledg
 
 
 class ToolExecutor:
-    def __init__(self, registry: ToolRegistry, backend: ToolBackend, rehydrate: Callable[[str, str], str] | None = None,
-                 pseudonymize: Callable[[str, str], str] | None = None):
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        backend: ToolBackend,
+        rehydrate: Callable[[str, str], str] | None = None,
+        pseudonymize: Callable[[str, str], str] | None = None,
+        audit_sink: Callable[[str, Dict[str, Any], "ToolContext", ToolOutcome, int], None] | None = None,
+    ):
         self._registry = registry
         self._backend = backend
         self._pseudonymize = pseudonymize  # (session_id, text) -> text with real values replaced by tokens
         self._rehydrate = rehydrate  # (session_id, text) -> text with privacy tokens replaced by real values
-        self.audit: List[ToolOutcome] = []
+        self._audit_sink = audit_sink  # persists every call: (tool, args, ctx, outcome, latency_ms)
+        self.audit: deque = deque(maxlen=500)  # recent calls only; the durable record is the sink
 
     async def run(self, tool: str, args: Dict[str, Any], ctx: ToolContext) -> ToolOutcome:
         spec = self._registry.get(tool)
         if spec is None or not self._registry.is_allowed(tool, ctx.role, ctx.agent):
-            return self._record(ToolOutcome(tool, "denied", reason="not_permitted"))
+            return self._record(tool, args, ctx, ToolOutcome(tool, "denied", reason="not_permitted"))
         if spec.needs_confirmation:
             if ctx.untrusted_content_in_context and tool not in ctx.confirmed_tools:
-                return self._record(ToolOutcome(tool, "needs_confirmation", reason="side_effect_after_untrusted_content"))
+                return self._record(tool, args, ctx, ToolOutcome(tool, "needs_confirmation", reason="side_effect_after_untrusted_content"))
             if tool not in ctx.confirmed_tools:
-                return self._record(ToolOutcome(tool, "needs_confirmation", reason="user_confirmation_required"))
+                return self._record(tool, args, ctx, ToolOutcome(tool, "needs_confirmation", reason="user_confirmation_required"))
 
         started = time.perf_counter()
         try:
@@ -87,12 +96,19 @@ class ToolExecutor:
             reason = ""
         except Exception as exc:
             output, status, reason = {}, "error", type(exc).__name__  # exception text may contain sensitive data
-        TOOL_LATENCY.labels(tool).observe(time.perf_counter() - started)
-        return self._record(ToolOutcome(tool, status, output, reason, untrusted=tool in UNTRUSTED_OUTPUT_TOOLS and status == "ok"))
+        elapsed = time.perf_counter() - started
+        TOOL_LATENCY.labels(tool).observe(elapsed)
+        outcome = ToolOutcome(tool, status, output, reason, untrusted=tool in UNTRUSTED_OUTPUT_TOOLS and status == "ok")
+        return self._record(tool, args, ctx, outcome, int(elapsed * 1000))
 
-    def _record(self, outcome: ToolOutcome) -> ToolOutcome:
+    def _record(self, tool: str, args: Dict[str, Any], ctx: "ToolContext", outcome: ToolOutcome, latency_ms: int = 0) -> ToolOutcome:
         TOOL_CALLS.labels(outcome.tool if self._registry.get(outcome.tool) else "unknown", outcome.status).inc()
         self.audit.append(outcome)
+        if self._audit_sink is not None:
+            try:
+                self._audit_sink(tool, args, ctx, outcome, latency_ms)
+            except Exception:
+                pass  # auditing must never break a conversation; the failure shows up as a metric gap, not an outage
         return outcome
 
 

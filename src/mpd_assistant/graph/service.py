@@ -48,6 +48,7 @@ class ChatService:
         cache_settings: Optional[CacheSettings] = None,
         memory: Any = None,
         escalations: Any = None,
+        summarizer: Any = None,
     ):
         self._graph = graph
         self._vault = vault
@@ -55,6 +56,7 @@ class ChatService:
         self._cache_settings = cache_settings or CacheSettings()
         self._memory = memory
         self._escalations = escalations
+        self._summarizer = summarizer
 
     def _cache_key(self, decision, safe_text: str, user_id: Optional[str]) -> Optional[str]:
         if self._cache is None or decision.requires_identity or decision.mode is Mode.ESCALATE:
@@ -130,6 +132,7 @@ class ChatService:
                 "verified": verified,
                 "user_id": user_id,
                 "memory_context": memory_context,
+                "thread_summary": self._summarizer.context_for(session_id) if self._summarizer else "",
                 "session_row": session_row,
             },
             config={"configurable": {"thread_id": session_id}},
@@ -140,6 +143,10 @@ class ChatService:
         if final.verdict is not Verdict.PASS:
             reply = render("temporary_error", out.get("language", "en"))
         reasons = list(out.get("eval_reasons", [])) + final.reasons
+
+        if self._summarizer is not None:
+            snapshot = await self._graph.aget_state({"configurable": {"thread_id": session_id}})
+            await self._summarizer.maybe_update(session_id, list(snapshot.values.get("messages", [])))
 
         if self._memory:
             await self._memory.after(user_id, safe_text, allow=final.verdict is Verdict.PASS and decision.mode is not Mode.TEMPLATED)
