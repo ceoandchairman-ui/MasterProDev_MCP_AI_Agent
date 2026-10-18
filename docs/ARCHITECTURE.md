@@ -51,7 +51,15 @@ Inbound SMS/WhatsApp arrive at `/v2/channels/twilio` (signature validated), are 
 user by phone blind index, and run through the same graph as the web widget. Not yet exercised against
 live Twilio/SendGrid accounts; WhatsApp needs an approved sender.
 
-## Built and tested (228 unit tests)
+## Data-subject requests
+
+`privacy/dsr.py` exports or erases one person across Postgres (users, sessions, turns, leads, funnel events,
+quotes, tool calls, escalations), the key-value store (vault, pending sign-ups, OTP, opt-out, rate keys) and the
+long-term memory store, then writes an audit entry that holds only a hash of the user id. Operator tool:
+`scripts/dsr.py`. Vendor deletion (Twilio, SendGrid, LangSmith, HuggingFace logs) is still manual and listed in the
+report. Backups are not purged by erasure; they age out under the backup retention policy (not yet set).
+
+## Built and tested (234 unit tests)
 
 Everything in the module map, plus: LLM client (OpenAI-compatible, fallback), guarded tool executor
 (permissions, confirmation, privacy-token rehydration at the tool boundary), five agents
