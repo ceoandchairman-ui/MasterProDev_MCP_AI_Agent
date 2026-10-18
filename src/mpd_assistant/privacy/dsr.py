@@ -9,7 +9,18 @@ from sqlalchemy.orm import Session as DbSession
 
 from mpd_assistant.core.crypto import FieldCipher, blind_index
 from mpd_assistant.core.kv import KeyValueStore
-from mpd_assistant.core.models import AuditLog, Escalation, FunnelEvent, Lead, Quote, ToolCall, Turn, User
+from mpd_assistant.core.models import (
+    AuditLog,
+    Escalation,
+    FunnelEvent,
+    Lead,
+    MemoryRow,
+    OAuthToken,
+    Quote,
+    ToolCall,
+    Turn,
+    User,
+)
 from mpd_assistant.core.models import Session as SessionRow
 from mpd_assistant.messaging.models import Channel
 
@@ -84,6 +95,8 @@ class DataSubjectService:
             if lead_ids:
                 count(delete(FunnelEvent).where(FunnelEvent.lead_id.in_(lead_ids)), "funnel_events")
                 count(delete(Quote).where(Quote.lead_id.in_(lead_ids)), "quotes")
+            count(delete(MemoryRow).where(MemoryRow.user_id == user_id), "memories")
+            count(delete(OAuthToken).where(OAuthToken.user_id == user_id), "oauth_tokens")
             count(delete(Lead).where(Lead.user_id == user_id), "leads")
             count(delete(SessionRow).where(SessionRow.user_id == user_id), "sessions")
             count(delete(User).where(User.id == user_id), "users")

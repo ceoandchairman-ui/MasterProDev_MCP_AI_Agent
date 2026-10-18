@@ -53,3 +53,5 @@ logs/
 docker-compose.override.yml
 .pytest_tmp/
 evals/reports/
+.test_out.txt
+.lint_out.txt
