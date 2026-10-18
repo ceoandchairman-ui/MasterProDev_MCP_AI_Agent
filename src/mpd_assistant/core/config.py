@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = "https://router.huggingface.co/v1"
     LLM_MODEL_CHEAP: Optional[str] = None
     LLM_MODEL_REASONING: Optional[str] = None
+    CATALOG_PATH: Optional[str] = None
     CALENDAR_SERVER_URL: Optional[str] = None
     GMAIL_SERVER_URL: Optional[str] = None
     USE_NEW_PIPELINE: bool = False

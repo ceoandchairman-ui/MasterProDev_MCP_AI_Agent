@@ -6,7 +6,9 @@ import httpx
 from langgraph.checkpoint.memory import MemorySaver
 
 from mpd_assistant.agents.factory import build_runners
+from mpd_assistant.agents.lead_conversion.agent import MemoryLeadRepository
 from mpd_assistant.api.main import Services, create_app
+from mpd_assistant.business.catalog import load_catalog
 from mpd_assistant.core.config import get_settings
 from mpd_assistant.core.crypto import FieldCipher
 from mpd_assistant.core.llm.client import OpenAICompatibleLLM
@@ -83,7 +85,8 @@ def build_services() -> Services:
         executor = ToolExecutor(registry, backend, rehydrate=vault.detokenize, pseudonymize=vault.tokenize)
 
     # The retriever (Weaviate hybrid search) is wired in the retrieval wave; until then the concierge is not registered.
-    runners = build_runners(llm, None, executor, registry)
+    catalog = load_catalog(settings.CATALOG_PATH) if settings.CATALOG_PATH else None
+    runners = build_runners(llm, None, executor, registry, leads=MemoryLeadRepository(), catalog=catalog)
     graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod))
     return Services(
         chat=ChatService(graph, vault),

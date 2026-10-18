@@ -6,3 +6,8 @@ escalation_notice: "I'm connecting you with a member of our team. They'll follow
 rate_limited: "You're sending messages quickly. Please wait a moment and try again."
 temporary_error: "Something went wrong on our side. Please try again in a moment."
 no_answer: "I couldn't find a reliable answer to that. Would you like me to connect you with our team?"
+ask_need: "Happy to help. In a sentence or two, what would you like to build or improve?"
+ask_timeline: "Thanks. When would you like to have this ready?"
+ask_budget: "Do you have a rough budget range in mind? A ballpark is fine."
+offer_call: "Thanks, that gives me a clear picture. Would you like to book a short discovery call with our team?"
+quote_needs_review: "This looks like a larger project, so a member of our team will review the numbers and send you a detailed quote."

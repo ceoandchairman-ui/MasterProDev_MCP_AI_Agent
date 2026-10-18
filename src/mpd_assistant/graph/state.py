@@ -22,5 +22,9 @@ class AgentState(TypedDict, total=False):
     escalated: bool
     reference: Optional[str]
     pending_action: Optional[Dict[str, Any]]
+    lead_slots: Dict[str, str]
+    lead_stage: str
+    scope: Optional[Dict[str, Any]]
+    quote_hash: Optional[str]
     eval_verdict: Optional[str]
     eval_reasons: List[str]

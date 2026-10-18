@@ -6,3 +6,8 @@ escalation_notice: "Je vous mets en relation avec un membre de notre équipe. Il
 rate_limited: "Vous envoyez des messages très rapidement. Veuillez patienter un instant."
 temporary_error: "Une erreur est survenue de notre côté. Veuillez réessayer dans un instant."
 no_answer: "Je n'ai pas trouvé de réponse fiable. Souhaitez-vous que je vous mette en relation avec notre équipe ?"
+ask_need: "Avec plaisir. En une ou deux phrases, que souhaitez-vous créer ou améliorer ?"
+ask_timeline: "Merci. Pour quand souhaitez-vous que ce soit prêt ?"
+ask_budget: "Avez-vous une fourchette budgétaire en tête ? Un ordre de grandeur suffit."
+offer_call: "Merci, j'ai maintenant une bonne idée de votre projet. Souhaitez-vous planifier un court appel de découverte avec notre équipe ?"
+quote_needs_review: "Il s'agit d'un projet de plus grande envergure : un membre de notre équipe validera les chiffres et vous enverra un devis détaillé."
