@@ -25,6 +25,7 @@ from mpd_assistant.core.startup import assert_production_ready
 from mpd_assistant.graph.builder import build_graph
 from mpd_assistant.graph.service import CacheSettings, ChatService
 from mpd_assistant.identity.abuse import SmsAbuseGuard
+from mpd_assistant.identity.account import AccountService
 from mpd_assistant.identity.otp import OtpService
 from mpd_assistant.identity.senders import ConsoleSender, UnconfiguredSender
 from mpd_assistant.identity.service import IdentityService, MemoryUserRepository
@@ -35,11 +36,12 @@ from mpd_assistant.memory.long_term.store import MemoryStore
 from mpd_assistant.memory.pipeline import MemoryWiring
 from mpd_assistant.memory.short_term.summary import RollingSummarizer
 from mpd_assistant.messaging.confirmations import ConfirmationService
-from mpd_assistant.messaging.models import Channel
+from mpd_assistant.messaging.models import Channel, OutboundMessage, Purpose
 from mpd_assistant.messaging.providers import SendGridProvider, TwilioProvider
 from mpd_assistant.messaging.service import MessengerSender, NotificationService
 from mpd_assistant.observability.otel import setup_tracing
 from mpd_assistant.privacy.boundaries import GuardedLLM
+from mpd_assistant.privacy.dsr import DataSubjectService
 from mpd_assistant.privacy.kv_store import KvVaultStore
 from mpd_assistant.privacy.vault import PiiVault
 from mpd_assistant.retrieval.embeddings import OpenAICompatibleEmbedder
@@ -200,6 +202,24 @@ def build_services() -> Services:
                             retrieval_min_score=min_score, google_token_provider=token_provider, on_quote_review=escalation_flow.hook, budget=budget)
     graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod), escalation_hook=escalation_flow.hook)
     memory_store = MemoryStore(repo=SqlMemoryRepository(engine) if engine is not None else None)
+    async def tell_old_contact(kind: str, old_value: str) -> None:
+        channel = Channel.EMAIL if kind == "email" else Channel.SMS
+        if notifications.has_channel(channel):
+            await notifications.send(OutboundMessage(channel, old_value, "contact_changed", "en", {}, Purpose.TRANSACTIONAL))
+
+    account = AccountService(
+        users,
+        cipher,
+        settings.BLIND_INDEX_KEY,  # type: ignore[arg-type]
+        kv,
+        OtpService(settings.SECRET_KEY + ":stepup", store=kv, namespace="otp-stepup"),
+        OtpService(settings.SECRET_KEY + ":email", store=kv, namespace="otp-email"),
+        OtpService(settings.SECRET_KEY + ":sms", store=kv, namespace="otp-sms"),
+        email_sender,
+        sms_sender,
+        notify_change=tell_old_contact,
+    )
+    dsr = DataSubjectService(engine, kv, cipher, settings.BLIND_INDEX_KEY, memory_store) if engine is not None else None  # type: ignore[arg-type]
     chat = ChatService(
         graph,
         vault,
@@ -225,6 +245,8 @@ def build_services() -> Services:
         turns=SqlTurnRecorder(engine) if engine is not None else None,
         users=users,
         memory_store=memory_store,
+        account=account,
+        dsr=dsr,
     )
 
 

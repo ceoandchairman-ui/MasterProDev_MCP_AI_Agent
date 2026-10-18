@@ -5,6 +5,7 @@ import hmac
 import json
 import re
 from dataclasses import dataclass
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
@@ -77,6 +78,27 @@ class ConsentIn(BaseModel):
     enabled: bool
 
 
+class CodeIn(BaseModel):
+    session_id: str = Field(max_length=64)
+    code: str = Field(max_length=12)
+
+
+class NameIn(BaseModel):
+    session_id: str = Field(max_length=64)
+    name: str = Field(max_length=120)
+
+
+class ContactIn(BaseModel):
+    session_id: str = Field(max_length=64)
+    kind: Literal["email", "phone"]
+    value: str = Field(max_length=254)
+
+
+class DeleteIn(BaseModel):
+    session_id: str = Field(max_length=64)
+    confirm: str = Field(max_length=10)
+
+
 class RevokeIn(BaseModel):
     session_id: str = Field(max_length=64)
     target_id: str | None = Field(default=None, max_length=64)
@@ -104,6 +126,8 @@ class Services:
     turns: object | None = None
     users: object | None = None
     memory_store: object | None = None
+    account: object | None = None
+    dsr: object | None = None
     twilio_auth_token: str | None = None
     public_url: str | None = None  # externally visible base URL; Twilio signs the exact URL it called
 
@@ -198,6 +222,8 @@ def create_app(services: Services) -> FastAPI:
     @app.get("/v2/integrations/google/start")
     async def google_start(session_id: str):
         session = _verified_session(session_id)
+        if services.account is not None:
+            _recent(session)
         try:
             return {"url": _google().authorize_url(session.user_id)}
         except NotConfigured as exc:
@@ -216,6 +242,81 @@ def create_app(services: Services) -> FastAPI:
         session = _verified_session(body.session_id)
         removed = _google().disconnect(session.user_id)
         return {"status": "disconnected" if removed else "not_connected"}
+
+    def _account():
+        if services.account is None:
+            raise HTTPException(status_code=503, detail="Account management is not available")
+        return services.account
+
+    def _recent(session):
+        """Sensitive actions need a verification code entered in the last 15 minutes."""
+        if not _account().has_recent(session.id):
+            raise HTTPException(status_code=403, detail="step_up_required")
+
+    @app.post("/v2/account/stepup/start", status_code=202)
+    async def stepup_start(body: StatusIn):
+        session = _verified_session(body.session_id)
+        try:
+            await _account().stepup_start(session.user_id)
+        except OtpError as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from exc
+        return {"status": "code_sent"}
+
+    @app.post("/v2/account/stepup/verify")
+    async def stepup_verify(body: CodeIn):
+        session = _verified_session(body.session_id)
+        if not _account().stepup_verify(session.id, session.user_id, body.code):
+            raise HTTPException(status_code=400, detail="Verification failed")
+        return {"status": "verified"}
+
+    @app.patch("/v2/account/profile")
+    async def update_profile(body: NameIn):
+        session = _verified_session(body.session_id)
+        try:
+            _account().update_name(session.user_id, body.name)
+        except InvalidIdentifier as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"status": "updated"}
+
+    @app.post("/v2/account/contact/start", status_code=202)
+    async def contact_start(body: ContactIn):
+        session = _verified_session(body.session_id)
+        _recent(session)
+        try:
+            await _account().contact_start(session.user_id, body.kind, body.value)
+        except InvalidIdentifier as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OtpError as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from exc
+        return {"status": "code_sent"}
+
+    @app.post("/v2/account/contact/verify")
+    async def contact_verify(body: CodeIn):
+        session = _verified_session(body.session_id)
+        _recent(session)
+        if not await _account().contact_verify(session.user_id, body.code):
+            raise HTTPException(status_code=400, detail="Verification failed")
+        return {"status": "updated"}
+
+    @app.get("/v2/account/export")
+    async def account_export(session_id: str):
+        session = _verified_session(session_id)
+        _recent(session)
+        if services.dsr is None:
+            raise HTTPException(status_code=503, detail="Export is not available")
+        return services.dsr.export(session.user_id)
+
+    @app.post("/v2/account/delete")
+    async def account_delete(body: DeleteIn):
+        session = _verified_session(body.session_id)
+        _recent(session)
+        if body.confirm != "DELETE":
+            raise HTTPException(status_code=422, detail='Type "DELETE" to confirm')
+        if services.dsr is None:
+            raise HTTPException(status_code=503, detail="Deletion is not available")
+        services.sessions.revoke_all_for_user(session.user_id)
+        report = services.dsr.erase(session.user_id)
+        return {"status": "deleted" if report.complete else "partial"}
 
     @app.get("/v2/account/sessions")
     async def account_sessions(session_id: str):
@@ -285,6 +386,8 @@ def create_app(services: Services) -> FastAPI:
         if user is None:
             raise HTTPException(status_code=400, detail="Verification failed")
         services.sessions.upgrade_to_verified(body.session_id, user.id)
+        if services.account is not None:
+            services.account.mark_recent(body.session_id)  # a fresh sign-in counts as a recent verification
         return {"status": "verified"}
 
     return app

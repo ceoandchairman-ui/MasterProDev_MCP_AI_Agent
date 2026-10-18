@@ -32,6 +32,17 @@ class SqlUserRepository:
     def find_by_id(self, user_id: str) -> Optional[VerifiedUser]:
         return self._one(User.id == user_id)
 
+    def update_contact(self, user_id: str, **fields) -> None:
+        allowed = {"name_enc", "email_enc", "email_index", "phone_enc", "phone_index"}
+        with DbSession(self._engine) as db:
+            row = db.get(User, user_id)
+            if row is None:
+                return
+            for name, value in fields.items():
+                if name in allowed:
+                    setattr(row, name, value)
+            db.commit()
+
     def memory_consent(self, user_id: str) -> bool:
         with DbSession(self._engine) as db:
             row = db.get(User, user_id)

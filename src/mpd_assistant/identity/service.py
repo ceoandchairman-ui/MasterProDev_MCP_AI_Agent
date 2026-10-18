@@ -45,6 +45,17 @@ class MemoryUserRepository:
     def find_by_id(self, user_id: str) -> Optional[VerifiedUser]:
         return next((u for u in self._by_email.values() if u.id == user_id), None)
 
+    def update_contact(self, user_id: str, **fields) -> None:
+        user = self.find_by_id(user_id)
+        if user is None:
+            return
+        old_index = user.email_index
+        for name, value in fields.items():
+            setattr(user, name, value)
+        if user.email_index != old_index:
+            self._by_email.pop(old_index, None)
+            self._by_email[user.email_index] = user
+
     def memory_consent(self, user_id: str) -> bool:
         return user_id in getattr(self, '_consent', set())
 
