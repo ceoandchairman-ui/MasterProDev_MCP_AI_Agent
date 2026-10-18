@@ -74,12 +74,13 @@ the Comms agent asks the user to connect later. Placeholders only until the Goog
 anything with personal data or session tokens), long-term memory (consent required; recalled before the turn,
 proposed after it), rolling summaries, escalation (record, staff email, assistant paused until resolved), per-agent
 token metrics, durable tool-call audit, pseudonymized turn records, and an LLM egress guard that refuses raw
-personal data. A single test (`tests/unit/test_end_to_end.py`) drives a whole journey through the real factory.
+personal data, daily token budgets (per conversation and global), a sampled LLM judge that replaces unsupported
+answers, and step-up verification for sensitive account actions. A single test (`tests/unit/test_end_to_end.py`) drives a whole journey through the real factory.
 
-## Built and tested (332 tests)
+## Built and tested (356 tests)
 
 Everything above and in the module map: five LLM agents with a fake model, the guarded tool executor, hybrid
-retrieval with a fail-soft hosted reranker, per-user Google access, messaging and multi-channel gateway, SSE
+retrieval with a fail-soft hosted reranker, account security (step-up, contact changes, export, deletion), per-user Google access, messaging and multi-channel gateway, SSE
 streaming, account session management, data-subject export and erasure, golden routing and retrieval sets with an
 offline runner, two Grafana dashboards, CI with an evaluation gate, deploy workflow, backup and restore scripts.
 None of it has run against live Postgres, Redis, a language model or any provider.
@@ -95,9 +96,9 @@ None of it has run against live Postgres, Redis, a language model or any provide
 - **Cache hits skip the graph**, so a cached exchange is not added to that conversation's history.
 - **Memory** stores text proposed by the model after validation; there is no consolidation job, entity tracking or
   knowledge graph. Embedding-based memory recall is not used (lexical overlap only).
-- **Missing stories:** LLM judge in the evaluator (rules only), task decomposition and multi-agent handoff (S6.8),
-  token budgets and cost caps (S15.6, S14.10), step-up verification for sensitive actions (S21.5), profile editing
-  (S21.6), edge and custom domain (S14.12), semantic cache, voice and image input, OCR indexer, payments.
+- **Missing stories:** task decomposition and multi-agent handoff beyond the escalation packet (S6.8), edge and
+  custom domain setup (S14.12), semantic cache (S16.3), voice and image input, OCR indexer, payments, inbound email
+  and voice channels, entity tracking and memory consolidation jobs.
 - **Vendor deletion** after an erasure request is manual; backups are not purged by erasure and need a retention
   policy. Vault retention (7 days) and conversation retention are placeholders.
 - **Placeholders pending business input:** quote catalog (`CATALOG_PATH`), approval threshold, the "3 Es" stages,
