@@ -8,6 +8,8 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from mpd_assistant.channels.gateway import ChannelGateway
+from mpd_assistant.channels.inbound import empty_twiml, parse_twilio_form, twiml_reply, validate_twilio_signature
 from mpd_assistant.graph.service import ChatService
 from mpd_assistant.identity.normalize import InvalidIdentifier
 from mpd_assistant.identity.otp import OtpError
@@ -60,6 +62,9 @@ class Services:
     sessions: SessionService
     identity: IdentityService
     metrics_token: str | None = None
+    gateway: ChannelGateway | None = None
+    twilio_auth_token: str | None = None
+    public_url: str | None = None  # externally visible base URL; Twilio signs the exact URL it called
 
 
 def create_app(services: Services) -> FastAPI:
@@ -78,6 +83,18 @@ def create_app(services: Services) -> FastAPI:
             raise HTTPException(status_code=401, detail="Unauthorized")
         return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
+    @app.post("/v2/channels/twilio", include_in_schema=False)
+    async def twilio_inbound(request: Request):
+        if services.gateway is None or not services.twilio_auth_token or not services.public_url:
+            raise HTTPException(status_code=404, detail="Not found")
+        form = {k: str(v) for k, v in (await request.form()).items()}
+        url = services.public_url.rstrip("/") + "/v2/channels/twilio"
+        if not validate_twilio_signature(services.twilio_auth_token, url, form, request.headers.get("x-twilio-signature")):
+            raise HTTPException(status_code=403, detail="Invalid signature")
+        inbound = parse_twilio_form(form)
+        reply = await services.gateway.handle(inbound) if inbound else None
+        return Response(twiml_reply(reply) if reply else empty_twiml(), media_type="application/xml")
+
     @app.post("/v2/chat", response_model=ChatOut)
     async def chat(body: ChatIn):
         session = services.sessions.resume(body.session_id) if body.session_id else None
@@ -91,7 +108,7 @@ def create_app(services: Services) -> FastAPI:
         if services.sessions.resume(body.session_id) is None:
             raise HTTPException(status_code=401, detail="Unknown or expired session")
         try:
-            services.identity.start(body.session_id, body.name, body.email, body.phone)
+            await services.identity.start(body.session_id, body.name, body.email, body.phone)
         except InvalidIdentifier as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OtpError as exc:

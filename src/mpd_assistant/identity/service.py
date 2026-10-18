@@ -1,5 +1,6 @@
 """Sign-up and verification: email OTP plus SMS OTP, then a verified user record with encrypted contact data."""
 
+import inspect
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,7 +12,7 @@ from mpd_assistant.identity.otp import OtpError, OtpService
 
 
 class Sender(Protocol):
-    def send(self, target: str, code: str) -> None: ...
+    def send(self, target: str, code: str): ...  # may be sync or async
 
 
 @dataclass
@@ -27,6 +28,8 @@ class VerifiedUser:
 
 class UserRepository(Protocol):
     def find_by_email_index(self, index: str) -> Optional[VerifiedUser]: ...
+    def find_by_phone_index(self, index: str) -> Optional[VerifiedUser]: ...
+    def find_by_id(self, user_id: str) -> Optional[VerifiedUser]: ...
     def save(self, user: VerifiedUser) -> None: ...
 
 
@@ -36,6 +39,12 @@ class MemoryUserRepository:
 
     def find_by_email_index(self, index: str) -> Optional[VerifiedUser]:
         return self._by_email.get(index)
+
+    def find_by_id(self, user_id: str) -> Optional[VerifiedUser]:
+        return next((u for u in self._by_email.values() if u.id == user_id), None)
+
+    def find_by_phone_index(self, index: str) -> Optional[VerifiedUser]:
+        return next((u for u in self._by_email.values() if u.phone_index == index), None)
 
     def save(self, user: VerifiedUser) -> None:
         self._by_email[user.email_index] = user
@@ -48,6 +57,12 @@ class _Pending:
     phone: str
     email_ok: bool = False
     phone_ok: bool = False
+
+
+async def _deliver(sender: Sender, target: str, code: str) -> None:
+    result = sender.send(target, code)
+    if inspect.isawaitable(result):
+        await result
 
 
 class IdentityService:
@@ -66,11 +81,11 @@ class IdentityService:
         self._email_sender, self._sms_sender = email_sender, sms_sender
         self._pending: Dict[str, _Pending] = {}
 
-    def start(self, session_id: str, name: str, email: str, phone: str) -> None:
+    async def start(self, session_id: str, name: str, email: str, phone: str) -> None:
         """Validate input and send both codes. Responses never reveal whether the email already exists."""
         pending = _Pending(normalize_name(name), normalize_email(email), normalize_phone(phone))
-        self._email_sender.send(pending.email, self._email_otp.issue(pending.email))
-        self._sms_sender.send(pending.phone, self._sms_otp.issue(pending.phone))
+        await _deliver(self._email_sender, pending.email, self._email_otp.issue(pending.email))
+        await _deliver(self._sms_sender, pending.phone, self._sms_otp.issue(pending.phone))
         self._pending[session_id] = pending
 
     def verify(self, session_id: str, email_code: str, phone_code: str) -> Optional[VerifiedUser]:

@@ -21,6 +21,7 @@ def build_runners(
     registry: ToolRegistry,
     leads: LeadRepository | None = None,
     catalog: Dict[str, CatalogItem] | None = None,
+    on_booked=None,
 ) -> Dict[Agent, object]:
     runners: Dict[Agent, object] = {}
     if llm is None:
@@ -28,7 +29,7 @@ def build_runners(
     if retriever is not None:
         runners[Agent.CONCIERGE] = make_concierge(llm, retriever)
     if executor is not None:
-        runners[Agent.COMMS_SCHEDULING] = make_comms(llm, executor, registry)
+        runners[Agent.COMMS_SCHEDULING] = make_comms(llm, executor, registry, on_booked)
     if leads is not None:
         runners[Agent.LEAD_CONVERSION] = make_lead_conversion(llm, leads)
     runners[Agent.SOLUTION_ARCHITECT] = make_solution_architect(llm)

@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     LLM_MODEL_CHEAP: Optional[str] = None
     LLM_MODEL_REASONING: Optional[str] = None
     CATALOG_PATH: Optional[str] = None
+    TWILIO_ACCOUNT_SID: Optional[str] = None
+    TWILIO_AUTH_TOKEN: Optional[str] = None
+    TWILIO_SMS_FROM: Optional[str] = None
+    TWILIO_WHATSAPP_FROM: Optional[str] = None
+    SENDGRID_API_KEY: Optional[str] = None
+    EMAIL_FROM: Optional[str] = None
+    MESSAGES_DAILY_CAP: int = 500
     CALENDAR_SERVER_URL: Optional[str] = None
     GMAIL_SERVER_URL: Optional[str] = None
     USE_NEW_PIPELINE: bool = False

@@ -33,13 +33,25 @@ quotes priced by code and verified against a content hash before payment.
 | `agents` | Concierge, Lead Conversion, Solution Architect, Quote, Comms & Scheduling + factory |
 | `retrieval`, `evaluation` | RRF fusion + grounding; online rules + offline agentic metrics |
 | `observability` | Prometheus metrics, OTel setup with scrubbing |
+| `messaging` | provider-agnostic outbound layer: Twilio (SMS, WhatsApp) and SendGrid wrappers, consent, rate/spend caps, idempotency, confirmations |
+| `channels` | inbound normalization (Twilio webhooks with signature check), per-channel formatting, cross-channel identity by phone |
 | `api` | v2 FastAPI app and the `create()` ASGI factory |
 
 Legacy code (`mcp_host/`, `mcp_servers/`) still runs the current product and has been hardened
 (service-key auth, role policy, escaped output, rate limits). It is removed after the new pipeline
 reaches parity.
 
-## Built and tested (183 unit tests)
+## Downstream communication
+
+Everything outbound (OTP codes, booking confirmations, escalation notices, later follow-ups) goes through
+`NotificationService`: template rendering in the user's locale, transactional vs marketing purpose,
+consent and STOP/opt-out handling, per-target rate limit, daily spend cap, idempotency keys, metrics.
+Providers are wrapped behind one interface: **Twilio** for SMS and WhatsApp, **SendGrid** for email.
+Inbound SMS/WhatsApp arrive at `/v2/channels/twilio` (signature validated), are matched to a verified
+user by phone blind index, and run through the same graph as the web widget. Not yet exercised against
+live Twilio/SendGrid accounts; WhatsApp needs an approved sender.
+
+## Built and tested (206 unit tests)
 
 Everything in the module map, plus: LLM client (OpenAI-compatible, fallback), guarded tool executor
 (permissions, confirmation, privacy-token rehydration at the tool boundary), five agents

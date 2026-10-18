@@ -20,6 +20,7 @@ EVAL_VERDICTS = Counter("mpd_eval_verdicts_total", "Online evaluator verdicts", 
 EVAL_REASONS = Counter("mpd_eval_reasons_total", "Evaluator failure reasons", ["reason"], registry=REGISTRY)
 ESCALATIONS = Counter("mpd_escalations_total", "Escalations to a human", ["reason"], registry=REGISTRY)
 PII_DETECTIONS = Counter("mpd_pii_detections_total", "PII detected at a boundary", ["boundary", "type"], registry=REGISTRY)
+MESSAGES = Counter("mpd_messages_total", "Outbound messages", ["channel", "purpose", "status"], registry=REGISTRY)
 PRAR_PHASE = Histogram("mpd_prar_phase_seconds", "Plan/act/reflect phase time", ["agent", "phase"], registry=REGISTRY)
 
 
