@@ -11,6 +11,7 @@
 | D12 | Detector fails closed at storage and telemetry boundaries | Partly (telemetry scrubbing, evaluator) |
 | D14 | Visitors get FAQ-only answers until email and phone are verified | Implemented as default (open for owner decision) |
 | D15 | Passwordless email OTP plus SMS OTP; staff use stronger auth | Implemented for users |
+| D10 | **Decided:** pgvector in the existing Postgres for knowledge and memory; keyword side is BM25 (`rank_bm25.BM25Plus`) in the application; Weaviate dropped (fallback only if relevance tests fail) | Implemented |
 | D16 | Evaluate FastMCP for new MCP services after the security work | Open |
 
 Open owner decisions: funnel stage rules, price catalog and approver, payment scope, escalation

@@ -22,12 +22,13 @@ def build_runners(
     leads: LeadRepository | None = None,
     catalog: Dict[str, CatalogItem] | None = None,
     on_booked=None,
+    retrieval_min_score: float = 0.2,
 ) -> Dict[Agent, object]:
     runners: Dict[Agent, object] = {}
     if llm is None:
         return runners
     if retriever is not None:
-        runners[Agent.CONCIERGE] = make_concierge(llm, retriever)
+        runners[Agent.CONCIERGE] = make_concierge(llm, retriever, retrieval_min_score)
     if executor is not None:
         runners[Agent.COMMS_SCHEDULING] = make_comms(llm, executor, registry, on_booked)
     if leads is not None:

@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     LLM_MODEL_CHEAP: Optional[str] = None
     LLM_MODEL_REASONING: Optional[str] = None
     CATALOG_PATH: Optional[str] = None
+    EMBEDDING_MODEL: str = "BAAI/bge-m3"
+    EMBEDDING_BASE_URL: Optional[str] = None
+    EMBEDDING_API_KEY: Optional[str] = None
+    RETRIEVAL_MIN_SCORE: float = 0.35
+    KNOWLEDGE_BASE_PATH: str = "Company_Documents"
     TWILIO_ACCOUNT_SID: Optional[str] = None
     TWILIO_AUTH_TOKEN: Optional[str] = None
     TWILIO_SMS_FROM: Optional[str] = None

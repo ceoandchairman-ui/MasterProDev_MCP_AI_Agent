@@ -30,6 +30,8 @@ from mpd_assistant.messaging.service import MessengerSender, NotificationService
 from mpd_assistant.observability.otel import setup_tracing
 from mpd_assistant.privacy.kv_store import KvVaultStore
 from mpd_assistant.privacy.vault import PiiVault
+from mpd_assistant.retrieval.embeddings import OpenAICompatibleEmbedder
+from mpd_assistant.retrieval.pg import PgRetriever
 from mpd_assistant.sessions.service import MemorySessionRepository, SessionService
 from mpd_assistant.sessions.sql import SqlSessionRepository
 from mpd_assistant.tools.executor import ToolExecutor, http_backend
@@ -72,11 +74,11 @@ def _repositories(database_url: str, production: bool):
     engine = make_engine(database_url)
     if check_engine(engine):
         tenant = ensure_tenant(engine)
-        return SqlSessionRepository(engine, tenant), SqlUserRepository(engine, tenant), SqlLeadRepository(engine, tenant)
+        return SqlSessionRepository(engine, tenant), SqlUserRepository(engine, tenant), SqlLeadRepository(engine, tenant), engine, tenant
     if production:
         raise RuntimeError("Database is unreachable")
     logger.warning("Database unavailable; using in-memory repositories (development only)")
-    return MemorySessionRepository(), MemoryUserRepository(), MemoryLeadRepository()
+    return MemorySessionRepository(), MemoryUserRepository(), MemoryLeadRepository(), None, None
 
 
 def _notifications(settings, kv: KeyValueStore) -> NotificationService:
@@ -109,7 +111,7 @@ def build_services() -> Services:
     else:
         sms_sender = UnconfiguredSender("sms") if prod else ConsoleSender("sms")
 
-    session_repo, users, leads = _repositories(settings.DATABASE_URL, prod)
+    session_repo, users, leads, engine, tenant = _repositories(settings.DATABASE_URL, prod)
     identity = IdentityService(
         cipher,
         settings.BLIND_INDEX_KEY,  # type: ignore[arg-type]
@@ -142,10 +144,15 @@ def build_services() -> Services:
         backend = http_backend(routes, settings.MCP_SERVICE_KEY, httpx.AsyncClient())
         executor = ToolExecutor(registry, backend, rehydrate=vault.detokenize, pseudonymize=vault.tokenize)
 
-    # The retriever (Weaviate hybrid search) is wired in the retrieval wave; until then the concierge is not registered.
+    retriever = None
+    embedding_key = settings.EMBEDDING_API_KEY or settings.HUGGINGFACE_API_KEY
+    if engine is not None and embedding_key:
+        embedder = OpenAICompatibleEmbedder(settings.EMBEDDING_BASE_URL or settings.LLM_BASE_URL, embedding_key, settings.EMBEDDING_MODEL)
+        retriever = PgRetriever(engine, tenant, embedder)
     catalog = load_catalog(settings.CATALOG_PATH) if settings.CATALOG_PATH else None
-    runners = build_runners(llm, None, executor, registry, leads=leads, catalog=catalog,
-                            on_booked=ConfirmationService(notifications, users, cipher).booking_confirmed)
+    runners = build_runners(llm, retriever, executor, registry, leads=leads, catalog=catalog,
+                            on_booked=ConfirmationService(notifications, users, cipher).booking_confirmed,
+                            retrieval_min_score=settings.RETRIEVAL_MIN_SCORE)
     graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod))
     chat = ChatService(graph, vault)
     sessions = SessionService(session_repo)

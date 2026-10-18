@@ -3,8 +3,24 @@
 import uuid
 from datetime import UTC, datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
+
+EMBEDDING_DIM = 1024  # BAAI/bge-m3
+
+
+class EmbeddingType(TypeDecorator):
+    """pgvector on Postgres; plain JSON elsewhere (SQLite in unit tests)."""
+
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(Vector(EMBEDDING_DIM))
+        return dialect.type_descriptor(JSON())
 
 
 def _uuid() -> str:
@@ -159,4 +175,19 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(60))
     target: Mapped[str | None] = mapped_column(String(64), nullable=True)
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class DocumentChunk(Base):
+    """Company knowledge, chunked and embedded. Vector search is pgvector (HNSW); keyword search is BM25 in the app."""
+
+    __tablename__ = "document_chunks"
+    __table_args__ = (UniqueConstraint("tenant_id", "source", "chunk_index", name="uq_chunks_source_index"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    source: Mapped[str] = mapped_column(String(300))
+    doc_hash: Mapped[str] = mapped_column(String(64))
+    chunk_index: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list] = mapped_column(EmbeddingType())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

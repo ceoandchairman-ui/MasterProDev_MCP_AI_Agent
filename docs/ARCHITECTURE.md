@@ -51,7 +51,7 @@ Inbound SMS/WhatsApp arrive at `/v2/channels/twilio` (signature validated), are 
 user by phone blind index, and run through the same graph as the web widget. Not yet exercised against
 live Twilio/SendGrid accounts; WhatsApp needs an approved sender.
 
-## Built and tested (212 unit tests)
+## Built and tested (228 unit tests)
 
 Everything in the module map, plus: LLM client (OpenAI-compatible, fallback), guarded tool executor
 (permissions, confirmation, privacy-token rehydration at the tool boundary), five agents
@@ -69,9 +69,11 @@ and Railway config. All agents are tested with a fake LLM; none has run against 
   back to process memory with a warning; production refuses to start instead.
 - Vault retention (7 days) is a placeholder; messages stored in checkpoints keep tokens that stop
   resolving after the vault entry expires.
-- Concierge needs a retriever: the Weaviate hybrid search adapter and hosted reranker are not
-  written, so the Concierge is not registered and knowledge questions get the "no reliable answer"
-  template.
+- Retrieval is pgvector + BM25 fused with RRF (`retrieval/pg.py`); the Concierge registers when an embedding key
+  is set. The SQL path (HNSW vector query) and the embeddings endpoint are untested against real services, the
+  hosted reranker is not written (a no-op reranker is used), and the Postgres on Railway must have the `vector`
+  extension (pgvector image/template). Relevance thresholds (`RETRIEVAL_MIN_SCORE`, default 0.35) need tuning on
+  a golden question set. Run `python scripts/seed_knowledge.py` after migrating to index `Company_Documents`.
 - Evaluator agent (LLM judge), Ragas runs, LangSmith tracing, and the background worker (summaries,
   memory extraction, consolidation) are not built; long-term memory exists as a tested library but
   is not yet called from the graph.

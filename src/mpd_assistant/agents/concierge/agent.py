@@ -25,11 +25,11 @@ def _last_user(state: AgentState) -> str:
     return next((m["content"] for m in reversed(state.get("messages", [])) if m.get("role") == "user"), "")
 
 
-def make_concierge(llm: LLM, retriever: Retriever):
+def make_concierge(llm: LLM, retriever: Retriever, min_score: float = 0.2):
     async def run(state: AgentState) -> Dict[str, Any]:
         language = state.get("language", "en")
         question = _last_user(state)
-        grounding = ground(await retriever.search(question))
+        grounding = ground(await retriever.search(question), min_score=min_score)
         if not grounding.answerable:
             return {"response": render("no_answer", language)}
 
