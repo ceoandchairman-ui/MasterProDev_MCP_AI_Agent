@@ -34,7 +34,7 @@ def env():
     identity = IdentityService(
         crypto.FieldCipher(key), key, MemoryUserRepository(), OtpService("e"), OtpService("s"), email_s, sms_s
     )
-    app = create_app(Services(ChatService(graph, vault), SessionService(MemorySessionRepository()), identity))
+    app = create_app(Services(ChatService(graph, vault), SessionService(MemorySessionRepository()), identity, metrics_token="scrape-token"))
     return TestClient(app), email_s, sms_s
 
 
@@ -81,3 +81,12 @@ def test_message_length_limit(env):
     client, _, _ = env
     assert client.post("/v2/chat", json={"message": "x" * 5000}).status_code == 422
     assert client.post("/v2/chat", json={"message": ""}).status_code == 422
+
+
+def test_metrics_endpoint_requires_token(env):
+    client, _, _ = env
+    client.post("/v2/chat", json={"message": "hello"})
+    assert client.get("/metrics").status_code == 401
+    assert client.get("/metrics", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    ok = client.get("/metrics", headers={"Authorization": "Bearer scrape-token"})
+    assert ok.status_code == 200 and "mpd_turns_total" in ok.text

@@ -1,0 +1,22 @@
+groups:
+  - name: mpd
+    rules:
+      - alert: HighReasonedLatency
+        expr: histogram_quantile(0.95, sum(rate(mpd_turn_latency_seconds_bucket{mode="reasoned"}[10m])) by (le)) > 15
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "p95 reasoned latency above 15s"}
+      - alert: EvaluatorFailureSpike
+        expr: sum(rate(mpd_eval_verdicts_total{verdict!="pass"}[15m])) / sum(rate(mpd_eval_verdicts_total[15m])) > 0.2
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "More than 20% of responses fail online evaluation"}
+      - alert: PiiLeakDetected
+        expr: increase(mpd_eval_reasons_total{reason="pii_leak"}[5m]) > 0
+        labels: {severity: critical}
+        annotations: {summary: "Model output contained PII that was never issued to this session"}
+      - alert: EscalationRateHigh
+        expr: sum(rate(mpd_escalations_total[1h])) / sum(rate(mpd_turns_total[1h])) > 0.25
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: "Escalation rate above 25%"}

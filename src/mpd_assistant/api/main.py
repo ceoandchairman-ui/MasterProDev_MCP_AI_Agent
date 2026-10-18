@@ -1,8 +1,10 @@
 """New API (v2). Built by a factory so tests and the deployment inject their own services."""
 
+import hmac
 from dataclasses import dataclass
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -10,6 +12,7 @@ from mpd_assistant.graph.service import ChatService
 from mpd_assistant.identity.normalize import InvalidIdentifier
 from mpd_assistant.identity.otp import OtpError
 from mpd_assistant.identity.service import IdentityService
+from mpd_assistant.observability.metrics import REGISTRY
 from mpd_assistant.sessions.service import SessionService
 
 MAX_MESSAGE_CHARS = 4000
@@ -56,6 +59,7 @@ class Services:
     chat: ChatService
     sessions: SessionService
     identity: IdentityService
+    metrics_token: str | None = None
 
 
 def create_app(services: Services) -> FastAPI:
@@ -65,6 +69,14 @@ def create_app(services: Services) -> FastAPI:
     @app.get("/health")
     async def health():
         return {"status": "ok"}
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics(request: Request):
+        token = services.metrics_token
+        supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+        if not token or not hmac.compare_digest(supplied.encode(), token.encode()):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
     @app.post("/v2/chat", response_model=ChatOut)
     async def chat(body: ChatIn):
