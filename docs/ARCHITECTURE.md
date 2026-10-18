@@ -68,39 +68,42 @@ servers only as the `X-Google-Access-Token` header for that one call; the server
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_OAUTH_REDIRECT_URI` the feature reports not configured and
 the Comms agent asks the user to connect later. Placeholders only until the Google OAuth client exists.
 
-## Built and tested (258 unit tests)
+## Wired into the chat path
 
-Everything in the module map, plus: LLM client (OpenAI-compatible, fallback), guarded tool executor
-(permissions, confirmation, privacy-token rehydration at the tool boundary), five agents
-(Concierge, Lead Conversion, Solution Architect, Quote, Comms & Scheduling) with Escalation handled
-by the graph, the Alembic baseline, Grafana/Prometheus/OTel configs, CI workflow, `api.Dockerfile`
-and Railway config. All agents are tested with a fake LLM; none has run against a live model.
+`create()` builds one `ChatService` with: pseudonymization, response cache (shared answers only, never
+anything with personal data or session tokens), long-term memory (consent required; recalled before the turn,
+proposed after it), rolling summaries, escalation (record, staff email, assistant paused until resolved), per-agent
+token metrics, durable tool-call audit, pseudonymized turn records, and an LLM egress guard that refuses raw
+personal data. A single test (`tests/unit/test_end_to_end.py`) drives a whole journey through the real factory.
 
-## Not built yet (known gaps)
+## Built and tested (332 tests)
 
-- Shared state now lives in Postgres (sessions, users, leads, funnel events) and Redis (OTP
-  challenges, encrypted pending sign-ups, PII vault, caches, rate limits), and tests simulate two
-  replicas on one database and store. It has **not been run against real Postgres/Redis**, so
-  `deploy/railway/api.toml` stays at one replica and `/v2` should not take production traffic until
-  a two-replica test passes against the production database and Redis. In development an unreachable database or Redis falls
-  back to process memory with a warning; production refuses to start instead.
-- Vault retention (7 days) is a placeholder; messages stored in checkpoints keep tokens that stop
-  resolving after the vault entry expires.
-- Retrieval is pgvector + BM25 fused with RRF (`retrieval/pg.py`); the Concierge registers when an embedding key
-  is set. The SQL path (HNSW vector query) and the embeddings endpoint are untested against real services, the
-  hosted reranker is not written (a no-op reranker is used), and the Postgres on Railway must have the `vector`
-  extension (pgvector image/template). Relevance thresholds (`RETRIEVAL_MIN_SCORE`, default 0.35) need tuning on
-  a golden question set. Run `python scripts/seed_knowledge.py` after migrating to index `Company_Documents`.
-- Evaluator agent (LLM judge), Ragas runs, LangSmith tracing, and the background worker (summaries,
-  memory extraction, consolidation) are not built; long-term memory exists as a tested library but
-  is not yet called from the graph.
-- Email/SMS OTP providers are not chosen; production senders raise until configured.
-- The Redis checkpointer, Redis cache backend and HTTP tool backend are unit-tested against fakes
-  only, not live services.
-- The quote catalog (`CATALOG_PATH`), the "3 Es" funnel stages, the approval threshold, and the
-  escalation destination and hours are placeholders pending business input.
-- Per-user Google OAuth (legacy servers still share one token), the Railway service split, FastMCP
-  evaluation (D16), indexer/OCR, payments.
+Everything above and in the module map: five LLM agents with a fake model, the guarded tool executor, hybrid
+retrieval with a fail-soft hosted reranker, per-user Google access, messaging and multi-channel gateway, SSE
+streaming, account session management, data-subject export and erasure, golden routing and retrieval sets with an
+offline runner, two Grafana dashboards, CI with an evaluation gate, deploy workflow, backup and restore scripts.
+None of it has run against live Postgres, Redis, a language model or any provider.
+
+## Not done (known gaps)
+
+- **Never run live:** Postgres with pgvector (including the HNSW query), Redis (cache, KV, checkpointer), the
+  embeddings and rerank endpoints, Twilio, SendGrid, Google OAuth, Railway. `deploy/railway/api.toml` stays at one
+  replica until a two-replica test passes against the production database and Redis.
+- **Thresholds are guesses:** `RETRIEVAL_MIN_SCORE` (0.35) and `RERANK_MIN_SCORE` (0.3) need tuning with
+  `python scripts/run_evals.py --retrieval` against the real embedder. Test scores use a toy embedder.
+- **Streaming is progressive display**, not token-level: the reply is produced whole, then split into sentences.
+- **Cache hits skip the graph**, so a cached exchange is not added to that conversation's history.
+- **Memory** stores text proposed by the model after validation; there is no consolidation job, entity tracking or
+  knowledge graph. Embedding-based memory recall is not used (lexical overlap only).
+- **Missing stories:** LLM judge in the evaluator (rules only), task decomposition and multi-agent handoff (S6.8),
+  token budgets and cost caps (S15.6, S14.10), step-up verification for sensitive actions (S21.5), profile editing
+  (S21.6), edge and custom domain (S14.12), semantic cache, voice and image input, OCR indexer, payments.
+- **Vendor deletion** after an erasure request is manual; backups are not purged by erasure and need a retention
+  policy. Vault retention (7 days) and conversation retention are placeholders.
+- **Placeholders pending business input:** quote catalog (`CATALOG_PATH`), approval threshold, the "3 Es" stages,
+  escalation inbox and hours, OTP and email providers, Twilio and Google credentials.
+- **Legacy host** still runs the current product; `NEW_PIPELINE_PERCENT` (default 0) sends a share of its `/chat`
+  traffic to the new pipeline once the new package is installed in that image.
 - Python is pinned to 3.11+ in `pyproject.toml`; the dev machine currently runs 3.14.
 
 ## Decisions
