@@ -20,7 +20,7 @@ from mpd_assistant.retrieval.embeddings import EmbeddingError, HashEmbedder, Ope
 from mpd_assistant.retrieval.pg import PgRetriever
 from mpd_assistant.tools.registry import default_registry
 
-DIM = 64
+DIM = 4096
 DOCS = {
     "services.txt": "MasterProDev builds custom mobile apps and web platforms for logistics and retail companies.\n\n"
     "We also provide architecture audits, cloud migration and ongoing maintenance.",
@@ -178,7 +178,8 @@ async def test_concierge_answers_from_indexed_documents_and_refuses_off_topic(en
     tenant = await seed(engine)
     retriever = PgRetriever(engine, tenant, HashEmbedder(DIM))
     llm = FakeLLM(["We build custom mobile apps and web platforms."])
-    runners = build_runners(llm, retriever, None, default_registry(), retrieval_min_score=0.35)
+    # The bag-of-words test embedder scores lower than bge-m3; the production cutoff is tuned separately.
+    runners = build_runners(llm, retriever, None, default_registry(), retrieval_min_score=0.2)
     vault = PiiVault(crypto.FieldCipher(crypto.generate_key()), MemoryVaultStore())
     svc = ChatService(build_graph(runners, checkpointer=MemorySaver()), vault)
 

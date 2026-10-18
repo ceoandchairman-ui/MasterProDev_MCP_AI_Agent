@@ -1,0 +1,22 @@
+# Golden retrieval set. Each case names the document that must rank in the top results.
+# Add real questions from the sales team; keep "expect" as the source file name in Company_Documents/.
+version: 1
+cases:
+  - id: services-mobile
+    question: "Do you build mobile apps for logistics companies?"
+    expect: services.txt
+  - id: services-audit
+    question: "Can you do an architecture audit of our system?"
+    expect: services.txt
+  - id: contact-hours
+    question: "When is your office open?"
+    expect: contact.txt
+  - id: pricing
+    question: "How is pricing decided for a project?"
+    expect: contact.txt
+  - id: french-team
+    question: "Est-ce que votre équipe fait des applications mobiles ?"
+    expect: equipe.txt
+  - id: off-topic
+    question: "What is a good recipe for chocolate cake?"
+    expect: null
