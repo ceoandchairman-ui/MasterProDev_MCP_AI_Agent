@@ -191,3 +191,16 @@ class DocumentChunk(Base):
     text: Mapped[str] = mapped_column(Text)
     embedding: Mapped[list] = mapped_column(EmbeddingType())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class OAuthToken(Base):
+    """Per-user provider grant. The refresh token is encrypted; access tokens are cached briefly in the key-value store."""
+
+    __tablename__ = "oauth_tokens"
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_oauth_user_provider"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(20))
+    refresh_enc: Mapped[str] = mapped_column(Text)
+    scopes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

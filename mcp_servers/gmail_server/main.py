@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import Depends
 from mcp_servers.base_server import BaseMCPServer
 from services._common.mcp_common.service_auth import require_service_auth
+from services._common.mcp_common.user_token import current_user_token
 from mcp_servers.gmail_server.config import gmail_settings
 from typing import Any, Dict, List
 from datetime import datetime
@@ -207,6 +208,12 @@ class GmailMCPServer(BaseMCPServer):
 
     async def _get_gmail_service(self):
         """Return an authenticated Gmail service instance"""
+        user_token = current_user_token()
+        if user_token:
+            # Per-request user credentials are never cached on the server object.
+            return await asyncio.to_thread(
+                build, "gmail", "v1", credentials=Credentials(token=user_token), cache_discovery=False
+            )
         if self.service is not None:
             return self.service
 

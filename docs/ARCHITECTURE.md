@@ -59,7 +59,16 @@ long-term memory store, then writes an audit entry that holds only a hash of the
 `scripts/dsr.py`. Vendor deletion (Twilio, SendGrid, LangSmith, HuggingFace logs) is still manual and listed in the
 report. Backups are not purged by erasure; they age out under the backup retention policy (not yet set).
 
-## Built and tested (234 unit tests)
+## Google access (per user)
+
+Each person connects their own Google account from `/v2/integrations/google/start` (verified users only). The
+authorization uses a single-use state bound to the user, the refresh token is stored encrypted in `oauth_tokens`,
+and a short-lived access token is cached encrypted for 50 minutes. The access token reaches the calendar and Gmail
+servers only as the `X-Google-Access-Token` header for that one call; the servers never cache it. Without
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_OAUTH_REDIRECT_URI` the feature reports not configured and
+the Comms agent asks the user to connect later. Placeholders only until the Google OAuth client exists.
+
+## Built and tested (258 unit tests)
 
 Everything in the module map, plus: LLM client (OpenAI-compatible, fallback), guarded tool executor
 (permissions, confirmation, privacy-token rehydration at the tool boundary), five agents

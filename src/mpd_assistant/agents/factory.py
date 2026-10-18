@@ -23,6 +23,7 @@ def build_runners(
     catalog: Dict[str, CatalogItem] | None = None,
     on_booked=None,
     retrieval_min_score: float = 0.2,
+    google_token_provider=None,
 ) -> Dict[Agent, object]:
     runners: Dict[Agent, object] = {}
     if llm is None:
@@ -30,7 +31,7 @@ def build_runners(
     if retriever is not None:
         runners[Agent.CONCIERGE] = make_concierge(llm, retriever, retrieval_min_score)
     if executor is not None:
-        runners[Agent.COMMS_SCHEDULING] = make_comms(llm, executor, registry, on_booked)
+        runners[Agent.COMMS_SCHEDULING] = make_comms(llm, executor, registry, on_booked, google_token_provider)
     if leads is not None:
         runners[Agent.LEAD_CONVERSION] = make_lead_conversion(llm, leads)
     runners[Agent.SOLUTION_ARCHITECT] = make_solution_architect(llm)

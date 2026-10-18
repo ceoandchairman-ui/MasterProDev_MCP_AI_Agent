@@ -14,6 +14,7 @@ from mpd_assistant.graph.service import ChatService
 from mpd_assistant.identity.normalize import InvalidIdentifier
 from mpd_assistant.identity.otp import OtpError
 from mpd_assistant.identity.service import IdentityService
+from mpd_assistant.integrations.google_oauth import GoogleOAuth, NotConfigured, OAuthError
 from mpd_assistant.observability.metrics import REGISTRY
 from mpd_assistant.sessions.service import SessionService
 
@@ -50,6 +51,10 @@ class StartIn(BaseModel):
     phone: str = Field(max_length=32)
 
 
+class StatusIn(BaseModel):
+    session_id: str = Field(max_length=64)
+
+
 class VerifyIn(BaseModel):
     session_id: str
     email_code: str = Field(max_length=12)
@@ -63,6 +68,7 @@ class Services:
     identity: IdentityService
     metrics_token: str | None = None
     gateway: ChannelGateway | None = None
+    google: GoogleOAuth | None = None
     twilio_auth_token: str | None = None
     public_url: str | None = None  # externally visible base URL; Twilio signs the exact URL it called
 
@@ -102,6 +108,44 @@ def create_app(services: Services) -> FastAPI:
             session = services.sessions.create()
         result = await services.chat.chat(session.thread_id, body.message, verified=session.verified, user_id=session.user_id)
         return ChatOut(reply=result.reply, session_id=session.id, escalated=result.escalated, reference=result.reference)
+
+    def _verified_session(session_id: str):
+        session = services.sessions.resume(session_id) if session_id else None
+        if session is None or not session.verified or not session.user_id:
+            raise HTTPException(status_code=403, detail="Verify your email and phone first")
+        return session
+
+    def _google():
+        if services.google is None or not services.google.configured:
+            raise HTTPException(status_code=503, detail="Google integration is not configured")
+        return services.google
+
+    @app.get("/v2/integrations/google/status")
+    async def google_status(session_id: str):
+        session = _verified_session(session_id)
+        return {"connected": bool(services.google and services.google.is_connected(session.user_id))}
+
+    @app.get("/v2/integrations/google/start")
+    async def google_start(session_id: str):
+        session = _verified_session(session_id)
+        try:
+            return {"url": _google().authorize_url(session.user_id)}
+        except NotConfigured as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/v2/integrations/google/callback")
+    async def google_callback(state: str = "", code: str = ""):
+        try:
+            await _google().complete(state, code)
+        except (OAuthError, NotConfigured):
+            raise HTTPException(status_code=400, detail="Google connection failed; please try again") from None
+        return {"status": "connected"}
+
+    @app.post("/v2/integrations/google/disconnect")
+    async def google_disconnect(body: StatusIn):
+        session = _verified_session(body.session_id)
+        removed = _google().disconnect(session.user_id)
+        return {"status": "disconnected" if removed else "not_connected"}
 
     @app.post("/v2/identity/start", status_code=202)
     async def identity_start(body: StartIn):

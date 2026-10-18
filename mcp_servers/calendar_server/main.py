@@ -21,6 +21,7 @@ from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
 
 from mcp_servers.calendar_server.config import calendar_settings
+from services._common.mcp_common.user_token import current_user_token
 
 
 class CalendarMCPServer(BaseMCPServer):
@@ -238,6 +239,12 @@ class CalendarMCPServer(BaseMCPServer):
 
     async def _get_calendar_service(self):
         """Return an authenticated Google Calendar service instance"""
+        user_token = current_user_token()
+        if user_token:
+            # Per-request user credentials are never cached on the server object.
+            return await asyncio.to_thread(
+                build, "calendar", "v3", credentials=Credentials(token=user_token), cache_discovery=False
+            )
         if self.service is not None:
             return self.service
 

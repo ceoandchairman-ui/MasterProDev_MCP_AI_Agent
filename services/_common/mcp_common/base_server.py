@@ -4,10 +4,11 @@ import json
 import os
 from typing import Any, Dict, List
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .service_auth import check_startup_config, require_service_auth
+from .user_token import HEADER, reset_user_token, set_user_token
 
 
 def parse_origins(raw: str) -> List[str]:
@@ -49,8 +50,12 @@ class BaseMCPServer:
             return {"tools": self.get_available_tools()}
 
         @self.app.post("/call", dependencies=[Depends(require_service_auth)])
-        async def call_tool(tool_name: str, params: Dict[str, Any]):
-            return await self.execute_tool(tool_name, params)
+        async def call_tool(tool_name: str, params: Dict[str, Any], request: Request):
+            marker = set_user_token(request.headers.get(HEADER) or None)
+            try:
+                return await self.execute_tool(tool_name, params)
+            finally:
+                reset_user_token(marker)
 
     def get_available_tools(self) -> List[Dict[str, Any]]:
         return []

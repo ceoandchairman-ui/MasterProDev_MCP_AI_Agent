@@ -27,15 +27,20 @@ def _last_user(state: AgentState) -> str:
     return next((m["content"] for m in reversed(state.get("messages", [])) if m.get("role") == "user"), "")
 
 
-def make_comms(llm: LLM, executor: ToolExecutor, registry, on_booked=None):
+def make_comms(llm: LLM, executor: ToolExecutor, registry, on_booked=None, token_provider=None):
     allowed = [s.name for s in registry.for_agent(Agent.COMMS_SCHEDULING, Role.VERIFIED)]
 
     async def execute(steps, language: str, confirmed: frozenset, session_id: str, state: AgentState) -> Dict[str, Any]:
         done = []
         tainted = False
+        google_token = await token_provider(state.get("user_id")) if token_provider else None
+        if token_provider and not google_token:
+            return {"response": render("google_connect_needed", language), "pending_action": None}
         for step in steps:
             outcome = await executor.run(
-                step.tool, step.args, ToolContext(Agent.COMMS_SCHEDULING, Role.VERIFIED, confirmed, untrusted_content_in_context=tainted, session_id=session_id)
+                step.tool,
+                step.args,
+                ToolContext(Agent.COMMS_SCHEDULING, Role.VERIFIED, confirmed, untrusted_content_in_context=tainted, session_id=session_id, google_access_token=google_token),
             )
             tainted = tainted or outcome.untrusted
             if outcome.status == "needs_confirmation":

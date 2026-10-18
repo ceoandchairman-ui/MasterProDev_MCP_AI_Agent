@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from mpd_assistant.integrations.context import current_token, reset_token, set_token
 from mpd_assistant.observability.metrics import TOOL_CALLS, TOOL_LATENCY
 from mpd_assistant.routing.intents import Agent
 from mpd_assistant.tools.registry import Role, ToolRegistry
@@ -30,6 +31,7 @@ class ToolContext:
     confirmed_tools: frozenset = frozenset()  # tools the user explicitly confirmed this turn
     untrusted_content_in_context: bool = False  # email bodies, uploads, retrieved text
     session_id: str = ""
+    google_access_token: Optional[str] = None  # per-user, sent as a header to Google-backed servers only
 
 
 def _truncate(output: Dict[str, Any]) -> Dict[str, Any]:
@@ -74,7 +76,11 @@ class ToolExecutor:
         started = time.perf_counter()
         try:
             real_args = _map_strings(args, lambda t: self._rehydrate(ctx.session_id, t)) if self._rehydrate else args
-            output = _truncate(await self._backend(tool, real_args))
+            marker = set_token(ctx.google_access_token)
+            try:
+                output = _truncate(await self._backend(tool, real_args))
+            finally:
+                reset_token(marker)
             if self._pseudonymize:
                 output = _map_strings(output, lambda t: self._pseudonymize(ctx.session_id, t))
             status = "ok"
@@ -99,6 +105,9 @@ def http_backend(routes: Dict[str, tuple[str, str]], service_key: Optional[str],
             raise LookupError("no server for tool")
         base, server_tool = route
         headers = {"Authorization": f"Bearer {service_key}"} if service_key else {}
+        user_token = current_token()
+        if user_token:
+            headers["X-Google-Access-Token"] = user_token
         resp = await client.post(f"{base.rstrip('/')}/call", params={"tool_name": server_tool}, json=args, headers=headers, timeout=15.0)
         resp.raise_for_status()
         return resp.json()

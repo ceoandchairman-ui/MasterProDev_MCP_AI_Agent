@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     LLM_MODEL_CHEAP: Optional[str] = None
     LLM_MODEL_REASONING: Optional[str] = None
     CATALOG_PATH: Optional[str] = None
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_OAUTH_REDIRECT_URI: Optional[str] = None
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
     EMBEDDING_BASE_URL: Optional[str] = None
     EMBEDDING_API_KEY: Optional[str] = None

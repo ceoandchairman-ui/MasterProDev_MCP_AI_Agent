@@ -23,6 +23,7 @@ from mpd_assistant.identity.otp import OtpService
 from mpd_assistant.identity.senders import ConsoleSender, UnconfiguredSender
 from mpd_assistant.identity.service import IdentityService, MemoryUserRepository
 from mpd_assistant.identity.sql import SqlUserRepository
+from mpd_assistant.integrations.google_oauth import GoogleOAuth
 from mpd_assistant.messaging.confirmations import ConfirmationService
 from mpd_assistant.messaging.models import Channel
 from mpd_assistant.messaging.providers import SendGridProvider, TwilioProvider
@@ -151,9 +152,13 @@ def build_services() -> Services:
         embedder = OpenAICompatibleEmbedder(settings.EMBEDDING_BASE_URL or settings.LLM_BASE_URL, embedding_key, settings.EMBEDDING_MODEL)
         retriever = PgRetriever(engine, tenant, embedder)
     catalog = load_catalog(settings.CATALOG_PATH) if settings.CATALOG_PATH else None
+    google = None
+    if engine is not None:
+        google = GoogleOAuth(engine, kv, cipher, settings.GOOGLE_CLIENT_ID, settings.GOOGLE_CLIENT_SECRET, settings.GOOGLE_OAUTH_REDIRECT_URI)
+    token_provider = google.access_token if google and google.configured else None
     runners = build_runners(llm, retriever, executor, registry, leads=leads, catalog=catalog,
                             on_booked=ConfirmationService(notifications, users, cipher).booking_confirmed,
-                            retrieval_min_score=settings.RETRIEVAL_MIN_SCORE)
+                            retrieval_min_score=settings.RETRIEVAL_MIN_SCORE, google_token_provider=token_provider)
     graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod))
     chat = ChatService(graph, vault)
     sessions = SessionService(session_repo)
@@ -166,6 +171,7 @@ def build_services() -> Services:
         gateway=gateway,
         twilio_auth_token=settings.TWILIO_AUTH_TOKEN,
         public_url=settings.PUBLIC_DOMAIN,
+        google=google,
     )
 
 
