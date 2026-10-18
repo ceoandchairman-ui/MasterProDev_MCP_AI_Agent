@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable, Dict, Mapping, Optional
 
 from langgraph.graph import END, START, StateGraph
 
+from mpd_assistant.agents.common import is_affirmative, is_negative
 from mpd_assistant.evaluation.online.rules import Verdict, evaluate_response
 from mpd_assistant.graph.state import AgentState
 from mpd_assistant.responses.engine import TemplateNotFound, render
@@ -29,6 +30,11 @@ def _last_user_text(state: AgentState) -> str:
 
 
 async def supervisor(state: AgentState) -> Dict[str, Any]:
+    text = _last_user_text(state)
+    pending = state.get("pending_action")
+    if pending and state.get("verified") and (is_affirmative(text) or is_negative(text)):
+        # A bare yes/no answers the agent that asked, not a fresh intent.
+        return {"mode": Mode.REASONED.value, "requires_identity": False, "steps": state.get("steps", 0) + 1, "response": None}
     decision = route(_last_user_text(state), verified=state.get("verified", False), language=state.get("language"))
     return {
         "intent": decision.intent.value,
@@ -38,6 +44,7 @@ async def supervisor(state: AgentState) -> Dict[str, Any]:
         "requires_identity": decision.requires_identity,
         "steps": state.get("steps", 0) + 1,
         "response": None,
+        "pending_action": None,
     }
 
 

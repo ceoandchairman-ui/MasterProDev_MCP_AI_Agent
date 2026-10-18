@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     METRICS_TOKEN: Optional[str] = None
 
     ACTIVE_LLM_PROVIDER: str = "huggingface"
+    HUGGINGFACE_API_KEY: Optional[str] = None
+    HUGGINGFACE_MODEL: Optional[str] = None
+    LLM_BASE_URL: str = "https://router.huggingface.co/v1"
+    LLM_MODEL_CHEAP: Optional[str] = None
+    LLM_MODEL_REASONING: Optional[str] = None
+    CALENDAR_SERVER_URL: Optional[str] = None
+    GMAIL_SERVER_URL: Optional[str] = None
     USE_NEW_PIPELINE: bool = False
 
     @property

@@ -21,5 +21,6 @@ class AgentState(TypedDict, total=False):
     steps: int
     escalated: bool
     reference: Optional[str]
+    pending_action: Optional[Dict[str, Any]]
     eval_verdict: Optional[str]
     eval_reasons: List[str]
