@@ -79,3 +79,4 @@ check_untyped_defs = false
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "--basetemp=.pytest_tmp"

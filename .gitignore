@@ -51,3 +51,4 @@ logs/
 
 # Docker
 docker-compose.override.yml
+.pytest_tmp/
