@@ -6,7 +6,7 @@ Optional collaborators (cache, memory, escalations, summaries) are wired in by t
 
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, List, Optional
+from typing import Any, List, Optional
 
 from mpd_assistant.cache.keys import build_key, may_cache
 from mpd_assistant.cache.store import DEFAULT_TTL_SECONDS, ResponseCache
@@ -46,13 +46,13 @@ class ChatService:
         *,
         cache: Optional[ResponseCache] = None,
         cache_settings: Optional[CacheSettings] = None,
-        extras: Optional[Callable[..., Any]] = None,
+        memory: Any = None,
     ):
         self._graph = graph
         self._vault = vault
         self._cache = cache
         self._cache_settings = cache_settings or CacheSettings()
-        self._extras = extras  # reserved for collaborators wired in later steps
+        self._memory = memory
 
     def _cache_key(self, decision, safe_text: str, user_id: Optional[str]) -> Optional[str]:
         if self._cache is None or decision.requires_identity or decision.mode is Mode.ESCALATE:
@@ -105,8 +105,15 @@ class ChatService:
                     cache_hit=True,
                 )
 
+        memory_context = await self._memory.before(user_id, safe_text) if self._memory else ""
         out = await self._graph.ainvoke(
-            {"messages": [{"role": "user", "content": safe_text}], "session_id": session_id, "verified": verified, "user_id": user_id},
+            {
+                "messages": [{"role": "user", "content": safe_text}],
+                "session_id": session_id,
+                "verified": verified,
+                "user_id": user_id,
+                "memory_context": memory_context,
+            },
             config={"configurable": {"thread_id": session_id}},
         )
         graph_reply = out.get("response") or ""
@@ -115,6 +122,9 @@ class ChatService:
         if final.verdict is not Verdict.PASS:
             reply = render("temporary_error", out.get("language", "en"))
         reasons = list(out.get("eval_reasons", [])) + final.reasons
+
+        if self._memory:
+            await self._memory.after(user_id, safe_text, allow=final.verdict is Verdict.PASS and decision.mode is not Mode.TEMPLATED)
 
         if (
             key is not None

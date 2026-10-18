@@ -204,3 +204,21 @@ class OAuthToken(Base):
     refresh_enc: Mapped[str] = mapped_column(Text)
     scopes: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class MemoryRow(Base):
+    """Long-term memory item. Text is validated to contain no contact details or privacy tokens."""
+
+    __tablename__ = "memories"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    text: Mapped[str] = mapped_column(Text)
+    importance: Mapped[float] = mapped_column(Float, default=0.5)
+    confidence: Mapped[float] = mapped_column(Float, default=0.8)
+    slot: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    uses: Mapped[int] = mapped_column(Integer, default=0)
+    superseded_by: Mapped[str | None] = mapped_column(String(32), nullable=True)

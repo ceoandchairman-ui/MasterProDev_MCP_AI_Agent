@@ -55,6 +55,7 @@ class WriteResult:
     memory: Optional[Memory] = None
 
 
+_TOKEN_RE = re.compile(r"<[A-Z_]+_\d+>")
 UNTRUSTED_SOURCES = {"tool_result", "upload", "email"}
 
 
@@ -71,6 +72,8 @@ def validate(candidate: Candidate, consent: bool) -> Optional[str]:
         return "invalid_length"
     if candidate.confidence < MIN_CONFIDENCE:
         return "low_confidence"
+    if _TOKEN_RE.search(text):
+        return "contains_privacy_token"  # tokens stop resolving when the session vault expires
     if detect(text):
         return "contains_personal_or_secret_data"  # contact details live in the user record, not in memory
     if re.search(r"(?i)\b(ignore (all|previous)|system prompt|you must always)\b", text):
@@ -91,14 +94,37 @@ class Similarity(Protocol):
     def __call__(self, query: str, text: str) -> float: ...
 
 
-class MemoryStore:
-    def __init__(self, clock: Callable[[], float] = time.time, similarity: Similarity = jaccard):
+class MemoryRepository(Protocol):
+    def load_user(self, user_id: str) -> List[Memory]: ...
+    def save(self, memory: Memory) -> None: ...
+    def delete_user(self, user_id: str) -> int: ...
+
+
+class InMemoryRepository:
+    def __init__(self):
         self._items: Dict[str, Memory] = {}
+
+    def load_user(self, user_id: str) -> List[Memory]:
+        return [m for m in self._items.values() if m.user_id == user_id]
+
+    def save(self, memory: Memory) -> None:
+        self._items[memory.id] = memory
+
+    def delete_user(self, user_id: str) -> int:
+        ids = [i for i, m in self._items.items() if m.user_id == user_id]
+        for i in ids:
+            del self._items[i]
+        return len(ids)
+
+
+class MemoryStore:
+    def __init__(self, clock: Callable[[], float] = time.time, similarity: Similarity = jaccard, repo: Optional[MemoryRepository] = None):
+        self._repo: MemoryRepository = repo or InMemoryRepository()
         self._clock = clock
         self._similarity = similarity
 
     def _active(self, user_id: str) -> List[Memory]:
-        return [m for m in self._items.values() if m.user_id == user_id and m.valid_to is None]
+        return [m for m in self._repo.load_user(user_id) if m.valid_to is None]
 
     def write(self, user_id: str, candidate: Candidate, consent: bool, confirmed: bool = False) -> WriteResult:
         reason = validate(candidate, consent)
@@ -110,6 +136,7 @@ class MemoryStore:
         for existing in active:
             if existing.kind == candidate.kind and jaccard(existing.text, candidate.text) >= 0.8:
                 existing.importance = max(existing.importance, candidate.importance)
+                self._repo.save(existing)
                 return WriteResult("duplicate", memory=existing)
 
         conflicting = [m for m in active if candidate.slot and m.slot == candidate.slot]
@@ -117,9 +144,10 @@ class MemoryStore:
             return WriteResult("needs_confirmation", "conflicts_with_existing_memory", conflicting[0])
 
         memory = Memory(uuid.uuid4().hex, user_id, candidate.kind, candidate.text.strip(), candidate.importance, candidate.confidence, candidate.slot, now)
-        self._items[memory.id] = memory
+        self._repo.save(memory)
         for old in conflicting:
             old.valid_to, old.superseded_by = now, memory.id
+            self._repo.save(old)
         return WriteResult("superseded" if conflicting else "stored", memory=memory)
 
     def _recency(self, memory: Memory, now: float) -> float:
@@ -155,6 +183,7 @@ class MemoryStore:
             used += cost
         for m in chosen:
             m.last_used, m.uses = now, m.uses + 1
+            self._repo.save(m)
         return chosen
 
     def decay_and_forget(self, user_id: str) -> int:
@@ -165,17 +194,15 @@ class MemoryStore:
             reinforcement = 1 + math.log1p(m.uses)
             if self._recency(m, now) * (0.5 + m.importance) * reinforcement < FORGET_BELOW:
                 m.valid_to = now
+                self._repo.save(m)
                 forgotten += 1
         return forgotten
 
     def export(self, user_id: str) -> List[dict]:
-        return [m.__dict__.copy() for m in self._items.values() if m.user_id == user_id]
+        return [m.__dict__.copy() for m in self._repo.load_user(user_id)]
 
     def delete_all(self, user_id: str) -> int:
-        ids = [i for i, m in self._items.items() if m.user_id == user_id]
-        for i in ids:
-            del self._items[i]
-        return len(ids)
+        return self._repo.delete_user(user_id)
 
 
 __all__ = ["Candidate", "Memory", "MemoryStore", "WriteResult", "validate"]

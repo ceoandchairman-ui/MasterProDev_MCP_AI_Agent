@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field, ValidationError
 
-from mpd_assistant.agents.common import parse_json_object
+from mpd_assistant.agents.common import memory_note, parse_json_object
 from mpd_assistant.core.llm.client import LLM, LLMError
 from mpd_assistant.graph.state import AgentState
 from mpd_assistant.responses.engine import render
@@ -47,7 +47,7 @@ def _details(state: AgentState) -> str:
     slots = state.get("lead_slots") or {}
     user = next((m["content"] for m in reversed(state.get("messages", [])) if m.get("role") == "user"), "")
     known = "\n".join(f"{k}: {v}" for k, v in slots.items())
-    return f"{known}\nLatest message: {user}".strip()
+    return f"{memory_note(state)}{known}\nLatest message: {user}".strip()
 
 
 def make_solution_architect(llm: LLM, retries: int = 1):

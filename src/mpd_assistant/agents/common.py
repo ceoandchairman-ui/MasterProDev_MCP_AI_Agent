@@ -39,6 +39,12 @@ def parse_json_object(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def memory_note(state) -> str:
+    """Prompt block with what we remember about the user (empty without consent)."""
+    notes = (state.get("memory_context") or "").strip()
+    return f"Known about the user (from earlier conversations):\n{notes}\n\n" if notes else ""
+
+
 @dataclass(frozen=True)
 class PlanStep:
     tool: str

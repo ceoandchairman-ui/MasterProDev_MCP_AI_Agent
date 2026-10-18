@@ -45,6 +45,13 @@ class MemoryUserRepository:
     def find_by_id(self, user_id: str) -> Optional[VerifiedUser]:
         return next((u for u in self._by_email.values() if u.id == user_id), None)
 
+    def memory_consent(self, user_id: str) -> bool:
+        return user_id in getattr(self, '_consent', set())
+
+    def set_memory_consent(self, user_id: str, enabled: bool) -> None:
+        consent = self.__dict__.setdefault('_consent', set())
+        (consent.add if enabled else consent.discard)(user_id)
+
     def find_by_phone_index(self, index: str) -> Optional[VerifiedUser]:
         return next((u for u in self._by_email.values() if u.phone_index == index), None)
 

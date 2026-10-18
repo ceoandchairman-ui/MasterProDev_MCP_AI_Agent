@@ -32,6 +32,18 @@ class SqlUserRepository:
     def find_by_id(self, user_id: str) -> Optional[VerifiedUser]:
         return self._one(User.id == user_id)
 
+    def memory_consent(self, user_id: str) -> bool:
+        with DbSession(self._engine) as db:
+            row = db.get(User, user_id)
+            return bool(row and row.memory_consent)
+
+    def set_memory_consent(self, user_id: str, enabled: bool) -> None:
+        with DbSession(self._engine) as db:
+            row = db.get(User, user_id)
+            if row is not None:
+                row.memory_consent = enabled
+                db.commit()
+
     def save(self, user: VerifiedUser) -> None:
         with DbSession(self._engine) as db:
             row = db.get(User, user.id) or User(id=user.id, tenant_id=self._tenant)

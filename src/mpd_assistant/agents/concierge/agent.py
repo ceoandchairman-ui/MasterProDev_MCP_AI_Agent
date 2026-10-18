@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List, Protocol
 
+from mpd_assistant.agents.common import memory_note
 from mpd_assistant.core.llm.client import LLM, LLMError
 from mpd_assistant.graph.state import AgentState
 from mpd_assistant.responses.engine import render
@@ -38,7 +39,7 @@ def make_concierge(llm: LLM, retriever: Retriever, min_score: float = 0.2):
             result = await llm.complete(
                 [
                     {"role": "system", "content": SYSTEM.format(language=language)},
-                    {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
+                    {"role": "user", "content": f"{memory_note(state)}Context:\n{context}\n\nQuestion: {question}"},
                 ],
                 tier="cheap",
                 max_tokens=400,

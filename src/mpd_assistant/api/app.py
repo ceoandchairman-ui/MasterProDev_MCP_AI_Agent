@@ -27,6 +27,9 @@ from mpd_assistant.identity.senders import ConsoleSender, UnconfiguredSender
 from mpd_assistant.identity.service import IdentityService, MemoryUserRepository
 from mpd_assistant.identity.sql import SqlUserRepository
 from mpd_assistant.integrations.google_oauth import GoogleOAuth
+from mpd_assistant.memory.long_term.sql import SqlMemoryRepository
+from mpd_assistant.memory.long_term.store import MemoryStore
+from mpd_assistant.memory.pipeline import MemoryWiring
 from mpd_assistant.messaging.confirmations import ConfirmationService
 from mpd_assistant.messaging.models import Channel
 from mpd_assistant.messaging.providers import SendGridProvider, TwilioProvider
@@ -178,11 +181,13 @@ def build_services() -> Services:
                             on_booked=ConfirmationService(notifications, users, cipher).booking_confirmed,
                             retrieval_min_score=settings.RETRIEVAL_MIN_SCORE, google_token_provider=token_provider)
     graph = build_graph(runners, checkpointer=_checkpointer(settings.REDIS_URL, prod))
+    memory_store = MemoryStore(repo=SqlMemoryRepository(engine) if engine is not None else None)
     chat = ChatService(
         graph,
         vault,
         cache=_response_cache(settings, prod),
         cache_settings=CacheSettings(tenant=tenant or "default", prompt_version=settings.PROMPT_VERSION, corpus_version=settings.CORPUS_VERSION),
+        memory=MemoryWiring(memory_store, llm, users.memory_consent),
     )
     sessions = SessionService(session_repo)
     gateway = ChannelGateway(chat, sessions, users, notifications, kv, settings.BLIND_INDEX_KEY)  # type: ignore[arg-type]
@@ -197,6 +202,8 @@ def build_services() -> Services:
         google=google,
         kv=kv,
         turns=SqlTurnRecorder(engine) if engine is not None else None,
+        users=users,
+        memory_store=memory_store,
     )
 
 

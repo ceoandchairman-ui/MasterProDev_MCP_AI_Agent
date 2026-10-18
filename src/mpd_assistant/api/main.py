@@ -58,6 +58,11 @@ class StartIn(BaseModel):
     phone: str = Field(max_length=32)
 
 
+class ConsentIn(BaseModel):
+    session_id: str = Field(max_length=64)
+    enabled: bool
+
+
 class StatusIn(BaseModel):
     session_id: str = Field(max_length=64)
 
@@ -78,6 +83,8 @@ class Services:
     google: GoogleOAuth | None = None
     kv: KeyValueStore | None = None
     turns: object | None = None
+    users: object | None = None
+    memory_store: object | None = None
     twilio_auth_token: str | None = None
     public_url: str | None = None  # externally visible base URL; Twilio signs the exact URL it called
 
@@ -161,6 +168,28 @@ def create_app(services: Services) -> FastAPI:
         session = _verified_session(body.session_id)
         removed = _google().disconnect(session.user_id)
         return {"status": "disconnected" if removed else "not_connected"}
+
+    @app.post("/v2/memory/consent")
+    async def memory_consent(body: ConsentIn):
+        session = _verified_session(body.session_id)
+        if services.users is None:
+            raise HTTPException(status_code=503, detail="Memory is not available")
+        services.users.set_memory_consent(session.user_id, body.enabled)
+        if not body.enabled and services.memory_store is not None:
+            services.memory_store.delete_all(session.user_id)  # withdrawing consent also forgets what was stored
+        return {"memory": "on" if body.enabled else "off"}
+
+    @app.get("/v2/memory")
+    async def memory_list(session_id: str):
+        session = _verified_session(session_id)
+        items = services.memory_store.export(session.user_id) if services.memory_store is not None else []
+        return {"memories": [{"id": m["id"], "kind": m["kind"], "text": m["text"]} for m in items if m.get("valid_to") is None]}
+
+    @app.post("/v2/memory/forget")
+    async def memory_forget(body: StatusIn):
+        session = _verified_session(body.session_id)
+        removed = services.memory_store.delete_all(session.user_id) if services.memory_store is not None else 0
+        return {"forgotten": removed}
 
     @app.post("/v2/identity/start", status_code=202)
     async def identity_start(body: StartIn, request: Request):
