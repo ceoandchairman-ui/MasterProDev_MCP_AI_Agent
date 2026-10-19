@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     GLOBAL_DAILY_TOKENS: int = 2000000
     ESCALATION_EMAIL: Optional[str] = None
     CACHE_ENABLED: bool = True
+    SEMANTIC_CACHE_ENABLED: bool = True
+    SEMANTIC_CACHE_THRESHOLD: float = 0.92
     PROMPT_VERSION: str = "v1"
     CORPUS_VERSION: str = "1"
     SMS_ALLOWED_COUNTRIES: str = "CA,US"
@@ -58,6 +60,8 @@ class Settings(BaseSettings):
     SENDGRID_API_KEY: Optional[str] = None
     EMAIL_FROM: Optional[str] = None
     MESSAGES_DAILY_CAP: int = 500
+    CONVERSATION_RETENTION_DAYS: int = 365
+    GUEST_RETENTION_DAYS: int = 30
     CALENDAR_SERVER_URL: Optional[str] = None
     GMAIL_SERVER_URL: Optional[str] = None
     USE_NEW_PIPELINE: bool = False

@@ -98,11 +98,15 @@ class MemoryRepository(Protocol):
     def load_user(self, user_id: str) -> List[Memory]: ...
     def save(self, memory: Memory) -> None: ...
     def delete_user(self, user_id: str) -> int: ...
+    def user_ids(self) -> List[str]: ...
 
 
 class InMemoryRepository:
     def __init__(self):
         self._items: Dict[str, Memory] = {}
+
+    def user_ids(self) -> List[str]:
+        return sorted({m.user_id for m in self._items.values()})
 
     def load_user(self, user_id: str) -> List[Memory]:
         return [m for m in self._items.values() if m.user_id == user_id]
@@ -197,6 +201,23 @@ class MemoryStore:
                 self._repo.save(m)
                 forgotten += 1
         return forgotten
+
+    def user_ids(self) -> List[str]:
+        return self._repo.user_ids()
+
+    def active(self, user_id: str) -> List[Memory]:
+        return self._active(user_id)
+
+    def archive(self, user_id: str, memory_ids: List[str], superseded_by: Optional[str] = None) -> int:
+        """Retire memories without deleting them (they stay in exports until the user deletes them)."""
+        now = self._clock()
+        count = 0
+        for m in self._active(user_id):
+            if m.id in memory_ids:
+                m.valid_to, m.superseded_by = now, superseded_by
+                self._repo.save(m)
+                count += 1
+        return count
 
     def export(self, user_id: str) -> List[dict]:
         return [m.__dict__.copy() for m in self._repo.load_user(user_id)]

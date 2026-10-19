@@ -46,6 +46,10 @@ class SqlMemoryRepository:
             db.add(row)
             db.commit()
 
+    def user_ids(self) -> List[str]:
+        with DbSession(self._engine) as db:
+            return list(db.scalars(select(MemoryRow.user_id).distinct()))
+
     def delete_user(self, user_id: str) -> int:
         with DbSession(self._engine) as db:
             count = db.execute(delete(MemoryRow).where(MemoryRow.user_id == user_id)).rowcount or 0

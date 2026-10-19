@@ -75,6 +75,10 @@ class ResponseCache:
         self._layer = layer
         self._inflight: Dict[str, asyncio.Future] = {}
 
+    @property
+    def backend(self) -> CacheBackend:
+        return self._backend
+
     async def get(self, key: str) -> Optional[str]:
         value = await self._backend.get(key)
         CACHE_EVENTS.labels(self._layer, "hit" if value is not None else "miss").inc()

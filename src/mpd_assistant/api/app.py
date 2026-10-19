@@ -12,6 +12,7 @@ from mpd_assistant.business.catalog import load_catalog
 from mpd_assistant.business.escalations import EscalationFlow, EscalationService, InMemoryEscalations
 from mpd_assistant.business.escalations_sql import SqlEscalationRepository
 from mpd_assistant.business.leads_sql import SqlLeadRepository
+from mpd_assistant.cache.semantic import SemanticCache
 from mpd_assistant.cache.store import MemoryBackend, RedisBackend, ResponseCache
 from mpd_assistant.channels.gateway import ChannelGateway
 from mpd_assistant.core.config import get_settings
@@ -184,10 +185,12 @@ def build_services() -> Services:
         )
 
     retriever = None
+    embedder = None
     min_score = settings.RETRIEVAL_MIN_SCORE
     embedding_key = settings.EMBEDDING_API_KEY or settings.HUGGINGFACE_API_KEY
-    if engine is not None and embedding_key:
+    if embedding_key:
         embedder = OpenAICompatibleEmbedder(settings.EMBEDDING_BASE_URL or settings.LLM_BASE_URL, embedding_key, settings.EMBEDDING_MODEL)
+    if engine is not None and embedder is not None:
         reranker = HostedReranker(settings.RERANK_BASE_URL, settings.RERANK_API_KEY, settings.RERANK_MODEL) if settings.RERANK_BASE_URL and settings.RERANK_API_KEY else None
         retriever = PgRetriever(engine, tenant, embedder, reranker=reranker)
         min_score = settings.RERANK_MIN_SCORE if reranker else settings.RETRIEVAL_MIN_SCORE
@@ -224,10 +227,13 @@ def build_services() -> Services:
         notify_change=tell_old_contact,
     )
     dsr = DataSubjectService(engine, kv, cipher, settings.BLIND_INDEX_KEY, memory_store) if engine is not None else None  # type: ignore[arg-type]
+    response_cache = _response_cache(settings, prod)
+    semantic = SemanticCache(response_cache.backend, embedder, settings.SEMANTIC_CACHE_THRESHOLD) if response_cache and embedder and settings.SEMANTIC_CACHE_ENABLED else None
     chat = ChatService(
         graph,
         vault,
-        cache=_response_cache(settings, prod),
+        cache=response_cache,
+        semantic=semantic,
         cache_settings=CacheSettings(tenant=tenant or "default", prompt_version=settings.PROMPT_VERSION, corpus_version=settings.CORPUS_VERSION),
         memory=MemoryWiring(memory_store, llm, users.memory_consent),
         escalations=escalation_flow,

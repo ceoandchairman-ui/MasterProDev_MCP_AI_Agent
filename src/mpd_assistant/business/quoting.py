@@ -48,6 +48,12 @@ def _cents(value: Decimal) -> int:
     return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def quote_hash(lines: List[List[object]], total_cents: int, currency: str) -> str:
+    """lines: [[sku, quantity-as-string, unit_price_cents, line_total_cents], ...]. Stored quotes are re-hashed with this."""
+    payload = json.dumps({"lines": lines, "total": total_cents, "currency": currency}, sort_keys=True)
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
 def build_quote(
     catalog: Dict[str, CatalogItem],
     selections: List[Dict[str, object]],
@@ -77,11 +83,8 @@ def build_quote(
     tax = _cents(Decimal(subtotal) * tax_rate)
     total = subtotal + tax
     expires = (now or datetime.now(UTC)) + timedelta(days=QUOTE_VALIDITY_DAYS)
-    payload = json.dumps(
-        {"lines": [[x.sku, str(x.quantity), x.unit_price_cents, x.total_cents] for x in lines], "total": total, "currency": currency},
-        sort_keys=True,
-    )
-    return Quote(lines, subtotal, tax, total, currency, total >= APPROVAL_THRESHOLD_CENTS, expires, hashlib.sha256(payload.encode()).hexdigest())
+    digest = quote_hash([[x.sku, str(x.quantity), x.unit_price_cents, x.total_cents] for x in lines], total, currency)
+    return Quote(lines, subtotal, tax, total, currency, total >= APPROVAL_THRESHOLD_CENTS, expires, digest)
 
 
 def verify_quote_for_payment(quote: Quote, presented_hash: str, now: datetime | None = None) -> None:

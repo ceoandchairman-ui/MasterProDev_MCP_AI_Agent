@@ -13,6 +13,7 @@ from mpd_assistant.evaluation.online.rules import Verdict, evaluate_response
 from mpd_assistant.graph.state import AgentState
 from mpd_assistant.responses.engine import TemplateNotFound, render
 from mpd_assistant.routing.intents import Agent, Intent, Mode
+from mpd_assistant.routing.decompose import split_tasks
 from mpd_assistant.routing.router import route
 
 Runner = Callable[[AgentState], Awaitable[Dict[str, Any]]]
@@ -30,13 +31,23 @@ def _last_user_text(state: AgentState) -> str:
 
 
 async def supervisor(state: AgentState) -> Dict[str, Any]:
-    text = _last_user_text(state)
+    text = state.get("current_task") or _last_user_text(state)
     pending = state.get("pending_action")
-    if pending and state.get("verified") and (is_affirmative(text) or is_negative(text)):
+    if not state.get("current_task") and pending and state.get("verified") and (is_affirmative(text) or is_negative(text)):
         # A bare yes/no answers the agent that asked, not a fresh intent.
         return {"evidence": None, "mode": Mode.REASONED.value, "requires_identity": False, "steps": state.get("steps", 0) + 1, "response": None}
-    decision = route(_last_user_text(state), verified=state.get("verified", False), language=state.get("language"))
+
+    split: Dict[str, Any] = {}
+    if not state.get("current_task"):
+        parts = split_tasks(text, verified=state.get("verified", False), language=state.get("language"))
+        if len(parts) > 1:
+            # Each part is handled in turn by the agent that owns it; the replies are joined in persist.
+            text = parts[0]
+            split = {"current_task": parts[0], "task_queue": parts[1:], "partials": [], "messages": [{"role": "user", "content": parts[0], "synthetic": True}]}
+
+    decision = route(text, verified=state.get("verified", False), language=state.get("language"))
     return {
+        **split,
         "intent": decision.intent.value,
         "agent": decision.agent.value,
         "mode": decision.mode.value,
@@ -121,9 +132,48 @@ def make_evaluate(escalate, judge=None):
 evaluate = make_evaluate(escalation_node)
 
 
+async def advance(state: AgentState) -> Dict[str, Any]:
+    """Finish one sub-task and start the next one through the supervisor."""
+    queue = list(state.get("task_queue") or [])
+    partials = list(state.get("partials") or [])
+    response = state.get("response")
+    if response and response not in partials:
+        partials.append(response)
+    following = queue.pop(0)
+    return {
+        "partials": partials,
+        "task_queue": queue,
+        "current_task": following,
+        "response": None,
+        "evidence": None,
+        "messages": [{"role": "user", "content": following, "synthetic": True}],
+    }
+
+
+def _after_evaluate(state: AgentState) -> str:
+    """Carry on with queued sub-tasks unless a person was asked for or the agent is waiting on the user's answer."""
+    if state.get("task_queue") and not state.get("escalated") and not state.get("pending_action"):
+        return "advance"
+    return "persist"
+
+
 async def persist(state: AgentState) -> Dict[str, Any]:
-    reply = state.get("response") or render("temporary_error", state.get("language", "en"))
-    return {"response": reply, "messages": [{"role": "assistant", "content": reply}]}
+    language = state.get("language", "en")
+    reply = state.get("response") or render("temporary_error", language)
+    parts = list(state.get("partials") or [])
+    if reply not in parts:
+        parts.append(reply)
+    remaining = state.get("task_queue") or []
+    if remaining:
+        parts.append(render("tasks_remaining", language, {"tasks": "; ".join(remaining)}))
+    reply = "\n\n".join(parts)
+    return {
+        "response": reply,
+        "messages": [{"role": "assistant", "content": reply}],
+        "task_queue": [],
+        "partials": [],
+        "current_task": None,
+    }
 
 
 def _agent_node(runner: Optional[Runner], language_key: str = "no_answer") -> Runner:
@@ -175,7 +225,9 @@ def build_graph(
     graph.add_node("evaluate", make_evaluate(escalate_node, judge))
     for name in ("identity_gate", "template", "escalate", *[n for n in agent_targets if n != "agent_escalation"]):
         graph.add_edge(name, "evaluate")
-    graph.add_edge("evaluate", "persist")
+    graph.add_node("advance", advance)
+    graph.add_conditional_edges("evaluate", _after_evaluate, {"advance": "advance", "persist": "persist"})
+    graph.add_edge("advance", "supervisor")
     graph.add_edge("persist", END)
 
     return graph.compile(checkpointer=checkpointer)

@@ -4,6 +4,7 @@ The graph, its checkpoints and every model call only ever see tokens such as <EM
 Optional collaborators (cache, memory, escalations, summaries) are wired in by the application factory.
 """
 
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, List, Optional
@@ -13,10 +14,14 @@ from mpd_assistant.cache.store import DEFAULT_TTL_SECONDS, ResponseCache
 from mpd_assistant.core.llm.budget import reset_scope, set_scope
 from mpd_assistant.evaluation.online.rules import Verdict, evaluate_response
 from mpd_assistant.observability.metrics import record_turn
+from mpd_assistant.privacy.detector import detect
 from mpd_assistant.privacy.vault import PiiVault
 from mpd_assistant.responses.engine import render
-from mpd_assistant.routing.intents import Mode
+from mpd_assistant.routing.intents import Intent, Mode
 from mpd_assistant.routing.router import route
+
+_TOKEN_RE = re.compile(r"<[A-Z_]+_\d+>")
+SEMANTIC_INTENTS = frozenset({Intent.FAQ, Intent.KNOWLEDGE_QUESTION})
 
 
 @dataclass
@@ -51,7 +56,9 @@ class ChatService:
         escalations: Any = None,
         summarizer: Any = None,
         budget: Any = None,
+        semantic: Any = None,
     ):
+        self._semantic = semantic
         self._graph = graph
         self._vault = vault
         self._cache = cache
@@ -76,6 +83,15 @@ class ChatService:
             prompt_version=s.prompt_version,
             corpus_version=s.corpus_version,
         )
+
+    def _semantic_scope(self, decision, safe_text: str) -> Optional[str]:
+        """Semantic reuse is limited to shareable knowledge questions with no personal data in them."""
+        if self._semantic is None or decision.intent not in SEMANTIC_INTENTS or decision.requires_identity:
+            return None
+        if _TOKEN_RE.search(safe_text) or detect(safe_text):
+            return None
+        s = self._cache_settings
+        return self._semantic.scope(s.tenant, decision.language, decision.agent.value, s.prompt_version, s.corpus_version)
 
     async def chat(
         self,
@@ -141,6 +157,30 @@ class ChatService:
                     cache_hit=True,
                 )
 
+        semantic_scope = self._semantic_scope(decision, safe_text)
+        if semantic_scope is not None:
+            similar = await self._semantic.lookup(semantic_scope, safe_text)
+            if similar is not None:
+                record_turn(
+                    agent=decision.agent.value,
+                    mode=decision.mode.value,
+                    intent=decision.intent.value,
+                    seconds=time.perf_counter() - started,
+                    verdict="pass",
+                    escalated=False,
+                )
+                return ChatResult(
+                    similar,
+                    False,
+                    None,
+                    [],
+                    safe_user_text=safe_text,
+                    intent=decision.intent.value,
+                    agent=decision.agent.value,
+                    mode=decision.mode.value,
+                    cache_hit=True,
+                )
+
         memory_context = await self._memory.before(user_id, safe_text) if self._memory else ""
         marker = set_scope(session_id)  # every model call in this turn is charged to this conversation
         try:
@@ -150,6 +190,12 @@ class ChatService:
                     "session_id": session_id,
                     "verified": verified,
                     "user_id": user_id,
+                    "steps": 0,  # the checkpoint keeps state between turns; the step guard is per turn
+                    "escalated": False,
+                    "reference": None,
+                    "current_task": None,
+                    "task_queue": [],
+                    "partials": [],
                     "memory_context": memory_context,
                     "thread_summary": self._summarizer.context_for(session_id) if self._summarizer else "",
                     "session_row": session_row,
@@ -172,9 +218,8 @@ class ChatService:
         if self._memory:
             await self._memory.after(user_id, safe_text, allow=final.verdict is Verdict.PASS and decision.mode is not Mode.TEMPLATED)
 
-        if (
-            key is not None
-            and final.verdict is Verdict.PASS
+        cacheable = (
+            final.verdict is Verdict.PASS
             and out.get("eval_verdict") == "pass"
             and may_cache(
                 intent=decision.intent,
@@ -183,8 +228,11 @@ class ChatService:
                 evaluator_passed=True,
                 used_side_effect_tool=False,
             )
-        ):
+        )
+        if cacheable and key is not None:
             await self._cache.set(key, graph_reply, DEFAULT_TTL_SECONDS[decision.intent.value])
+        if cacheable and semantic_scope is not None:
+            await self._semantic.store(semantic_scope, safe_text, graph_reply, DEFAULT_TTL_SECONDS[decision.intent.value])
 
         record_turn(
             agent=out.get("agent", "unknown"),

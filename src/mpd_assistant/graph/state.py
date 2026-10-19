@@ -30,5 +30,8 @@ class AgentState(TypedDict, total=False):
     lead_stage: str
     scope: Optional[Dict[str, Any]]
     quote_hash: Optional[str]
+    current_task: Optional[str]
+    task_queue: List[str]
+    partials: List[str]
     eval_verdict: Optional[str]
     eval_reasons: List[str]
