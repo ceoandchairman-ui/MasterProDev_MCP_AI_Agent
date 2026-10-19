@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
 
+from mpd_assistant.observability.metrics import PII_DETECTIONS
 from mpd_assistant.privacy.detector import detect
 
 
@@ -39,7 +40,10 @@ def evaluate_response(
     if not response or not response.strip():
         return Evaluation(Verdict.REVISE, ["empty_response"])
 
-    if any(m.text not in allowed_pii for m in detect(response)):
+    leaked = [m for m in detect(response) if m.text not in allowed_pii]
+    if leaked:
+        for m in leaked:
+            PII_DETECTIONS.labels("B7_reply", m.type).inc()
         return Evaluation(Verdict.ESCALATE, ["pii_leak"])  # never auto-revise a leak into a reply
     if not allow_tokens and _PLACEHOLDER_RE.search(response):
         reasons.append("unresolved_pii_token")

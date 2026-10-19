@@ -104,10 +104,30 @@ None of it has run against live Postgres, Redis, a language model or any provide
   not constructed), memory consolidation and the background worker (`memory/consolidation.py`, `worker/`), the
   admin escalation inbox (`business/admin.py`, `/v2/admin/*`), the web widget (`web/widget/`), the quoting and
   company-data MCP services (`services/mcp_quoting`, `services/mcp_db`), per-IP edge rate limiting and CORS.
+- **Also written, not wired or tested:** episodic memory (`memory/episodic.py`), a reviewed reply-pattern library with
+  admin approval routes (`memory/procedural.py`, `/v2/admin/patterns`), memory tools for agents with guardrails
+  (`memory/tools.py`, registered in `tools/registry.py`), meaning-based and cross-language memory recall (embeddings
+  on memories; migration 0006), key rotation (`privacy/rotation.py`, `scripts/rotate_keys.py`,
+  `DATA_ENCRYPTION_KEYS_PREVIOUS`), a load-test tool (`scripts/load_test.py`) and runbooks (`docs/runbooks/`).
+- **Gap-closing batch, written and covered only by the existing suite (no new tests yet):** versioned prompt registry
+  with the five agent prompts moved to YAML (checked byte-identical to the originals, S2.7); the Solution Architect now
+  runs through the bounded plan-act-reflect subgraph with per-phase metrics (S6.0); tool-call idempotency, a shared
+  read-tool cache and tool-result offloading in the executor (S5.5, S16.4, S19.4); a retrieval cache and per-agent
+  document scopes (S7.4, S7.3); admin cache purge (S16.5); prompt-prefix stability metric (S19.9); audited staff
+  lookup, duplicate detection and merge of people (S21.7, S19.14); failure-mode handling: retries, circuit breakers,
+  best-effort state, degraded replies, configurable pool sizing (S14.13); new alert rules.
 - **Done and tested:** semantic cache (S16.3), task decomposition across agents (S6.8), the per-turn state reset
-  (a conversation used to be escalated to a person on its seventh message).
-- **Still missing:** custom domain and TLS (a Railway dashboard step, S14.12), episodic and procedural memory,
-  memory tools for agents, multilingual memory, memory evaluation, load tests, runbooks.
+  (a conversation used to be escalated to a person on its seventh message), memory evaluation with a golden set
+  (`python scripts/run_evals.py --memory`, S19.25), and the memory-recall noise fix it exposed (an unrelated question
+  could recall a memory because both contained "the"; recall now compares content words with a minimum match).
+- **Metric wired:** `mpd_pii_detections_total` was defined but never incremented; it now counts raw personal data
+  refused at the model boundary (`B2_llm_egress`) and found in replies (`B7_reply`).
+- **Railway topology (S14.2, S14.3, S14.10, S14.12):** `deploy/railway/topology.yaml` lists environments, public and private
+  services, volumes, resource caps and cost limits; `deploy/railway/edge.yaml` lists the domain, TLS and edge settings.
+  `scripts/check_railway_topology.py` checks them against the service tomls. The domains are placeholders, and the dashboard
+  still has to be set to match.
+- **Still missing:** knowledge-graph memory (optional, only if flat memory fails the evaluation), and everything under
+  "Never run live" above.
 - **Legacy MCP servers stay in `mcp_servers/`** because the root `Dockerfile`, `docker-entrypoint.sh`,
   `docker/docker-compose.yml` and `tests/integration/test_mcp_servers.py` still run them. They move to
   `services/` when the legacy container is retired. Time-zone handling and dead-code fixes (S5.3) are applied in place.

@@ -14,7 +14,14 @@ from mpd_assistant.routing.router import route
 THRESHOLDS = {
     "routing": {"accuracy": (">=", 0.90)},
     "retrieval": {"hit_rate": (">=", 0.80), "refusal_rate": (">=", 0.90)},
+    "memory": {
+        "recall_at_k": (">=", 0.80),
+        "no_noise_rate": (">=", 0.90),
+        "contradiction_rate": ("<=", 0.0),
+        "tokens_per_recall": ("<=", 150),  # NFR-09: memory stays within its token budget
+    },
 }
+PUBLISHED_METRICS = ("accuracy", "hit_rate", "refusal_rate", "recall_at_k", "mrr", "no_noise_rate", "stale_rate", "contradiction_rate", "tokens_per_recall")
 
 
 def _load(path: Path) -> List[dict]:
@@ -88,7 +95,7 @@ def failures_against_thresholds(report: Dict[str, Any]) -> List[str]:
 
 
 def publish(report: Dict[str, Any]) -> None:
-    for metric in ("accuracy", "hit_rate", "refusal_rate"):
+    for metric in PUBLISHED_METRICS:
         if metric in report:
             EVAL_SCORE.labels(report["suite"], metric).set(report[metric])
 

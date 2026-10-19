@@ -22,6 +22,14 @@ class FieldCipher:
     def encrypt(self, value: str) -> str:
         return self._fernets[0].encrypt(value.encode("utf-8")).decode()
 
+    def uses_primary_key(self, token: str) -> bool:
+        """True when the value is already encrypted under the current (first) key, so rotation can skip it."""
+        try:
+            self._fernets[0].decrypt(token.encode())
+            return True
+        except InvalidToken:
+            return False
+
     def decrypt(self, token: str) -> str:
         for f in self._fernets:
             try:

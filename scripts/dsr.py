@@ -23,7 +23,7 @@ def main() -> None:
     import redis
 
     kv = RedisKV(redis.Redis.from_url(s.REDIS_URL))
-    service = DataSubjectService(make_engine(s.DATABASE_URL), kv, FieldCipher(s.DATA_ENCRYPTION_KEY), s.BLIND_INDEX_KEY)
+    service = DataSubjectService(make_engine(s.DATABASE_URL), kv, FieldCipher(*s.cipher_keys()), s.BLIND_INDEX_KEY)
     user_id = sys.argv[2]
     if sys.argv[1] == "export":
         print(json.dumps(service.export(user_id), indent=2, default=str))

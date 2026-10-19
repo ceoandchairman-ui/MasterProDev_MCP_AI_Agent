@@ -1,0 +1,67 @@
+# Golden memory cases. Each case builds a small memory store, asks one question and states which memory ids must come
+# back ("expect": []  means nothing relevant exists and recall must stay empty). age_days sets how old a memory is.
+# needs_embeddings: true cases only run when an embedding endpoint is configured (run_evals.py --memory --embeddings).
+cases:
+  - id: m01-direct-fact
+    memories:
+      - {id: a, kind: fact, text: "The user runs a logistics company with fleet tracking needs"}
+      - {id: b, kind: preference, text: "Prefers short answers and a formal tone"}
+    query: "What do we know about their logistics company"
+    expect: [a]
+
+  - id: m02-preference
+    memories:
+      - {id: a, kind: preference, text: "Prefers short answers and a formal tone"}
+      - {id: b, kind: fact, text: "Budget is around fifty thousand dollars"}
+    query: "how should I phrase answers, short or long, formal tone"
+    expect: [a]
+
+  - id: m03-unrelated-stays-quiet
+    memories:
+      - {id: a, kind: fact, text: "The user runs a logistics company with fleet tracking needs"}
+    query: "what is the weather like in Paris"
+    expect: []
+
+  - id: m04-superseded-slot-uses-new-value
+    memories:
+      - {id: old, kind: fact, text: "Main contact language is English", slot: contact_language, age_days: 60}
+      - {id: new, kind: fact, text: "Main contact language is French", slot: contact_language}
+    query: "main contact language"
+    expect: [new]
+
+  - id: m05-old-episode-loses-to-recent-fact
+    memories:
+      - {id: ep, kind: episode, text: "Asked about mobile app development timelines", age_days: 300}
+      - {id: fact, kind: fact, text: "Needs a mobile app for field technicians"}
+    query: "mobile app for technicians"
+    expect: [fact]
+
+  - id: m06-budget-recall
+    memories:
+      - {id: a, kind: fact, text: "Budget is around fifty thousand dollars"}
+      - {id: b, kind: fact, text: "Team of twelve people in two offices"}
+    query: "what is their budget"
+    expect: [a]
+
+  - id: m07-diverse-results
+    memories:
+      - {id: a, kind: fact, text: "Uses AWS for hosting and wants cloud migration help"}
+      - {id: b, kind: fact, text: "Uses AWS hosting and wants help with cloud migration"}
+      - {id: c, kind: preference, text: "Wants weekly progress emails on cloud projects"}
+    query: "cloud migration help"
+    expect: [a]
+
+  - id: m08-cross-language
+    needs_embeddings: true
+    memories:
+      - {id: a, kind: fact, text: "The user needs a customer portal for their insurance business"}
+      - {id: b, kind: fact, text: "Prefers short answers and a formal tone"}
+    query: "Quel type de portail client veulent-ils pour leur assurance"
+    expect: [a]
+
+  - id: m09-cross-language-quiet
+    needs_embeddings: true
+    memories:
+      - {id: a, kind: fact, text: "The user needs a customer portal for their insurance business"}
+    query: "Quelle est la capitale de l'Australie"
+    expect: []

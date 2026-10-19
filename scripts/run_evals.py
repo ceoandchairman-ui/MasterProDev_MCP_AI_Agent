@@ -2,6 +2,7 @@
 
   python scripts/run_evals.py             routing only (no services needed)
   python scripts/run_evals.py --retrieval retrieval against the configured database and embedding endpoint
+  python scripts/run_evals.py --memory    memory recall (add --embeddings for the cross-language cases)
 
 Run the retrieval suite against the real embedder before changing RETRIEVAL_MIN_SCORE or RERANK_MIN_SCORE.
 """
@@ -19,6 +20,7 @@ from mpd_assistant.evaluation.offline.runner import (
     run_routing,
     write_report,
 )
+from mpd_assistant.evaluation.offline.memory_eval import run_memory
 from mpd_assistant.retrieval.embeddings import OpenAICompatibleEmbedder
 from mpd_assistant.retrieval.pg import PgRetriever
 
@@ -35,6 +37,15 @@ async def main() -> int:
         engine = make_engine(s.DATABASE_URL)
         retriever = PgRetriever(engine, ensure_tenant(engine), OpenAICompatibleEmbedder(s.EMBEDDING_BASE_URL or s.LLM_BASE_URL, key, s.EMBEDDING_MODEL))
         reports.append(await run_retrieval(ROOT / "evals/datasets/retrieval_golden.yaml", retriever, s.RETRIEVAL_MIN_SCORE))
+    if "--memory" in sys.argv:
+        embedder = None
+        if "--embeddings" in sys.argv:
+            s = get_settings()
+            key = s.EMBEDDING_API_KEY or s.HUGGINGFACE_API_KEY
+            if not key:
+                raise SystemExit("Set EMBEDDING_API_KEY or HUGGINGFACE_API_KEY for --embeddings")
+            embedder = OpenAICompatibleEmbedder(s.EMBEDDING_BASE_URL or s.LLM_BASE_URL, key, s.EMBEDDING_MODEL)
+        reports.append(await run_memory(ROOT / "evals/datasets/memory_golden.yaml", embedder))
     for report in reports:
         publish(report)
         print({k: v for k, v in report.items() if k != "failures"})

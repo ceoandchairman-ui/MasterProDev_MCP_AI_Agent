@@ -6,6 +6,7 @@ Side effects always wait for an explicit user confirmation on the next turn.
 from typing import Any, Dict
 
 from mpd_assistant.agents.common import PlanStep, is_affirmative, is_negative, parse_plan
+from mpd_assistant.agents.prompts import load_prompt
 from mpd_assistant.core.llm.client import LLM, LLMError
 from mpd_assistant.graph.state import AgentState
 from mpd_assistant.responses.engine import render
@@ -13,14 +14,8 @@ from mpd_assistant.routing.intents import Agent
 from mpd_assistant.tools.executor import ToolContext, ToolExecutor
 from mpd_assistant.tools.registry import Role
 
-PROMPT_VERSION = "comms-v1"
-
-PLANNER_SYSTEM = (
-    "You plan calendar and email actions. Output ONLY JSON: "
-    '{{"steps": [{{"tool": "<name>", "args": {{...}}}}]}}. '
-    "Allowed tools: {tools}. Use at most 3 steps. If you need information from the user first, output "
-    '{{"steps": [], "ask": "<one short question>"}}. Never invent addresses; use only values the user gave.'
-)
+PLANNER = load_prompt("comms_scheduling", "planner")
+PROMPT_VERSION = PLANNER.version
 
 
 def _last_user(state: AgentState) -> str:
@@ -71,7 +66,7 @@ def make_comms(llm: LLM, executor: ToolExecutor, registry, on_booked=None, token
 
         try:
             planned = await llm.complete(
-                [{"role": "system", "content": PLANNER_SYSTEM.format(tools=", ".join(allowed))}, {"role": "user", "content": text}],
+                [{"role": "system", "content": PLANNER.render(tools=", ".join(allowed))}, {"role": "user", "content": text}],
                 tier="mid",
                 max_tokens=300,
                 temperature=0.0,

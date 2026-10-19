@@ -7,6 +7,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from mpd_assistant.agents.factory import build_runners
 from mpd_assistant.agents.lead_conversion.agent import MemoryLeadRepository
+from mpd_assistant.agents.prompts import prompt_set_version
 from mpd_assistant.api.main import Services, create_app
 from mpd_assistant.business.catalog import load_catalog
 from mpd_assistant.business.escalations import EscalationFlow, EscalationService, InMemoryEscalations
@@ -22,6 +23,7 @@ from mpd_assistant.core.kv import KeyValueStore, MemoryKV, RedisKV
 from mpd_assistant.core.llm.budget import TokenBudget
 from mpd_assistant.core.llm.client import OpenAICompatibleLLM
 from mpd_assistant.core.llm.metered import MeteredLLM
+from mpd_assistant.core.llm.resilient import BreakerLLM
 from mpd_assistant.core.logging import configure_logging
 from mpd_assistant.core.startup import assert_production_ready
 from mpd_assistant.evaluation.online.judge import LlmJudge
@@ -89,9 +91,9 @@ def _kv(redis_url: str, production: bool) -> KeyValueStore:
         return MemoryKV()
 
 
-def _repositories(database_url: str, production: bool):
+def _repositories(database_url: str, production: bool, pool_size: int = 5, max_overflow: int = 5):
     """Postgres-backed repositories; in development an unreachable database falls back to process memory."""
-    engine = make_engine(database_url)
+    engine = make_engine(database_url, pool_size, max_overflow)
     if check_engine(engine):
         tenant = ensure_tenant(engine)
         return SqlSessionRepository(engine, tenant), SqlUserRepository(engine, tenant), SqlLeadRepository(engine, tenant), engine, tenant
@@ -128,7 +130,7 @@ def _notifications(settings, kv: KeyValueStore) -> NotificationService:
 def build_services() -> Services:
     settings = get_settings()
     settings.require_crypto_keys()
-    cipher = FieldCipher(settings.DATA_ENCRYPTION_KEY)  # type: ignore[arg-type]
+    cipher = FieldCipher(*settings.cipher_keys())
     prod = settings.is_production
 
     kv = _kv(settings.REDIS_URL, prod)
@@ -144,7 +146,7 @@ def build_services() -> Services:
     else:
         sms_sender = UnconfiguredSender("sms") if prod else ConsoleSender("sms")
 
-    session_repo, users, leads, engine, tenant = _repositories(settings.DATABASE_URL, prod)
+    session_repo, users, leads, engine, tenant = _repositories(settings.DATABASE_URL, prod, settings.DB_POOL_SIZE, settings.DB_MAX_OVERFLOW)
     identity = IdentityService(
         cipher,
         settings.BLIND_INDEX_KEY,  # type: ignore[arg-type]
@@ -162,7 +164,7 @@ def build_services() -> Services:
     llm = None
     if settings.HUGGINGFACE_API_KEY and settings.HUGGINGFACE_MODEL:
         models = {"mid": settings.HUGGINGFACE_MODEL, "cheap": settings.LLM_MODEL_CHEAP or settings.HUGGINGFACE_MODEL, "reasoning": settings.LLM_MODEL_REASONING or settings.HUGGINGFACE_MODEL}
-        llm = GuardedLLM(OpenAICompatibleLLM(settings.LLM_BASE_URL, settings.HUGGINGFACE_API_KEY, models))
+        llm = GuardedLLM(BreakerLLM(OpenAICompatibleLLM(settings.LLM_BASE_URL, settings.HUGGINGFACE_API_KEY, models)))
 
     executor = None
     if settings.CALENDAR_SERVER_URL and settings.GMAIL_SERVER_URL and settings.MCP_SERVICE_KEY:
@@ -234,7 +236,7 @@ def build_services() -> Services:
         vault,
         cache=response_cache,
         semantic=semantic,
-        cache_settings=CacheSettings(tenant=tenant or "default", prompt_version=settings.PROMPT_VERSION, corpus_version=settings.CORPUS_VERSION),
+        cache_settings=CacheSettings(tenant=tenant or "default", prompt_version=f"{settings.PROMPT_VERSION}.{prompt_set_version()}", corpus_version=settings.CORPUS_VERSION),
         memory=MemoryWiring(memory_store, llm, users.memory_consent),
         escalations=escalation_flow,
         summarizer=RollingSummarizer(llm, kv) if llm is not None else None,

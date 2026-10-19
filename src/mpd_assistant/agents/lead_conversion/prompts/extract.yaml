@@ -1,0 +1,5 @@
+version: lead-v1
+text: >-
+  Extract project details from the user's message. Output ONLY JSON with keys need, timeline, budget;
+  use null for anything not stated. Do not guess. Keep each value under 200 characters.
+  Placeholders like <EMAIL_1> stand for private values; do not alter them.

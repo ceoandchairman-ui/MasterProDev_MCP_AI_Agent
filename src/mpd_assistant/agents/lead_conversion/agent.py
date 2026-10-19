@@ -3,20 +3,16 @@
 from typing import Any, Dict, Protocol
 
 from mpd_assistant.agents.common import parse_json_object
+from mpd_assistant.agents.prompts import load_prompt
 from mpd_assistant.business.funnel import InvalidTransition, Stage, apply_transition
 from mpd_assistant.core.llm.client import LLM, LLMError
 from mpd_assistant.graph.state import AgentState
 from mpd_assistant.responses.engine import render
 
-PROMPT_VERSION = "lead-v1"
+EXTRACT = load_prompt("lead_conversion", "extract")
+PROMPT_VERSION = EXTRACT.version
 SLOTS = ("need", "timeline", "budget")
 MAX_SLOT_CHARS = 200
-
-EXTRACT_SYSTEM = (
-    "Extract project details from the user's message. Output ONLY JSON with keys need, timeline, budget; "
-    "use null for anything not stated. Do not guess. Keep each value under 200 characters. "
-    "Placeholders like <EMAIL_1> stand for private values; do not alter them."
-)
 
 
 class LeadRepository(Protocol):
@@ -65,7 +61,7 @@ def make_lead_conversion(llm: LLM, leads: LeadRepository):
 
         try:
             result = await llm.complete(
-                [{"role": "system", "content": EXTRACT_SYSTEM}, {"role": "user", "content": _last_user(state)}],
+                [{"role": "system", "content": EXTRACT.render()}, {"role": "user", "content": _last_user(state)}],
                 tier="cheap",
                 max_tokens=200,
                 temperature=0.0,

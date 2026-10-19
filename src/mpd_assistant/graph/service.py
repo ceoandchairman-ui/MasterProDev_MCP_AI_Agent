@@ -4,6 +4,7 @@ The graph, its checkpoints and every model call only ever see tokens such as <EM
 Optional collaborators (cache, memory, escalations, summaries) are wired in by the application factory.
 """
 
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -12,13 +13,16 @@ from typing import Any, List, Optional
 from mpd_assistant.cache.keys import build_key, may_cache
 from mpd_assistant.cache.store import DEFAULT_TTL_SECONDS, ResponseCache
 from mpd_assistant.core.llm.budget import reset_scope, set_scope
+from mpd_assistant.core.resilience import infrastructure_failure
 from mpd_assistant.evaluation.online.rules import Verdict, evaluate_response
-from mpd_assistant.observability.metrics import record_turn
+from mpd_assistant.observability.metrics import DEGRADED, record_turn
 from mpd_assistant.privacy.detector import detect
 from mpd_assistant.privacy.vault import PiiVault
 from mpd_assistant.responses.engine import render
 from mpd_assistant.routing.intents import Intent, Mode
-from mpd_assistant.routing.router import route
+from mpd_assistant.routing.router import detect_language, route
+
+logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"<[A-Z_]+_\d+>")
 SEMANTIC_INTENTS = frozenset({Intent.FAQ, Intent.KNOWLEDGE_QUESTION})
@@ -94,6 +98,31 @@ class ChatService:
         return self._semantic.scope(s.tenant, decision.language, decision.agent.value, s.prompt_version, s.corpus_version)
 
     async def chat(
+        self,
+        session_id: str,
+        raw_text: str,
+        verified: bool = False,
+        user_id: str | None = None,
+        session_row: str | None = None,
+    ) -> ChatResult:
+        """One turn. A connection-level failure of Postgres or Redis becomes a polite 'please retry' reply and a metric;
+        anything else (a real bug) still raises."""
+        try:
+            return await self._chat(session_id, raw_text, verified, user_id, session_row)
+        except Exception as exc:
+            dependency = infrastructure_failure(exc)
+            if dependency is None:
+                raise
+            logger.error("dependency failure (%s) during a turn; serving a degraded reply: %s", dependency, type(exc).__name__)
+            DEGRADED.labels(dependency).inc()
+            return ChatResult(
+                render("temporary_error", detect_language(raw_text)),
+                False,
+                None,
+                [f"degraded_{dependency}"],
+            )
+
+    async def _chat(
         self,
         session_id: str,
         raw_text: str,

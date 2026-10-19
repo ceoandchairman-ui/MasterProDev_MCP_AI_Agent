@@ -24,6 +24,8 @@ def _to_domain(row: MemoryRow) -> Memory:
         last_used=to_epoch(row.last_used),
         uses=row.uses,
         superseded_by=row.superseded_by,
+        language=row.language or "en",
+        embedding=row.embedding,
     )
 
 
@@ -43,6 +45,7 @@ class SqlMemoryRepository:
             row.created_at = from_epoch(memory.created_at)
             row.valid_to, row.last_used = from_epoch(memory.valid_to), from_epoch(memory.last_used)
             row.uses, row.superseded_by = memory.uses, memory.superseded_by
+            row.language, row.embedding = memory.language, memory.embedding
             db.add(row)
             db.commit()
 

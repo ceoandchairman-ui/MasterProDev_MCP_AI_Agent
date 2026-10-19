@@ -3,19 +3,14 @@
 from typing import Any, Dict
 
 from mpd_assistant.agents.common import parse_json_object
+from mpd_assistant.agents.prompts import load_prompt
 from mpd_assistant.business.quoting import CatalogItem, Quote, QuoteError, build_quote
 from mpd_assistant.core.llm.client import LLM, LLMError
 from mpd_assistant.graph.state import AgentState
 from mpd_assistant.responses.engine import render
 
-PROMPT_VERSION = "quote-v1"
-
-SYSTEM = (
-    "Map the project scope to catalog items. Output ONLY JSON: "
-    '{{"selections": [{{"sku": str, "quantity": number}}]}}. '
-    "Use only these SKUs: {skus}. Never output prices. If the scope is too vague, output "
-    '{{"selections": []}}.'
-)
+SYSTEM = load_prompt("quote", "system")
+PROMPT_VERSION = SYSTEM.version
 
 
 def money(cents: int, currency: str) -> str:
@@ -40,7 +35,7 @@ def make_quote_agent(llm: LLM, catalog: Dict[str, CatalogItem], on_quote=None, o
             return {"response": "I need a project scope before I can prepare a quote. Shall I draft one from what you've told me?"}
         try:
             result = await llm.complete(
-                [{"role": "system", "content": SYSTEM.format(skus=skus)}, {"role": "user", "content": str(scope)}],
+                [{"role": "system", "content": SYSTEM.render(skus=skus)}, {"role": "user", "content": str(scope)}],
                 tier="mid",
                 max_tokens=300,
                 temperature=0.0,

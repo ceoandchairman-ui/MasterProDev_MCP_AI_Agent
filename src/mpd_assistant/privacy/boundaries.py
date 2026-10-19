@@ -3,6 +3,7 @@
 from typing import Iterable, List
 
 from mpd_assistant.core.llm.client import LLM, LLMResult
+from mpd_assistant.observability.metrics import PII_DETECTIONS
 from mpd_assistant.privacy.detector import detect
 
 
@@ -17,6 +18,8 @@ def assert_tokenized(text: str, boundary: str, allowed: Iterable[str] = ()) -> N
     allowed_set = set(allowed)
     found = [m for m in detect(text) if m.text not in allowed_set]
     if found:
+        for m in found:
+            PII_DETECTIONS.labels(boundary, m.type).inc()
         raise RawPiiRefused(boundary, [m.type for m in found])
 
 

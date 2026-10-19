@@ -16,10 +16,12 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from mpd_assistant.business.payments import InvalidSignature
+from mpd_assistant.business.people import MergeError
 from mpd_assistant.channels.email_inbound import valid_token
 from mpd_assistant.channels.gateway import ChannelGateway
 from mpd_assistant.channels.inbound import empty_twiml, parse_twilio_form, twiml_reply, validate_twilio_signature
 from mpd_assistant.core.kv import KeyValueStore
+from mpd_assistant.core.resilience import infrastructure_failure
 from mpd_assistant.graph.service import ChatService
 from mpd_assistant.identity.abuse import AbuseBlocked
 from mpd_assistant.identity.normalize import InvalidIdentifier
@@ -28,7 +30,7 @@ from mpd_assistant.identity.service import IdentityService
 from mpd_assistant.integrations.google_oauth import GoogleOAuth, NotConfigured, OAuthError
 from mpd_assistant.multimodal.uploads import UploadRejected
 from mpd_assistant.multimodal.voice import MAX_AUDIO_BYTES, VoiceError
-from mpd_assistant.observability.metrics import PAYMENTS, REGISTRY, UPLOADS
+from mpd_assistant.observability.metrics import DEGRADED, PAYMENTS, REGISTRY, UPLOADS
 from mpd_assistant.responses.engine import render
 from mpd_assistant.sessions.service import SessionService
 
@@ -133,6 +135,12 @@ class ContactIn(BaseModel):
 class DeleteIn(BaseModel):
     session_id: str = Field(max_length=64)
     confirm: str = Field(max_length=10)
+
+
+class MergeIn(BaseModel):
+    primary_id: str = Field(max_length=64)
+    duplicate_id: str = Field(max_length=64)
+    confirm: Literal["MERGE"]
 
 
 class RevokeIn(BaseModel):
@@ -259,6 +267,57 @@ def create_app(services: Services) -> FastAPI:
             raise HTTPException(status_code=404, detail="Not found")
         return view.__dict__
 
+    def _people():
+        directory = _staff().people
+        if directory is None:
+            raise HTTPException(status_code=404, detail="Not found")
+        return directory
+
+    @app.get("/v2/admin/people", include_in_schema=False)
+    async def admin_find_person(request: Request, email: str | None = None, phone: str | None = None):
+        _check_staff(request)
+        try:
+            person = _people().lookup(email=email, phone=phone)
+        except InvalidIdentifier as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if person is None:
+            raise HTTPException(status_code=404, detail="Not found")
+        return person.__dict__
+
+    @app.get("/v2/admin/people/duplicates", include_in_schema=False)
+    async def admin_duplicates(request: Request):
+        _check_staff(request)
+        return {"groups": _people().duplicates()}
+
+    @app.post("/v2/admin/people/merge", include_in_schema=False)
+    async def admin_merge(body: MergeIn, request: Request):
+        _check_staff(request)
+        try:
+            report = _people().merge(body.primary_id, body.duplicate_id)
+        except MergeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"status": "merged", "moved": report.moved}
+
+    @app.post("/v2/admin/cache/purge/{layer}", include_in_schema=False)
+    async def admin_purge_cache(layer: str, request: Request):
+        _check_staff(request)
+        removed = await _staff().purge_cache(layer)
+        if removed is None:
+            raise HTTPException(status_code=404, detail=f"Unknown cache layer. Available: {', '.join(_staff().cache_layers)}")
+        return {"layer": layer, "removed": removed}
+
+    @app.get("/v2/admin/patterns", include_in_schema=False)
+    async def admin_patterns(request: Request):
+        _check_staff(request)
+        return {"patterns": _staff().pending_patterns()}
+
+    @app.post("/v2/admin/patterns/{pattern_id}/{decision}", include_in_schema=False)
+    async def admin_review_pattern(pattern_id: str, decision: Literal["approve", "reject"], request: Request):
+        _check_staff(request)
+        if not _staff().review_pattern(pattern_id, decision == "approve"):
+            raise HTTPException(status_code=404, detail="Not found or already reviewed")
+        return {"status": "approved" if decision == "approve" else "rejected"}
+
     @app.post("/v2/admin/escalations/{reference}/resolve", include_in_schema=False)
     async def admin_resolve(reference: str, request: Request):
         _check_staff(request)
@@ -291,6 +350,18 @@ def create_app(services: Services) -> FastAPI:
         return {"status": outcome.status}
 
     async def _run_chat(body: ChatIn) -> ChatOut:
+        try:
+            return await _run_chat_inner(body)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            dependency = infrastructure_failure(exc)
+            if dependency is None:
+                raise
+            DEGRADED.labels(dependency).inc()
+            raise HTTPException(status_code=503, detail=render("temporary_error", "en"), headers={"Retry-After": "5"}) from None
+
+    async def _run_chat_inner(body: ChatIn) -> ChatOut:
         session = services.sessions.resume(body.session_id) if body.session_id else None
         if session is None:
             session = services.sessions.create()
@@ -301,8 +372,12 @@ def create_app(services: Services) -> FastAPI:
         result = await services.chat.chat(
             session.thread_id, body.message, verified=session.verified, user_id=session.user_id, session_row=session.id
         )
-        if services.turns is not None:
-            services.turns.record(session.id, result.safe_user_text, result.reply, result.intent, result.agent, result.mode)
+        if services.turns is not None and result.safe_user_text:
+            try:
+                services.turns.record(session.id, result.safe_user_text, result.reply, result.intent, result.agent, result.mode)
+            except Exception as exc:
+                # A lost history row is better than a failed reply; it shows up in the metric and the log.
+                DEGRADED.labels(infrastructure_failure(exc) or "turn_record").inc()
         return ChatOut(reply=result.reply, session_id=session.id, escalated=result.escalated, reference=result.reference)
 
     @app.post("/v2/session", status_code=201)

@@ -16,9 +16,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     REDIS_URL: str
     REDIS_CACHE_URL: Optional[str] = None
+    DB_POOL_SIZE: int = 5  # replicas x (DB_POOL_SIZE + DB_MAX_OVERFLOW) must stay under Postgres max_connections
+    DB_MAX_OVERFLOW: int = 5
 
     # Base64 urlsafe 32-byte keys; every one must be set explicitly in production.
     DATA_ENCRYPTION_KEY: Optional[str] = None
+    DATA_ENCRYPTION_KEYS_PREVIOUS: str = ""  # comma-separated old keys kept only so existing data still decrypts during rotation
     BLIND_INDEX_KEY: Optional[str] = None
     MCP_SERVICE_KEY: Optional[str] = None
     METRICS_TOKEN: Optional[str] = None
@@ -84,6 +87,11 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENV.lower() in ("production", "prod")
+
+    def cipher_keys(self) -> list:
+        """Current key first (it encrypts), then any previous keys (they only decrypt)."""
+        previous = [k.strip() for k in self.DATA_ENCRYPTION_KEYS_PREVIOUS.split(",") if k.strip()]
+        return [self.DATA_ENCRYPTION_KEY, *previous]
 
     def require_crypto_keys(self) -> None:
         missing = [k for k in ("DATA_ENCRYPTION_KEY", "BLIND_INDEX_KEY") if not getattr(self, k)]

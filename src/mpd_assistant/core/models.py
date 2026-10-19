@@ -223,3 +223,22 @@ class MemoryRow(Base):
     last_used: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     uses: Mapped[int] = mapped_column(Integer, default=0)
     superseded_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    language: Mapped[str] = mapped_column(String(8), default="en")
+    embedding: Mapped[list | None] = mapped_column(JSON, nullable=True)  # search vector only; never shown to the user
+
+
+class ResponsePattern(Base):
+    """A reply worth reusing as a few-shot example. Only 'approved' patterns are ever shown to a model."""
+
+    __tablename__ = "response_patterns"
+    __table_args__ = (Index("ix_patterns_intent_status", "intent", "status"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"))
+    intent: Mapped[str] = mapped_column(String(40))
+    language: Mapped[str] = mapped_column(String(8), default="en")
+    user_text: Mapped[str] = mapped_column(Text)
+    reply_text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(12), default="proposed")  # proposed | approved | rejected
+    reviewed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

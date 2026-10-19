@@ -1,15 +1,21 @@
 """Runs tools through one choke point: permission, owner, confirmation, untrusted-content rule, metrics."""
 
+import hashlib
+import json
+import re
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
-from mpd_assistant.integrations.context import current_token, reset_token, set_token
+from mpd_assistant.core.kv import KeyValueStore
+from mpd_assistant.integrations.context import current_token, reset_token, reset_untrusted, reset_user, set_token, set_untrusted, set_user
+from mpd_assistant.memory.short_term.offload import ToolResultStore, digest
 from mpd_assistant.observability.metrics import TOOL_CALLS, TOOL_LATENCY
+from mpd_assistant.privacy.detector import detect
 from mpd_assistant.routing.intents import Agent
-from mpd_assistant.tools.registry import Role, ToolRegistry
+from mpd_assistant.tools.registry import Risk, Role, ToolRegistry
 
 ToolBackend = Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
@@ -34,13 +40,27 @@ class ToolContext:
     session_id: str = ""
     google_access_token: Optional[str] = None  # per-user, sent as a header to Google-backed servers only
     session_row: str = ""
+    user_id: Optional[str] = None  # made available to local tools through context, never through arguments
 
 
-def _truncate(output: Dict[str, Any]) -> Dict[str, Any]:
-    text = str(output)
-    if len(text) <= MAX_RESULT_CHARS:
-        return output
-    return {"truncated": True, "preview": text[:MAX_RESULT_CHARS]}
+IDEMPOTENCY_TTL_SECONDS = 600
+READ_CACHE_TTL_SECONDS = 300
+_TOKEN_RE = re.compile(r"<[A-Z_]+_\d+>")
+
+
+def _digest_args(args: Dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(args, sort_keys=True, default=str).encode()).hexdigest()[:32]
+
+
+def _succeeded(output: Dict[str, Any]) -> bool:
+    """Tool servers report application-level failures inside a 200 response; those must never be replayed or cached."""
+    return str(output.get("status", "success")) not in ("error", "pending_auth") and "error" not in output
+
+
+def _shareable(value: Any) -> bool:
+    """Safe to keep in a cache shared across people: no privacy tokens and no personal data."""
+    text = json.dumps(value, default=str, ensure_ascii=False)
+    return not _TOKEN_RE.search(text) and not detect(text)
 
 
 def _map_strings(value: Any, fn: Callable[[str], str]) -> Any:
@@ -64,9 +84,17 @@ class ToolExecutor:
         rehydrate: Callable[[str, str], str] | None = None,
         pseudonymize: Callable[[str, str], str] | None = None,
         audit_sink: Callable[[str, Dict[str, Any], "ToolContext", ToolOutcome, int], None] | None = None,
+        kv: Optional[KeyValueStore] = None,
+        read_cache: Any = None,
+        cache_scope: str = "",
+        offload: Optional[ToolResultStore] = None,
     ):
         self._registry = registry
         self._backend = backend
+        self._kv = kv  # idempotency for side-effect tools
+        self._read_cache = read_cache  # shared cache for tools registered as cacheable reads
+        self._cache_scope = cache_scope  # e.g. the corpus version: bumping it makes old entries miss
+        self._offload = offload  # keeps large results out of the prompt but re-openable
         self._pseudonymize = pseudonymize  # (session_id, text) -> text with real values replaced by tokens
         self._rehydrate = rehydrate  # (session_id, text) -> text with privacy tokens replaced by real values
         self._audit_sink = audit_sink  # persists every call: (tool, args, ctx, outcome, latency_ms)
@@ -82,24 +110,63 @@ class ToolExecutor:
             if tool not in ctx.confirmed_tools:
                 return self._record(tool, args, ctx, ToolOutcome(tool, "needs_confirmation", reason="user_confirmation_required"))
 
+        idem_key = None
+        if spec.risk is not Risk.READ and self._kv is not None:
+            # The same confirmed action, repeated (double "yes", client retry), must not send or create twice.
+            idem_key = f"idem-tool:{tool}:{ctx.session_id}:{_digest_args(args)}"
+            prior = self._kv.get(idem_key)
+            if prior is not None:
+                return self._record(tool, args, ctx, ToolOutcome(tool, "ok", prior, reason="duplicate"))
+        cache_key = None
+        if spec.cacheable and self._read_cache is not None and _shareable(args):
+            cache_key = f"toolcache:{self._cache_scope}:{tool}:{_digest_args(args)}"
+            cached = await self._read_cache.get(cache_key)
+            if cached is not None:
+                hit = ToolOutcome(tool, "ok", json.loads(cached), "cache_hit", untrusted=tool in UNTRUSTED_OUTPUT_TOOLS)
+                return self._record(tool, args, ctx, hit)
+
         started = time.perf_counter()
         try:
             real_args = _map_strings(args, lambda t: self._rehydrate(ctx.session_id, t)) if self._rehydrate else args
             marker = set_token(ctx.google_access_token)
+            user_marker = set_user(ctx.user_id)
+            taint_marker = set_untrusted(ctx.untrusted_content_in_context)
             try:
-                output = _truncate(await self._backend(tool, real_args))
+                output = await self._backend(tool, real_args)
             finally:
+                reset_untrusted(taint_marker)
+                reset_user(user_marker)
                 reset_token(marker)
             if self._pseudonymize:
                 output = _map_strings(output, lambda t: self._pseudonymize(ctx.session_id, t))
+            output = self._shrink(tool, output, ctx.session_id)  # after pseudonymizing, so stored copies hold tokens only
             status = "ok"
             reason = ""
+            if _succeeded(output):
+                if idem_key is not None:
+                    self._kv.set(idem_key, output, IDEMPOTENCY_TTL_SECONDS)
+                if cache_key is not None and _shareable(output):
+                    await self._read_cache.set(cache_key, json.dumps(output, default=str), READ_CACHE_TTL_SECONDS)
         except Exception as exc:
             output, status, reason = {}, "error", type(exc).__name__  # exception text may contain sensitive data
         elapsed = time.perf_counter() - started
         TOOL_LATENCY.labels(tool).observe(elapsed)
         outcome = ToolOutcome(tool, status, output, reason, untrusted=tool in UNTRUSTED_OUTPUT_TOOLS and status == "ok")
         return self._record(tool, args, ctx, outcome, int(elapsed * 1000))
+
+    def _shrink(self, tool: str, output: Dict[str, Any], session_id: str) -> Dict[str, Any]:
+        text = str(output)
+        if len(text) <= MAX_RESULT_CHARS:
+            return output
+        if self._offload is not None:
+            ref = self._offload.put(session_id, tool, output)
+            if ref:
+                return {"truncated": True, "preview": digest(output), "ref": ref}
+        return {"truncated": True, "preview": text[:MAX_RESULT_CHARS]}
+
+    def open_result(self, session_id: str, ref: str) -> Optional[Dict[str, Any]]:
+        """Re-open an offloaded result. Only the conversation that produced it can."""
+        return self._offload.get(session_id, ref) if self._offload is not None else None
 
     def _record(self, tool: str, args: Dict[str, Any], ctx: "ToolContext", outcome: ToolOutcome, latency_ms: int = 0) -> ToolOutcome:
         TOOL_CALLS.labels(outcome.tool if self._registry.get(outcome.tool) else "unknown", outcome.status).inc()

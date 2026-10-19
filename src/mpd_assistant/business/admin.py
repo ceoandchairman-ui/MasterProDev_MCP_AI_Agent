@@ -1,7 +1,7 @@
 """Staff-facing operations: the escalation inbox and a small overview. Every staff action is written to the audit log."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -50,8 +50,14 @@ class AdminService:
         audit: Optional[AuditSink] = None,
         grafana_url: Optional[str] = None,
         langsmith_url: Optional[str] = None,
+        patterns=None,
+        cache_purgers: Optional[Dict[str, Callable[[], Awaitable[int]]]] = None,
+        people=None,
     ):
+        self.people = people  # PeopleDirectory: audited lookup and merge of customer records
         self._service, self._repo, self._audit = escalations, repo, audit
+        self._patterns = patterns
+        self._purgers = cache_purgers or {}
         self._links = {"grafana": grafana_url, "langsmith": langsmith_url}
 
     def list_open(self) -> List[EscalationView]:
@@ -68,8 +74,42 @@ class AdminService:
             self._audit(actor, "escalation_resolved", reference, {})
         return done
 
+    def pending_patterns(self) -> List[Dict]:
+        if self._patterns is None:
+            return []
+        return [
+            {"id": p.id, "intent": p.intent, "language": p.language, "user_text": p.user_text, "reply_text": p.reply_text}
+            for p in self._patterns.pending()
+        ]
+
+    def review_pattern(self, pattern_id: str, approve: bool, actor: str = "staff") -> bool:
+        if self._patterns is None:
+            return False
+        done = self._patterns.approve(pattern_id, actor) if approve else self._patterns.reject(pattern_id, actor)
+        if done and self._audit:
+            self._audit(actor, "pattern_approved" if approve else "pattern_rejected", pattern_id, {})
+        return done
+
+    @property
+    def cache_layers(self) -> List[str]:
+        return sorted(self._purgers)
+
+    async def purge_cache(self, layer: str, actor: str = "staff") -> Optional[int]:
+        """Clears one cache layer (response, semantic, retrieval). Returns entries removed, or None for an unknown layer."""
+        purge = self._purgers.get(layer)
+        if purge is None:
+            return None
+        removed = await purge()
+        if self._audit:
+            self._audit(actor, "cache_purged", layer, {"removed": removed})
+        return removed
+
     def overview(self) -> Dict:
-        return {"open_escalations": len(self._repo.list_open()), "links": {k: v for k, v in self._links.items() if v}}
+        return {
+            "open_escalations": len(self._repo.list_open()),
+            "patterns_awaiting_review": len(self._patterns.pending(limit=201)) if self._patterns is not None else 0,
+            "links": {k: v for k, v in self._links.items() if v},
+        }
 
 
 __all__ = ["AdminService", "EscalationView", "SqlAuditLog"]

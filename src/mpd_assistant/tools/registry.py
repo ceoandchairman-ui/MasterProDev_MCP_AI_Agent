@@ -29,6 +29,7 @@ class ToolSpec:
     risk: Risk
     min_role: Role
     cacheable: bool = False
+    shared_with: frozenset = frozenset()  # other agents allowed to use the tool, in addition to the owner
 
     @property
     def needs_confirmation(self) -> bool:
@@ -53,7 +54,7 @@ class ToolRegistry:
         spec = self._tools.get(name)
         if spec is None:
             return False
-        if agent is not None and spec.owner is not agent:
+        if agent is not None and spec.owner is not agent and agent not in spec.shared_with:
             return False
         return _RANK[role] >= _RANK[spec.min_role]
 
@@ -70,4 +71,8 @@ def default_registry() -> ToolRegistry:
     r.register(ToolSpec("get_emails", Agent.COMMS_SCHEDULING, Risk.READ, Role.STAFF))
     r.register(ToolSpec("read_email", Agent.COMMS_SCHEDULING, Risk.READ, Role.STAFF))
     r.register(ToolSpec("send_email", Agent.COMMS_SCHEDULING, Risk.WRITE, Role.VERIFIED))
+    # Memory: any agent that talks to a verified user may look things up; only the two conversational agents may save.
+    searchers = frozenset({Agent.LEAD_CONVERSION, Agent.SOLUTION_ARCHITECT, Agent.QUOTE, Agent.COMMS_SCHEDULING})
+    r.register(ToolSpec("memory_search", Agent.CONCIERGE, Risk.READ, Role.VERIFIED, shared_with=searchers))
+    r.register(ToolSpec("memory_save", Agent.LEAD_CONVERSION, Risk.WRITE, Role.VERIFIED, shared_with=frozenset({Agent.CONCIERGE})))
     return r

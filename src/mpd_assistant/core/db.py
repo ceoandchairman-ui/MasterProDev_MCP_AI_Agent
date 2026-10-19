@@ -8,15 +8,27 @@ from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session as DbSession
 
 from mpd_assistant.core.models import Tenant
+from mpd_assistant.core.resilience import retry_sync
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TENANT = "masterprodev"
 
 
-def make_engine(database_url: str) -> Engine:
+def make_engine(database_url: str, pool_size: int = 5, max_overflow: int = 5) -> Engine:
+    """Postgres engine. Connections are retried with backoff (a Postgres restart takes seconds), stale pooled connections
+    are detected before use, and the pool is bounded. Size it so that replicas x (pool_size + max_overflow) stays under
+    the server's max_connections; put PgBouncer in front before raising it past that."""
     url = database_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres://", "postgresql://")
-    return create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=5, connect_args={"connect_timeout": 5}) if not url.startswith("sqlite") else create_engine(url)
+    if url.startswith("sqlite"):
+        return create_engine(url)
+
+    def connect():
+        import psycopg2
+
+        return retry_sync(lambda: psycopg2.connect(url, connect_timeout=5), attempts=3, base_delay=0.3, retry_on=(psycopg2.OperationalError,))
+
+    return create_engine(url, creator=connect, pool_pre_ping=True, pool_size=pool_size, max_overflow=max_overflow, pool_recycle=1800)
 
 
 def check_engine(engine: Engine) -> bool:

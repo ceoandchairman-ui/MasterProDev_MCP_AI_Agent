@@ -27,6 +27,7 @@ class AgentState(TypedDict, total=False):
     thread_summary: str
     context_notes: str
     attachment_context: str
+    style_examples: str
     session_row: Optional[str]
     lead_slots: Dict[str, str]
     lead_stage: str

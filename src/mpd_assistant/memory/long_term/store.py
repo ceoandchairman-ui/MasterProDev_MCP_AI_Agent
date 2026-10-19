@@ -10,9 +10,11 @@ import uuid
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Protocol
 
+from mpd_assistant.cache.semantic import cosine
 from mpd_assistant.memory.short_term.window import estimate_tokens
 from mpd_assistant.privacy.detector import detect
 
+MIN_SEMANTIC = 0.45  # below this, embedding similarity is treated as unrelated
 KINDS = {"fact", "preference", "episode", "procedure"}
 MAX_TEXT = 300
 MIN_CONFIDENCE = 0.5
@@ -30,6 +32,7 @@ class Candidate:
     confidence: float = 0.8
     slot: Optional[str] = None  # e.g. "preferred_language"; same slot + different text = contradiction
     source: str = "user_message"  # user_message | tool_result | upload | email
+    language: str = "en"  # language the text is written in; recall also matches across languages by meaning
 
 
 @dataclass
@@ -46,6 +49,8 @@ class Memory:
     last_used: Optional[float] = None
     uses: int = 0
     superseded_by: Optional[str] = None
+    language: str = "en"
+    embedding: Optional[List[float]] = None
 
 
 @dataclass
@@ -90,6 +95,25 @@ def jaccard(a: str, b: str) -> float:
     return len(ta & tb) / len(ta | tb) if ta and tb else 0.0
 
 
+_STOP = frozenset(
+    "a an the and or but to of in on for with is are was were be been do does did i you we they it this that these those "
+    "my your our their me can could would will please what who how why when where which about at by from as not no yes ok "
+    "hi hello le la les un une des et ou mais à de du en pour avec est sont je vous nous ils elle ce cela mon votre notre "
+    "leur que qui quoi quel quelle quels comment pourquoi quand où dans sur par pas oui".split()
+)
+MIN_RELEVANCE = 0.2
+
+
+def content_words(text: str) -> set:
+    return {w for w in re.findall(r"\w{2,}", (text or "").lower()) if w not in _STOP}
+
+
+def query_coverage(query: str, text: str) -> float:
+    """Share of the question's content words found in the memory. Common words never count as a match."""
+    q, t = content_words(query), content_words(text)
+    return len(q & t) / len(q) if q and t else 0.0
+
+
 class Similarity(Protocol):
     def __call__(self, query: str, text: str) -> float: ...
 
@@ -122,7 +146,7 @@ class InMemoryRepository:
 
 
 class MemoryStore:
-    def __init__(self, clock: Callable[[], float] = time.time, similarity: Similarity = jaccard, repo: Optional[MemoryRepository] = None):
+    def __init__(self, clock: Callable[[], float] = time.time, similarity: Similarity = query_coverage, repo: Optional[MemoryRepository] = None):
         self._repo: MemoryRepository = repo or InMemoryRepository()
         self._clock = clock
         self._similarity = similarity
@@ -147,7 +171,10 @@ class MemoryStore:
         if conflicting and candidate.confidence < CONFIRM_BELOW and not confirmed:
             return WriteResult("needs_confirmation", "conflicts_with_existing_memory", conflicting[0])
 
-        memory = Memory(uuid.uuid4().hex, user_id, candidate.kind, candidate.text.strip(), candidate.importance, candidate.confidence, candidate.slot, now)
+        memory = Memory(
+            uuid.uuid4().hex, user_id, candidate.kind, candidate.text.strip(), candidate.importance, candidate.confidence, candidate.slot, now,
+            language=candidate.language,
+        )
         self._repo.save(memory)
         for old in conflicting:
             old.valid_to, old.superseded_by = now, memory.id
@@ -158,13 +185,36 @@ class MemoryStore:
         age_days = max(0.0, (now - (memory.last_used or memory.created_at)) / _DAY)
         return 0.5 ** (age_days / HALF_LIFE_DAYS[memory.kind])
 
-    def recall(self, user_id: str, query: str, token_budget: int, limit: int = 5, diversity: float = 0.7) -> List[Memory]:
-        """Rank by relevance x recency x importance, pick greedily with MMR diversity, stop at the token budget."""
+    def set_embedding(self, user_id: str, memory_id: str, vector: List[float]) -> bool:
+        for m in self._active(user_id):
+            if m.id == memory_id:
+                m.embedding = vector
+                self._repo.save(m)
+                return True
+        return False
+
+    def recall(
+        self,
+        user_id: str,
+        query: str,
+        token_budget: int,
+        limit: int = 5,
+        diversity: float = 0.7,
+        query_vector: Optional[List[float]] = None,
+    ) -> List[Memory]:
+        """Rank by relevance x recency x importance, pick greedily with MMR diversity, stop at the token budget.
+
+        Relevance is the better of word overlap and, when both sides have an embedding, meaning similarity. That is
+        how a question in French finds a fact stored in English."""
         now = self._clock()
         scored = []
         for m in self._active(user_id):
             relevance = self._similarity(query, m.text)
-            if relevance <= 0:
+            if query_vector is not None and m.embedding:
+                semantic = cosine(query_vector, m.embedding)
+                if semantic >= MIN_SEMANTIC:
+                    relevance = max(relevance, semantic)
+            if relevance < MIN_RELEVANCE:
                 continue
             scored.append((relevance * self._recency(m, now) * (0.5 + m.importance), m))
         scored.sort(key=lambda p: p[0], reverse=True)
@@ -220,7 +270,12 @@ class MemoryStore:
         return count
 
     def export(self, user_id: str) -> List[dict]:
-        return [m.__dict__.copy() for m in self._repo.load_user(user_id)]
+        rows = []
+        for m in self._repo.load_user(user_id):
+            row = m.__dict__.copy()
+            row.pop("embedding", None)  # an internal search vector, not something the person wrote
+            rows.append(row)
+        return rows
 
     def delete_all(self, user_id: str) -> int:
         return self._repo.delete_user(user_id)
