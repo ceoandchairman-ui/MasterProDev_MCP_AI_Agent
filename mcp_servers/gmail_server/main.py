@@ -286,8 +286,11 @@ class GmailMCPServer(BaseMCPServer):
 
     async def _get_emails(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get recent emails"""
-        limit = params.get("limit", 10)
-        query = params.get("query", "")
+        try:
+            limit = max(1, min(int(params.get("limit", 10)), 25))
+        except (TypeError, ValueError):
+            limit = 10
+        query = str(params.get("query", ""))[:200]
         
         try:
             service = await self._get_gmail_service()
@@ -340,11 +343,6 @@ class GmailMCPServer(BaseMCPServer):
             return {"status": "error", "error": f"Gmail API error: {error}"}
         except Exception as exc:
             return {"status": "error", "error": str(exc)}
-        return {
-            "status": "success",
-            "emails": emails[:limit],
-            "count": len(emails)
-        }
 
     async def _send_email(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Send email via Gmail"""

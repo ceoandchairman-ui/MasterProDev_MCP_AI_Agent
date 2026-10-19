@@ -190,6 +190,7 @@ class DocumentChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
     embedding: Mapped[list] = mapped_column(EmbeddingType())
+    ocr_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)  # set when the text came from OCR
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

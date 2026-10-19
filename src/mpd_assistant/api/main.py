@@ -1,18 +1,22 @@
 """New API (v2). Built by a factory so tests and the deployment inject their own services."""
 
 import asyncio
+import base64
 import hmac
 import json
 import re
 from dataclasses import dataclass
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from mpd_assistant.business.payments import InvalidSignature
+from mpd_assistant.channels.email_inbound import valid_token
 from mpd_assistant.channels.gateway import ChannelGateway
 from mpd_assistant.channels.inbound import empty_twiml, parse_twilio_form, twiml_reply, validate_twilio_signature
 from mpd_assistant.core.kv import KeyValueStore
@@ -22,7 +26,9 @@ from mpd_assistant.identity.normalize import InvalidIdentifier
 from mpd_assistant.identity.otp import OtpError
 from mpd_assistant.identity.service import IdentityService
 from mpd_assistant.integrations.google_oauth import GoogleOAuth, NotConfigured, OAuthError
-from mpd_assistant.observability.metrics import REGISTRY
+from mpd_assistant.multimodal.uploads import UploadRejected
+from mpd_assistant.multimodal.voice import MAX_AUDIO_BYTES, VoiceError
+from mpd_assistant.observability.metrics import PAYMENTS, REGISTRY, UPLOADS
 from mpd_assistant.responses.engine import render
 from mpd_assistant.sessions.service import SessionService
 
@@ -38,6 +44,36 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
         response.headers.setdefault("Cache-Control", "no-store")
         return response
+
+
+MAX_UPLOADS_PER_HOUR = 20
+MAX_VOICE_PER_HOUR = 60
+EDGE_LIMITED_PREFIXES = ("/v2/chat", "/v2/voice", "/v2/upload", "/v2/identity", "/v2/session", "/v2/account")
+EDGE_REQUESTS_PER_MINUTE = 120
+
+
+def client_ip(request: Request, trusted_hops: int = 1) -> str:
+    """The caller's address behind `trusted_hops` proxies. X-Forwarded-For is read from the right, because each
+    trusted proxy appends the address it saw; entries further left are whatever the client chose to send."""
+    forwarded = [p.strip() for p in request.headers.get("x-forwarded-for", "").split(",") if p.strip()]
+    if trusted_hops > 0 and len(forwarded) >= trusted_hops:
+        return forwarded[-trusted_hops]
+    return request.client.host if request.client else "unknown"
+
+
+class EdgeRateLimitMiddleware(BaseHTTPMiddleware):
+    """Per-IP request ceiling in front of the chat and account routes. Provider webhooks are authenticated by signature
+    or secret and are not limited here."""
+
+    def __init__(self, app, kv: KeyValueStore, per_minute: int, trusted_hops: int):
+        super().__init__(app)
+        self._kv, self._limit, self._hops = kv, per_minute, trusted_hops
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith(EDGE_LIMITED_PREFIXES) and request.method != "OPTIONS":
+            if self._kv.incr(f"edge:{client_ip(request, self._hops)}", 60) > self._limit:
+                return Response("Too many requests", status_code=429, headers={"Retry-After": "60"})
+        return await call_next(request)
 
 
 KEEPALIVE_SECONDS = 5
@@ -130,11 +166,35 @@ class Services:
     dsr: object | None = None
     twilio_auth_token: str | None = None
     public_url: str | None = None  # externally visible base URL; Twilio signs the exact URL it called
+    payments: object | None = None
+    uploads: object | None = None
+    speech_to_text: object | None = None
+    text_to_speech: object | None = None
+    voice: object | None = None
+    cors_origins: tuple = ()
+    trusted_proxy_hops: int = 1
+    edge_requests_per_minute: int = EDGE_REQUESTS_PER_MINUTE
+    email_inbound: object | None = None
+    email_inbound_token: str | None = None
+    admin: object | None = None
+    admin_token: str | None = None
 
 
 def create_app(services: Services) -> FastAPI:
     app = FastAPI(title="MPD Assistant API", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(SecurityHeadersMiddleware)
+    if services.kv is not None and services.edge_requests_per_minute > 0:
+        app.add_middleware(EdgeRateLimitMiddleware, kv=services.kv, per_minute=services.edge_requests_per_minute, trusted_hops=services.trusted_proxy_hops)
+    origins = [o for o in services.cors_origins if o and o != "*"]  # never a wildcard
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_methods=["GET", "POST", "DELETE", "PATCH"],
+            allow_headers=["Content-Type"],
+            allow_credentials=False,
+            max_age=600,
+        )
 
     @app.get("/health")
     async def health():
@@ -160,6 +220,76 @@ def create_app(services: Services) -> FastAPI:
         reply = await services.gateway.handle(inbound) if inbound else None
         return Response(twiml_reply(reply) if reply else empty_twiml(), media_type="application/xml")
 
+    @app.post("/v2/channels/voice", include_in_schema=False)
+    async def twilio_voice(request: Request):
+        if services.voice is None or not services.twilio_auth_token or not services.public_url:
+            raise HTTPException(status_code=404, detail="Not found")
+        form = {k: str(v) for k, v in (await request.form()).items()}
+        url = services.public_url.rstrip("/") + "/v2/channels/voice"
+        if not validate_twilio_signature(services.twilio_auth_token, url, form, request.headers.get("x-twilio-signature")):
+            raise HTTPException(status_code=403, detail="Invalid signature")
+        return Response(await services.voice.handle(form), media_type="application/xml")
+
+    def _staff() -> object:
+        """Staff endpoints use a bearer token until staff accounts with MFA exist (S0.7)."""
+        if services.admin is None:
+            raise HTTPException(status_code=404, detail="Not found")
+        return services.admin
+
+    def _check_staff(request: Request) -> None:
+        supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+        if not services.admin_token or not hmac.compare_digest(supplied.encode(), services.admin_token.encode()):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+    @app.get("/v2/admin/overview", include_in_schema=False)
+    async def admin_overview(request: Request):
+        _check_staff(request)
+        return _staff().overview()
+
+    @app.get("/v2/admin/escalations", include_in_schema=False)
+    async def admin_escalations(request: Request):
+        _check_staff(request)
+        return {"escalations": [e.__dict__ for e in _staff().list_open()]}
+
+    @app.get("/v2/admin/escalations/{reference}", include_in_schema=False)
+    async def admin_escalation(reference: str, request: Request):
+        _check_staff(request)
+        view = _staff().get(reference)
+        if view is None:
+            raise HTTPException(status_code=404, detail="Not found")
+        return view.__dict__
+
+    @app.post("/v2/admin/escalations/{reference}/resolve", include_in_schema=False)
+    async def admin_resolve(reference: str, request: Request):
+        _check_staff(request)
+        if not _staff().resolve(reference):
+            raise HTTPException(status_code=404, detail="Not found or already resolved")
+        return {"status": "resolved"}
+
+    @app.post("/v2/channels/email/{token}", include_in_schema=False)
+    async def email_inbound(token: str, request: Request):
+        """SendGrid Inbound Parse. The secret in the URL is the only authentication, so a wrong token looks like a missing page."""
+        gateway = services.email_inbound
+        if gateway is None or not valid_token(token, services.email_inbound_token):
+            raise HTTPException(status_code=404, detail="Not found")
+        form = {k: str(v) for k, v in (await request.form()).items() if isinstance(v, str)}
+        status = await gateway.handle(form)
+        return {"status": status}  # always 200 once authenticated: a retry would only duplicate work
+
+    @app.post("/v2/webhooks/stripe", include_in_schema=False)
+    async def stripe_webhook(request: Request):
+        """Stripe-signed. This is the only place a quote becomes 'paid'."""
+        if services.payments is None or not services.payments.configured:
+            raise HTTPException(status_code=404, detail="Not found")
+        payload = await request.body()
+        try:
+            outcome = await services.payments.handle_webhook(payload, request.headers.get("stripe-signature", ""))
+        except InvalidSignature:
+            PAYMENTS.labels("invalid_signature").inc()
+            raise HTTPException(status_code=400, detail="Invalid signature") from None
+        PAYMENTS.labels(outcome.status).inc()
+        return {"status": outcome.status}
+
     async def _run_chat(body: ChatIn) -> ChatOut:
         session = services.sessions.resume(body.session_id) if body.session_id else None
         if session is None:
@@ -174,6 +304,69 @@ def create_app(services: Services) -> FastAPI:
         if services.turns is not None:
             services.turns.record(session.id, result.safe_user_text, result.reply, result.intent, result.agent, result.mode)
         return ChatOut(reply=result.reply, session_id=session.id, escalated=result.escalated, reference=result.reference)
+
+    @app.post("/v2/session", status_code=201)
+    async def new_session():
+        """A visitor session without sending a message, so the widget can run sign-in before the first question."""
+        session = services.sessions.create()
+        return {"session_id": session.id, "verified": False}
+
+    @app.get("/v2/session/{session_id}")
+    async def session_status(session_id: str):
+        session = services.sessions.resume(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Unknown or expired session")
+        return {"session_id": session.id, "verified": session.verified}
+
+    @app.post("/v2/upload", status_code=201)
+    async def upload(session_id: str = Form(max_length=64), file: UploadFile = File(...)):
+        """A file the user wants to talk about. Verified users only; the text is kept for this conversation, not forever."""
+        if services.uploads is None:
+            raise HTTPException(status_code=503, detail="Uploads are not available")
+        session = _verified_session(session_id)
+        if services.kv is not None and services.kv.incr(f"uploadrate:{session.id}", 3600) > MAX_UPLOADS_PER_HOUR:
+            raise HTTPException(status_code=429, detail="Too many uploads. Please try again later.")
+        data = await file.read(services.uploads.max_bytes + 1)
+        try:
+            result = await services.uploads.accept(session.thread_id, session.id, file.filename or "file", data)
+        except UploadRejected as exc:
+            UPLOADS.labels("unknown", exc.reason).inc()
+            raise HTTPException(status_code=422, detail=render("upload_rejected", "en", {"limit": "10 MB"})) from exc
+        UPLOADS.labels(result.kind, "accepted").inc()
+        return {"id": result.id, "kind": result.kind, "note": result.note}
+
+    @app.delete("/v2/upload/{upload_id}")
+    async def delete_upload(upload_id: str, session_id: str):
+        if services.uploads is None:
+            raise HTTPException(status_code=503, detail="Uploads are not available")
+        session = _verified_session(session_id)
+        return {"removed": services.uploads.remove(session.thread_id, upload_id)}
+
+    @app.post("/v2/voice")
+    async def voice(request: Request, session_id: str = Form(max_length=64), audio: UploadFile = File(...), speak: bool = Form(False)):
+        """Speech in, text reply out (and spoken reply when asked). Audio is transcribed and discarded, never stored."""
+        if services.speech_to_text is None:
+            raise HTTPException(status_code=503, detail=render("voice_unavailable", "en"))
+        session = services.sessions.resume(session_id)
+        if session is None:
+            raise HTTPException(status_code=401, detail="Unknown or expired session")
+        if services.kv is not None and services.kv.incr(f"voicerate:{session.id}", 3600) > (MAX_VOICE_PER_HOUR if session.verified else MAX_VOICE_PER_HOUR // 3):
+            raise HTTPException(status_code=429, detail=render("rate_limited", "en"))
+        data = await audio.read(MAX_AUDIO_BYTES + 1)
+        try:
+            transcript = await services.speech_to_text.transcribe(data, audio.content_type or "")
+        except VoiceError as exc:
+            raise HTTPException(status_code=422, detail=render("voice_unavailable", "en")) from exc
+        if not transcript:
+            raise HTTPException(status_code=422, detail=render("voice_unavailable", "en"))
+        out = await _run_chat(ChatIn(message=transcript[:MAX_MESSAGE_CHARS], session_id=session.id))
+        payload = {"transcript": transcript, "reply": out.reply, "session_id": out.session_id, "escalated": out.escalated, "reference": out.reference}
+        if speak and services.text_to_speech is not None:
+            try:
+                payload["audio_base64"] = base64.b64encode(await services.text_to_speech.speak(out.reply)).decode()
+            except VoiceError:
+                pass  # the text reply still goes out
+        return payload
 
     @app.post("/v2/chat", response_model=ChatOut)
     async def chat(body: ChatIn):
@@ -368,7 +561,7 @@ def create_app(services: Services) -> FastAPI:
             raise HTTPException(status_code=401, detail="Unknown or expired session")
         try:
             await services.identity.start(
-                body.session_id, body.name, body.email, body.phone, client_ip=request.client.host if request.client else None
+                body.session_id, body.name, body.email, body.phone, client_ip=client_ip(request, services.trusted_proxy_hops)
             )
         except InvalidIdentifier as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

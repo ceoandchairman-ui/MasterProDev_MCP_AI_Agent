@@ -96,9 +96,21 @@ None of it has run against live Postgres, Redis, a language model or any provide
 - **Cache hits skip the graph**, so a cached exchange is not added to that conversation's history.
 - **Memory** stores text proposed by the model after validation; there is no consolidation job, entity tracking or
   knowledge graph. Embedding-based memory recall is not used (lexical overlap only).
-- **Missing stories:** task decomposition and multi-agent handoff beyond the escalation packet (S6.8), edge and
-  custom domain setup (S14.12), semantic cache (S16.3), voice and image input, OCR indexer, payments, inbound email
-  and voice channels, entity tracking and memory consolidation jobs.
+- **Written but not yet wired into `api/app.py` or tested** (code only, no live service has run it):
+  payments (`business/payments.py`, `business/quote_store.py`, `agents/payment`; the Stripe webhook route exists in
+  `api/main.py`), uploads, OCR, voice and image input (`multimodal/`, `/v2/upload`, `/v2/voice`), OCR in the
+  knowledge indexer, inbound email (`channels/email_inbound.py`) and Twilio Voice (`channels/voice.py`) channels,
+  entity and topic tracking (`memory/short_term/entities.py`, `topics.py`; `ChatService` accepts them but they are
+  not constructed), memory consolidation and the background worker (`memory/consolidation.py`, `worker/`), the
+  admin escalation inbox (`business/admin.py`, `/v2/admin/*`), the web widget (`web/widget/`), the quoting and
+  company-data MCP services (`services/mcp_quoting`, `services/mcp_db`), per-IP edge rate limiting and CORS.
+- **Done and tested:** semantic cache (S16.3), task decomposition across agents (S6.8), the per-turn state reset
+  (a conversation used to be escalated to a person on its seventh message).
+- **Still missing:** custom domain and TLS (a Railway dashboard step, S14.12), episodic and procedural memory,
+  memory tools for agents, multilingual memory, memory evaluation, load tests, runbooks.
+- **Legacy MCP servers stay in `mcp_servers/`** because the root `Dockerfile`, `docker-entrypoint.sh`,
+  `docker/docker-compose.yml` and `tests/integration/test_mcp_servers.py` still run them. They move to
+  `services/` when the legacy container is retired. Time-zone handling and dead-code fixes (S5.3) are applied in place.
 - **Vendor deletion** after an erasure request is manual; backups are not purged by erasure and need a retention
   policy. Vault retention (7 days) and conversation retention are placeholders.
 - **Placeholders pending business input:** quote catalog (`CATALOG_PATH`), approval threshold, the "3 Es" stages,

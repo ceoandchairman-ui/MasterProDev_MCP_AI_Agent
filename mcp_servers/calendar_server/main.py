@@ -5,7 +5,9 @@ import asyncio
 import html
 import logging
 import os
+import re
 import json
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Any, Dict, List
 from datetime import datetime, timedelta
 from mcp_servers.base_server import BaseMCPServer
@@ -22,6 +24,29 @@ from google.auth.transport.requests import Request
 
 from mcp_servers.calendar_server.config import calendar_settings
 from services._common.mcp_common.user_token import current_user_token
+
+
+DEFAULT_TIME_ZONE = os.environ.get("DEFAULT_TIME_ZONE", "America/Toronto")
+_OFFSET_SUFFIX = re.compile(r"(Z|[+-]\d{2}:?\d{2})$")
+
+
+def resolve_time_zone(requested: Any) -> str:
+    """A valid IANA zone name from the caller, else the configured default. Never trusts the raw string."""
+    for candidate in (requested, DEFAULT_TIME_ZONE):
+        if isinstance(candidate, str) and candidate:
+            try:
+                ZoneInfo(candidate)
+                return candidate
+            except (ZoneInfoNotFoundError, ValueError):
+                continue
+    return "UTC"
+
+
+def event_time(value: str, tz_name: str) -> Dict[str, str]:
+    """A time that carries its own offset or Z is used as given; a local time gets the zone name."""
+    if _OFFSET_SUFFIX.search(value):
+        return {"dateTime": value}
+    return {"dateTime": value, "timeZone": tz_name}
 
 
 class CalendarMCPServer(BaseMCPServer):
@@ -381,12 +406,14 @@ class CalendarMCPServer(BaseMCPServer):
                     "message": "Google Calendar authorization pending. Check calendar server logs for OAuth URL."
                 }
 
+            tz_name = resolve_time_zone(params.get("time_zone"))
+
             def create():
                 event_body = {
                     "summary": params["title"],
                     "description": params.get("description", ""),
-                    "start": {"dateTime": params["start_time"], "timeZone": "UTC"},
-                    "end": {"dateTime": params["end_time"], "timeZone": "UTC"},
+                    "start": event_time(str(params["start_time"]), tz_name),
+                    "end": event_time(str(params["end_time"]), tz_name),
                 }
                 return service.events().insert(calendarId="primary", body=event_body).execute()
 

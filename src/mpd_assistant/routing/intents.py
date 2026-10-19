@@ -15,6 +15,7 @@ class Agent(str, Enum):
     QUOTE = "quote"
     COMMS_SCHEDULING = "comms_scheduling"
     ESCALATION = "escalation"
+    PAYMENT = "payment"  # deterministic code node, not an LLM agent
 
 
 class Intent(str, Enum):
@@ -27,6 +28,7 @@ class Intent(str, Enum):
     QUOTE_REQUEST = "quote_request"
     BOOK_MEETING = "book_meeting"
     EMAIL_REQUEST = "email_request"
+    PAYMENT_REQUEST = "payment_request"
     HUMAN_REQUEST = "human_request"
     COMPLAINT = "complaint"
     UNKNOWN = "unknown"
@@ -34,7 +36,7 @@ class Intent(str, Enum):
 
 # Gated intents need a verified identity (policy D14, option B). Others work for anonymous visitors.
 GATED_INTENTS = frozenset(
-    {Intent.PROJECT_INQUIRY, Intent.SCOPE_REQUEST, Intent.QUOTE_REQUEST, Intent.BOOK_MEETING, Intent.EMAIL_REQUEST}
+    {Intent.PROJECT_INQUIRY, Intent.SCOPE_REQUEST, Intent.QUOTE_REQUEST, Intent.BOOK_MEETING, Intent.EMAIL_REQUEST, Intent.PAYMENT_REQUEST}
 )
 
 INTENT_AGENT = {
@@ -47,6 +49,7 @@ INTENT_AGENT = {
     Intent.QUOTE_REQUEST: Agent.QUOTE,
     Intent.BOOK_MEETING: Agent.COMMS_SCHEDULING,
     Intent.EMAIL_REQUEST: Agent.COMMS_SCHEDULING,
+    Intent.PAYMENT_REQUEST: Agent.PAYMENT,
     Intent.HUMAN_REQUEST: Agent.ESCALATION,
     Intent.COMPLAINT: Agent.ESCALATION,
     Intent.UNKNOWN: Agent.CONCIERGE,
@@ -62,6 +65,7 @@ INTENT_DEFAULT_MODE = {
     Intent.QUOTE_REQUEST: Mode.REASONED,
     Intent.BOOK_MEETING: Mode.REASONED,
     Intent.EMAIL_REQUEST: Mode.REASONED,
+    Intent.PAYMENT_REQUEST: Mode.TEMPLATED,  # no model call: payment is code
     Intent.HUMAN_REQUEST: Mode.ESCALATE,
     Intent.COMPLAINT: Mode.ESCALATE,
     Intent.UNKNOWN: Mode.GENERATED,

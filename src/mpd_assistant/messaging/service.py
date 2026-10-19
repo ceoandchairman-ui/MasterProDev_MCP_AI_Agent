@@ -84,12 +84,15 @@ class NotificationService:
         if self._kv.incr(f"cap:{msg.channel.value}:{day}", 86400) > self._daily_cap:
             return self._block(msg, "daily_cap")
 
-        try:
-            body = render(msg.template, msg.locale, msg.variables)
-        except TemplateNotFound:
-            return SendResult("failed", reason="unknown_template")
+        if msg.body is not None:
+            body = msg.body
+        else:
+            try:
+                body = render(msg.template, msg.locale, msg.variables)
+            except TemplateNotFound:
+                return SendResult("failed", reason="unknown_template")
         subject = msg.subject
-        if subject is None and msg.channel is Channel.EMAIL:
+        if subject is None and msg.channel is Channel.EMAIL and msg.body is None:
             try:
                 subject = render(f"{msg.template}_subject", msg.locale, msg.variables)
             except TemplateNotFound:

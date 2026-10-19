@@ -13,7 +13,9 @@ networking (`<service>.railway.internal`).
 | redis | Railway Redis (Redis Stack when checkpoints are enabled) | no | 1 | state, OTP, vault, caches, rate limits |
 | mcp-calendar | mcp_servers/calendar_server (legacy image) | no | 1 | requires MCP_SERVICE_KEY |
 | mcp-gmail | mcp_servers/gmail_server (legacy image) | no | 1 | requires MCP_SERVICE_KEY |
-| worker | later: scripts/seed_knowledge.py as a job | no | 0 (job) | run on demand, idempotent |
+| mcp-quoting | services/mcp_quoting | no | 1 | needs MCP_SERVICE_KEY and CATALOG_PATH |
+| mcp-db | services/mcp_db | no | 1 | needs MCP_SERVICE_KEY and MCP_DB_URL (read-only database role) |
+| worker | deploy/dockerfiles/worker.Dockerfile | no | 1 | retention, memory consolidation, reindex; jobs are idempotent and lock-protected |
 | otel-collector | observability/otel-collector | no | 1 | |
 | prometheus | observability/prometheus | no | 1 | volume for TSDB |
 | grafana | observability/grafana | yes (login) | 1 | volume for state |

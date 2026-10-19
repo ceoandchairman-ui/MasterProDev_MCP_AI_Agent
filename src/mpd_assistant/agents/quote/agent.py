@@ -54,8 +54,8 @@ def make_quote_agent(llm: LLM, catalog: Dict[str, CatalogItem], on_quote=None, o
         except QuoteError:
             return {"response": "I couldn't build a reliable quote from that scope. Could you tell me more about what you need?"}
 
-        if on_quote:
-            on_quote(state, quote)
+        stored = on_quote(state, quote) if on_quote else None
+        ids = {"quote_id": stored.id} if stored else {}
         if quote.needs_approval:
             reference = await on_review(state, "quote_review") if on_review else None
             note = render("quote_needs_review", language)
@@ -64,7 +64,9 @@ def make_quote_agent(llm: LLM, catalog: Dict[str, CatalogItem], on_quote=None, o
                 "quote_hash": quote.content_hash,
                 "escalated": bool(reference),
                 "reference": reference,
+                **ids,
             }
-        return {"response": render_quote(quote), "quote_hash": quote.content_hash}
+        footer = f"\nQuote reference: {stored.ref}" if stored else ""
+        return {"response": render_quote(quote) + footer, "quote_hash": quote.content_hash, **ids}
 
     return run

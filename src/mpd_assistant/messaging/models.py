@@ -8,6 +8,7 @@ class Channel(str, Enum):
     SMS = "sms"
     WHATSAPP = "whatsapp"
     EMAIL = "email"
+    VOICE = "voice"
 
 
 class Purpose(str, Enum):
@@ -26,6 +27,7 @@ class OutboundMessage:
     idempotency_key: Optional[str] = None
     user_id: Optional[str] = None
     subject: Optional[str] = None  # email only
+    body: Optional[str] = None  # pre-rendered text for conversational replies; template is then only a label
 
 
 @dataclass

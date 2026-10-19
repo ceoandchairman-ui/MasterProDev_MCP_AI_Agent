@@ -1,0 +1,19 @@
+# PLACEHOLDER PRICES FOR DEVELOPMENT ONLY. The business must supply the real catalog and point CATALOG_PATH at it.
+# unit: hour | fixed | month. unit_price_cents is in the quote currency (CAD) cents.
+items:
+  - sku: DISCOVERY
+    name: Discovery workshop (placeholder)
+    unit: fixed
+    unit_price_cents: 100000
+  - sku: DEV_HOUR
+    name: Software development (placeholder)
+    unit: hour
+    unit_price_cents: 15000
+  - sku: DESIGN_HOUR
+    name: UX and UI design (placeholder)
+    unit: hour
+    unit_price_cents: 12000
+  - sku: SUPPORT_MONTH
+    name: Support and maintenance (placeholder)
+    unit: month
+    unit_price_cents: 80000

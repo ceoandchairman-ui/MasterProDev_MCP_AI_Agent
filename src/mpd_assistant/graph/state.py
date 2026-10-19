@@ -25,11 +25,14 @@ class AgentState(TypedDict, total=False):
     memory_context: str
     evidence: Optional[str]
     thread_summary: str
+    context_notes: str
+    attachment_context: str
     session_row: Optional[str]
     lead_slots: Dict[str, str]
     lead_stage: str
     scope: Optional[Dict[str, Any]]
     quote_hash: Optional[str]
+    quote_id: Optional[str]
     current_task: Optional[str]
     task_queue: List[str]
     partials: List[str]

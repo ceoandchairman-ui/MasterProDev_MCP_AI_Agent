@@ -10,7 +10,8 @@ from xml.sax.saxutils import escape
 
 from mpd_assistant.messaging.models import Channel
 
-MAX_CHARS = {Channel.SMS: 1000, Channel.WHATSAPP: 1500, Channel.WEB: 4000, Channel.EMAIL: 8000}
+MAX_CHARS = {Channel.SMS: 1000, Channel.WHATSAPP: 1500, Channel.WEB: 4000, Channel.EMAIL: 8000, Channel.VOICE: 600}
+_URL = re.compile(r"https?://\S+")
 
 
 @dataclass(frozen=True)
@@ -51,9 +52,12 @@ _MARKDOWN = [(re.compile(r"\*\*(.+?)\*\*"), r"\1"), (re.compile(r"(?<!\w)\*(.+?)
 
 def format_for_channel(text: str, channel: Channel) -> str:
     """Plain text for SMS/WhatsApp (no markdown), trimmed to a length the channel handles well."""
-    if channel in (Channel.SMS, Channel.WHATSAPP):
+    if channel in (Channel.SMS, Channel.WHATSAPP, Channel.VOICE):
         for pattern, repl in _MARKDOWN:
             text = pattern.sub(repl, text)
+    if channel is Channel.VOICE:
+        text = _URL.sub("the link we sent you", text)  # links cannot be spoken
+        text = re.sub(r"\s*\n+\s*", ". ", text)
     limit = MAX_CHARS[channel]
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 

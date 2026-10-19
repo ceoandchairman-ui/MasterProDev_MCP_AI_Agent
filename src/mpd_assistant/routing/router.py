@@ -44,6 +44,7 @@ def detect_language(text: str) -> str:
 _RULES: List[Tuple[Intent, List[str], float]] = [
     (Intent.HUMAN_REQUEST, [r"\b(human|real person|agent|representative|speak to someone|talk to someone|parler (a|à) quelqu'un)\b"], 0.95),
     (Intent.COMPLAINT, [r"\b(complain|complaint|unacceptable|terrible|refund|furious|angry|scam)\b"], 0.85),
+    (Intent.PAYMENT_REQUEST, [r"\b(pay now|checkout|payment link|lien de paiement|ready to pay)\b", r"\b(i|we) (want|would like|need|am ready|are ready) to pay\b", r"\b(pay|payer|régler)\b.*\b(quote|devis|invoice|facture|deposit|acompte)\b"], 0.9),
     (Intent.QUOTE_REQUEST, [r"\b(quote|quotation|pricing|price|cost|estimate|how much|devis|prix|tarif)\b"], 0.85),
     (Intent.BOOK_MEETING, [r"\b(prendre|fixer|planifier)\b.*\b(rendez-vous|rdv|appel|réunion)\b", r"\b(rendez-vous|rdv)\b", r"\b(book|schedule|set up|arrange)\b.*\b(meeting|call|demo|consultation|appointment)\b", r"\b(meeting|call|appointment|rendez-vous)\b.*\b(book|schedule|available|free)\b", r"\bavailability\b"], 0.85),
     (Intent.EMAIL_REQUEST, [r"\b(send|write|draft|reply)\b.*\b(email|e-mail|mail)\b", r"\b(my|check)\b.*\b(emails|inbox)\b"], 0.85),

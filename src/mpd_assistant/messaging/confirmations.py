@@ -14,6 +14,25 @@ class ConfirmationService:
     def __init__(self, notifications: NotificationService, users, cipher: FieldCipher):
         self._n, self._users, self._cipher = notifications, users, cipher
 
+    async def payment_received(self, user_id: str, quote_ref: str, locale: str = "en") -> None:
+        user = self._users.find_by_id(user_id)
+        if user is None or not self._n.has_channel(Channel.EMAIL):
+            return
+        result = await self._n.send(
+            OutboundMessage(
+                Channel.EMAIL,
+                self._cipher.decrypt(user.email_enc),
+                "payment_received",
+                locale,
+                {"quote": quote_ref},
+                Purpose.TRANSACTIONAL,
+                f"payment:{quote_ref}",
+                user.id,
+            )
+        )
+        if result.status not in ("sent", "skipped"):
+            logger.warning("payment receipt not delivered: %s", result.reason)
+
     async def booking_confirmed(self, state: AgentState, args: dict) -> None:
         user = self._users.find_by_id(state.get("user_id") or "")
         if user is None:

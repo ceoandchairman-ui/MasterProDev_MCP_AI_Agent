@@ -211,7 +211,7 @@ def build_graph(
         if agent is Agent.ESCALATION:
             continue
         name = f"agent_{agent.value}"
-        graph.add_node(name, _agent_node(runners.get(agent)))
+        graph.add_node(name, _agent_node(runners.get(agent), "payment_refused" if agent is Agent.PAYMENT else "no_answer"))
         agent_targets[name] = name
     # The escalation agent is the escalation node.
     agent_targets["agent_escalation"] = "escalate"
