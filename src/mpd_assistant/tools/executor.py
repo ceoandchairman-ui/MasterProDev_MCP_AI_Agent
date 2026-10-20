@@ -1,5 +1,6 @@
 """Runs tools through one choke point: permission, owner, confirmation, untrusted-content rule, metrics."""
 
+import asyncio
 import hashlib
 import json
 import re
@@ -9,7 +10,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Dict
 
+import httpx
+
 from mpd_assistant.core.kv import KeyValueStore
+from mpd_assistant.core.resilience import CircuitBreaker, CircuitOpen
 from mpd_assistant.integrations.context import (
     current_token,
     reset_token,
@@ -20,7 +24,7 @@ from mpd_assistant.integrations.context import (
     set_user,
 )
 from mpd_assistant.memory.short_term.offload import ToolResultStore, digest
-from mpd_assistant.observability.metrics import TOOL_CALLS, TOOL_LATENCY
+from mpd_assistant.observability.metrics import TOOL_CALLS, TOOL_CIRCUIT, TOOL_LATENCY, TOOL_LIMITED, TOOL_RETRIES
 from mpd_assistant.privacy.detector import detect
 from mpd_assistant.routing.intents import Agent
 from mpd_assistant.tools.registry import Risk, Role, ToolRegistry
@@ -135,6 +139,13 @@ class ToolExecutor:
                 hit = ToolOutcome(tool, "ok", json.loads(cached), "cache_hit", untrusted=tool in UNTRUSTED_OUTPUT_TOOLS)
                 return self._record(tool, args, ctx, hit)
 
+        if spec.limit_per_day and self._kv is not None:
+            who = ctx.user_id or ctx.session_id or "anonymous"
+            day = time.strftime("%Y%m%d", time.gmtime())
+            if self._kv.incr(f"toollimit:{tool}:{who}:{day}", 86400) > spec.limit_per_day:
+                TOOL_LIMITED.labels(tool).inc()
+                return self._record(tool, args, ctx, ToolOutcome(tool, "denied", reason="daily_limit"))
+
         started = time.perf_counter()
         try:
             real_args = _map_strings(args, lambda t: self._rehydrate(ctx.session_id, t)) if self._rehydrate else args
@@ -193,20 +204,74 @@ class ToolExecutor:
         return outcome
 
 
-def http_backend(routes: Dict[str, tuple[str, str]], service_key: str | None, client) -> ToolBackend:
-    """Backend that calls MCP tool servers over HTTP. routes: registry tool -> (server base URL, server tool name)."""
+TRANSIENT_STATUS = frozenset({408, 429, 502, 503, 504})
+
+
+def _counts_against_service(exc: BaseException) -> bool:
+    """Network trouble and server-side errors say the service is unwell; a 4xx says the request was wrong."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500 or exc.response.status_code == 429
+    return isinstance(exc, httpx.HTTPError)
+
+
+def http_backend(
+    routes: Dict[str, tuple[str, str]],
+    service_key: str | None,
+    client,
+    registry: ToolRegistry | None = None,
+    *,
+    timeout: float = 15.0,
+    retries: int = 2,
+    max_concurrency: int = 16,
+    breaker_threshold: int = 5,
+    breaker_reset: float = 30.0,
+    base_delay: float = 0.3,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> ToolBackend:
+    """Backend that calls MCP tool servers over HTTP. routes: registry tool -> (server base URL, server tool name).
+
+    Each service has its own circuit breaker, so a down mail service does not slow calendar calls. Only read-only tools
+    are retried (given a registry to tell them apart): repeating a send or a delete could do it twice. At most
+    `max_concurrency` calls run at once."""
+    breakers: Dict[str, CircuitBreaker] = {}
+    slots = asyncio.Semaphore(max(1, max_concurrency))
 
     async def call(tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
         route = routes.get(tool)
         if not route:
             raise LookupError("no server for tool")
         base, server_tool = route
+        base = base.rstrip("/")
+        breaker = breakers.setdefault(base, CircuitBreaker(failure_threshold=breaker_threshold, reset_seconds=breaker_reset))
+        try:
+            breaker.allow()
+        except CircuitOpen:
+            TOOL_CIRCUIT.labels(base).inc()
+            raise
         headers = {"Authorization": f"Bearer {service_key}"} if service_key else {}
         user_token = current_token()
         if user_token:
             headers["X-Google-Access-Token"] = user_token
-        resp = await client.post(f"{base.rstrip('/')}/call", params={"tool_name": server_tool}, json=args, headers=headers, timeout=15.0)
-        resp.raise_for_status()
-        return resp.json()
+        spec = registry.get(tool) if registry is not None else None
+        attempts = 1 + (max(0, retries) if spec is not None and spec.risk is Risk.READ else 0)
+        for attempt in range(attempts):
+            try:
+                async with slots:
+                    resp = await client.post(f"{base}/call", params={"tool_name": server_tool}, json=args, headers=headers, timeout=timeout)
+                resp.raise_for_status()
+                result = resp.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                if _counts_against_service(exc):
+                    breaker.record_failure()
+                status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+                transient = status in TRANSIENT_STATUS if status is not None else isinstance(exc, httpx.TransportError)
+                if not transient or attempt == attempts - 1:
+                    raise
+                TOOL_RETRIES.labels(tool, str(status or "network")).inc()
+                await sleep(base_delay * (2**attempt))
+                continue
+            breaker.record_success()
+            return result
+        raise RuntimeError("unreachable")  # pragma: no cover
 
     return call

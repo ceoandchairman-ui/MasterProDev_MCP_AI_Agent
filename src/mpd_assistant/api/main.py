@@ -5,6 +5,7 @@ import base64
 import hmac
 import json
 import re
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -14,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from mpd_assistant.business.payments import InvalidSignature
@@ -81,7 +83,7 @@ class EdgeRateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         if request.url.path.startswith(EDGE_LIMITED_PREFIXES) and request.method != "OPTIONS":
-            if self._kv.incr(f"edge:{client_ip(request, self._hops)}", 60) > self._limit:
+            if await run_in_threadpool(self._kv.incr, f"edge:{client_ip(request, self._hops)}", 60) > self._limit:
                 return Response("Too many requests", status_code=429, headers={"Retry-After": "60"})
         return await call_next(request)
 
@@ -194,12 +196,20 @@ class Services:
     email_inbound_token: str | None = None
     admin: object | None = None
     admin_token: str | None = None
+    threadpool_size: int = 64
     entities: object | None = None
     delivery: object | None = None
 
 
 def create_app(services: Services) -> FastAPI:
-    app = FastAPI(title="MPD Assistant API", docs_url=None, redoc_url=None, openapi_url=None)
+    @asynccontextmanager
+    async def lifespan(_app):
+        import anyio
+
+        anyio.to_thread.current_default_thread_limiter().total_tokens = max(8, services.threadpool_size)
+        yield
+
+    app = FastAPI(title="MPD Assistant API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.add_middleware(SecurityHeadersMiddleware)
     if services.kv is not None and services.edge_requests_per_minute > 0:
         app.add_middleware(EdgeRateLimitMiddleware, kv=services.kv, per_minute=services.edge_requests_per_minute, trusted_hops=services.trusted_proxy_hops)
@@ -296,17 +306,17 @@ def create_app(services: Services) -> FastAPI:
         return FileResponse(ADMIN_UI_DIR / asset, media_type=media, headers=ADMIN_UI_HEADERS)
 
     @app.get("/v2/admin/overview", include_in_schema=False)
-    async def admin_overview(request: Request):
+    def admin_overview(request: Request):
         _check_staff(request)
         return _staff().overview()
 
     @app.get("/v2/admin/escalations", include_in_schema=False)
-    async def admin_escalations(request: Request):
+    def admin_escalations(request: Request):
         _check_staff(request)
         return {"escalations": [e.__dict__ for e in _staff().list_open()]}
 
     @app.get("/v2/admin/escalations/{reference}", include_in_schema=False)
-    async def admin_escalation(reference: str, request: Request):
+    def admin_escalation(reference: str, request: Request):
         _check_staff(request)
         view = _staff().get(reference)
         if view is None:
@@ -320,7 +330,7 @@ def create_app(services: Services) -> FastAPI:
         return directory
 
     @app.get("/v2/admin/people", include_in_schema=False)
-    async def admin_find_person(request: Request, email: str | None = None, phone: str | None = None):
+    def admin_find_person(request: Request, email: str | None = None, phone: str | None = None):
         _check_staff(request)
         try:
             person = _people().lookup(email=email, phone=phone)
@@ -331,12 +341,12 @@ def create_app(services: Services) -> FastAPI:
         return person.__dict__
 
     @app.get("/v2/admin/people/duplicates", include_in_schema=False)
-    async def admin_duplicates(request: Request):
+    def admin_duplicates(request: Request):
         _check_staff(request)
         return {"groups": _people().duplicates()}
 
     @app.post("/v2/admin/people/merge", include_in_schema=False)
-    async def admin_merge(body: MergeIn, request: Request):
+    def admin_merge(body: MergeIn, request: Request):
         _check_staff(request)
         try:
             report = _people().merge(body.primary_id, body.duplicate_id)
@@ -353,12 +363,12 @@ def create_app(services: Services) -> FastAPI:
         return {"layer": layer, "removed": removed}
 
     @app.get("/v2/admin/undelivered", include_in_schema=False)
-    async def admin_undelivered(request: Request):
+    def admin_undelivered(request: Request):
         _check_staff(request)
         return {"messages": _staff().undelivered()}
 
     @app.get("/v2/admin/quotes", include_in_schema=False)
-    async def admin_quotes(request: Request):
+    def admin_quotes(request: Request):
         _check_staff(request)
         return {"quotes": _staff().pending_quotes()}
 
@@ -371,19 +381,19 @@ def create_app(services: Services) -> FastAPI:
         return {"status": outcome}
 
     @app.get("/v2/admin/patterns", include_in_schema=False)
-    async def admin_patterns(request: Request):
+    def admin_patterns(request: Request):
         _check_staff(request)
         return {"patterns": _staff().pending_patterns()}
 
     @app.post("/v2/admin/patterns/{pattern_id}/{decision}", include_in_schema=False)
-    async def admin_review_pattern(pattern_id: str, decision: Literal["approve", "reject"], request: Request):
+    def admin_review_pattern(pattern_id: str, decision: Literal["approve", "reject"], request: Request):
         _check_staff(request)
         if not _staff().review_pattern(pattern_id, decision == "approve"):
             raise HTTPException(status_code=404, detail="Not found or already reviewed")
         return {"status": "approved" if decision == "approve" else "rejected"}
 
     @app.post("/v2/admin/escalations/{reference}/resolve", include_in_schema=False)
-    async def admin_resolve(reference: str, request: Request):
+    def admin_resolve(reference: str, request: Request):
         _check_staff(request)
         if not _staff().resolve(reference):
             raise HTTPException(status_code=404, detail="Not found or already resolved")
@@ -426,32 +436,32 @@ def create_app(services: Services) -> FastAPI:
             raise HTTPException(status_code=503, detail=render("temporary_error", "en"), headers={"Retry-After": "5"}) from None
 
     async def _run_chat_inner(body: ChatIn) -> ChatOut:
-        session = services.sessions.resume(body.session_id) if body.session_id else None
+        session = await run_in_threadpool(services.sessions.resume, body.session_id) if body.session_id else None
         if session is None:
-            session = services.sessions.create()
+            session = await run_in_threadpool(services.sessions.create)
         if services.kv is not None:
             limit = VERIFIED_DAILY_MESSAGES if session.verified else GUEST_DAILY_MESSAGES
-            if services.kv.incr(f"quota:{session.id}", 86400) > limit:
+            if await run_in_threadpool(services.kv.incr, f"quota:{session.id}", 86400) > limit:
                 return ChatOut(reply=render("rate_limited", "en"), session_id=session.id)
         result = await services.chat.chat(
             session.thread_id, body.message, verified=session.verified, user_id=session.user_id, session_row=session.id
         )
         if services.turns is not None and result.safe_user_text:
             try:
-                services.turns.record(session.id, result.safe_user_text, result.reply, result.intent, result.agent, result.mode)
+                await run_in_threadpool(services.turns.record, session.id, result.safe_user_text, result.reply, result.intent, result.agent, result.mode)
             except Exception as exc:
                 # A lost history row is better than a failed reply; it shows up in the metric and the log.
                 DEGRADED.labels(infrastructure_failure(exc) or "turn_record").inc()
         return ChatOut(reply=result.reply, session_id=session.id, escalated=result.escalated, reference=result.reference)
 
     @app.post("/v2/session", status_code=201)
-    async def new_session():
+    def new_session():
         """A visitor session without sending a message, so the widget can run sign-in before the first question."""
         session = services.sessions.create()
         return {"session_id": session.id, "verified": False}
 
     @app.get("/v2/session/{session_id}")
-    async def session_status(session_id: str):
+    def session_status(session_id: str):
         session = services.sessions.resume(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="Unknown or expired session")
@@ -471,8 +481,8 @@ def create_app(services: Services) -> FastAPI:
         """A file the user wants to talk about. Verified users only; the text is kept for this conversation, not forever."""
         if services.uploads is None:
             raise HTTPException(status_code=503, detail="Uploads are not available")
-        session = _verified_session(session_id)
-        if services.kv is not None and services.kv.incr(f"uploadrate:{session.id}", 3600) > MAX_UPLOADS_PER_HOUR:
+        session = await run_in_threadpool(_verified_session, session_id)
+        if services.kv is not None and await run_in_threadpool(services.kv.incr, f"uploadrate:{session.id}", 3600) > MAX_UPLOADS_PER_HOUR:
             raise HTTPException(status_code=429, detail="Too many uploads. Please try again later.")
         data = await file.read(services.uploads.max_bytes + 1)
         try:
@@ -486,7 +496,7 @@ def create_app(services: Services) -> FastAPI:
         return {"id": result.id, "kind": result.kind, "note": result.note}
 
     @app.delete("/v2/upload/{upload_id}")
-    async def delete_upload(upload_id: str, session_id: str):
+    def delete_upload(upload_id: str, session_id: str):
         if services.uploads is None:
             raise HTTPException(status_code=503, detail="Uploads are not available")
         session = _verified_session(session_id)
@@ -497,10 +507,10 @@ def create_app(services: Services) -> FastAPI:
         """Speech in, text reply out (and spoken reply when asked). Audio is transcribed and discarded, never stored."""
         if services.speech_to_text is None:
             raise HTTPException(status_code=503, detail=render("voice_unavailable", "en"))
-        session = services.sessions.resume(session_id)
+        session = await run_in_threadpool(services.sessions.resume, session_id)
         if session is None:
             raise HTTPException(status_code=401, detail="Unknown or expired session")
-        if services.kv is not None and services.kv.incr(f"voicerate:{session.id}", 3600) > (MAX_VOICE_PER_HOUR if session.verified else MAX_VOICE_PER_HOUR // 3):
+        if services.kv is not None and await run_in_threadpool(services.kv.incr, f"voicerate:{session.id}", 3600) > (MAX_VOICE_PER_HOUR if session.verified else MAX_VOICE_PER_HOUR // 3):
             raise HTTPException(status_code=429, detail=render("rate_limited", "en"))
         data = await audio.read(MAX_AUDIO_BYTES + 1)
         try:
@@ -558,12 +568,12 @@ def create_app(services: Services) -> FastAPI:
         return services.google
 
     @app.get("/v2/integrations/google/status")
-    async def google_status(session_id: str):
+    def google_status(session_id: str):
         session = _verified_session(session_id)
         return {"connected": bool(services.google and services.google.is_connected(session.user_id))}
 
     @app.get("/v2/integrations/google/start")
-    async def google_start(session_id: str):
+    def google_start(session_id: str):
         session = _verified_session(session_id)
         if services.account is not None:
             _recent(session)
@@ -581,7 +591,7 @@ def create_app(services: Services) -> FastAPI:
         return {"status": "connected"}
 
     @app.post("/v2/integrations/google/disconnect")
-    async def google_disconnect(body: StatusIn):
+    def google_disconnect(body: StatusIn):
         session = _verified_session(body.session_id)
         removed = _google().disconnect(session.user_id)
         return {"status": "disconnected" if removed else "not_connected"}
@@ -606,14 +616,14 @@ def create_app(services: Services) -> FastAPI:
         return {"status": "code_sent"}
 
     @app.post("/v2/account/stepup/verify")
-    async def stepup_verify(body: CodeIn):
+    def stepup_verify(body: CodeIn):
         session = _verified_session(body.session_id)
         if not _account().stepup_verify(session.id, session.user_id, body.code):
             raise HTTPException(status_code=400, detail="Verification failed")
         return {"status": "verified"}
 
     @app.patch("/v2/account/profile")
-    async def update_profile(body: NameIn):
+    def update_profile(body: NameIn):
         session = _verified_session(body.session_id)
         try:
             _account().update_name(session.user_id, body.name)
@@ -642,7 +652,7 @@ def create_app(services: Services) -> FastAPI:
         return {"status": "updated"}
 
     @app.get("/v2/account/export")
-    async def account_export(session_id: str):
+    def account_export(session_id: str):
         session = _verified_session(session_id)
         _recent(session)
         if services.dsr is None:
@@ -650,7 +660,7 @@ def create_app(services: Services) -> FastAPI:
         return services.dsr.export(session.user_id)
 
     @app.post("/v2/account/delete")
-    async def account_delete(body: DeleteIn):
+    def account_delete(body: DeleteIn):
         session = _verified_session(body.session_id)
         _recent(session)
         if body.confirm != "DELETE":
@@ -662,7 +672,7 @@ def create_app(services: Services) -> FastAPI:
         return {"status": "deleted" if report.complete else "partial"}
 
     @app.get("/v2/account/sessions")
-    async def account_sessions(session_id: str):
+    def account_sessions(session_id: str):
         session = _verified_session(session_id)
         rows = services.sessions.list_active(session.user_id)
         return {
@@ -672,7 +682,7 @@ def create_app(services: Services) -> FastAPI:
         }
 
     @app.post("/v2/account/sessions/revoke")
-    async def account_revoke(body: RevokeIn):
+    def account_revoke(body: RevokeIn):
         """Sign out one device (by the short id shown in the list) or, without a target, every other device."""
         session = _verified_session(body.session_id)
         if body.target_id is None:
@@ -684,7 +694,7 @@ def create_app(services: Services) -> FastAPI:
         raise HTTPException(status_code=404, detail="Session not found")
 
     @app.post("/v2/memory/consent")
-    async def memory_consent(body: ConsentIn):
+    def memory_consent(body: ConsentIn):
         session = _verified_session(body.session_id)
         if services.users is None:
             raise HTTPException(status_code=503, detail="Memory is not available")
@@ -694,13 +704,13 @@ def create_app(services: Services) -> FastAPI:
         return {"memory": "on" if body.enabled else "off"}
 
     @app.get("/v2/memory")
-    async def memory_list(session_id: str):
+    def memory_list(session_id: str):
         session = _verified_session(session_id)
         items = services.memory_store.export(session.user_id) if services.memory_store is not None else []
         return {"memories": [{"id": m["id"], "kind": m["kind"], "text": m["text"]} for m in items if m.get("valid_to") is None]}
 
     @app.post("/v2/memory/forget")
-    async def memory_forget(body: StatusIn):
+    def memory_forget(body: StatusIn):
         session = _verified_session(body.session_id)
         removed = services.memory_store.delete_all(session.user_id) if services.memory_store is not None else 0
         return {"forgotten": removed}
@@ -722,7 +732,7 @@ def create_app(services: Services) -> FastAPI:
         return {"status": "codes_sent"}
 
     @app.post("/v2/identity/verify")
-    async def identity_verify(body: VerifyIn):
+    def identity_verify(body: VerifyIn):
         if services.sessions.resume(body.session_id) is None:
             raise HTTPException(status_code=401, detail="Unknown or expired session")
         user = services.identity.verify(body.session_id, body.email_code, body.phone_code)

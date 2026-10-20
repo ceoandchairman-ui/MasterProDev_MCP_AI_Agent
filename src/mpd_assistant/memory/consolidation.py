@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import List
 
 from mpd_assistant.agents.common import parse_json_object
+from mpd_assistant.agents.prompts import load_prompt
 from mpd_assistant.core.llm.client import LLM, LLMError
 from mpd_assistant.memory.long_term.store import Candidate, Memory, MemoryStore, jaccard
 
@@ -21,11 +22,7 @@ CLUSTER_SIMILARITY = 0.3
 MAX_CLUSTER = 8
 _DAY = 86400.0
 
-SYSTEM = (
-    "These are notes from past conversations with one user. Write ONE durable fact or preference that they all "
-    'support, under 200 characters, with no names, contact details or placeholders. Output ONLY JSON: '
-    '{"text": str, "importance": 0-1, "confidence": 0-1} or {"text": ""} if there is no common durable point.'
-)
+SYSTEM = load_prompt("memory", "consolidate").render()
 
 
 @dataclass

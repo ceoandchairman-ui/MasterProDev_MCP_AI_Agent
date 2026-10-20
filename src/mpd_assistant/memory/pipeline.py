@@ -4,11 +4,13 @@ With an embedder, recall also matches by meaning (so a question in French finds 
 failures never break a turn: recall falls back to word overlap.
 """
 
+import asyncio
 import logging
 from collections.abc import Callable
 from typing import List
 
 from mpd_assistant.agents.common import parse_json_object
+from mpd_assistant.agents.prompts import load_prompt
 from mpd_assistant.core.llm.client import LLM, LLMError
 from mpd_assistant.memory.long_term.store import KINDS, Candidate, MemoryStore
 from mpd_assistant.retrieval.embeddings import Embedder
@@ -19,12 +21,7 @@ logger = logging.getLogger(__name__)
 MIN_CHARS_TO_EXTRACT = 30
 MAX_PROPOSALS = 3
 
-PROPOSE_SYSTEM = (
-    "From the user's message, extract at most 3 durable facts or preferences that would help in future "
-    'conversations (their business, needs, tools, language, tone preferences). Output ONLY JSON: '
-    '{"memories": [{"kind": "fact|preference|episode|procedure", "text": str, "importance": 0-1, "confidence": 0-1, "slot": str|null}]}. '
-    "Never include contact details, names, secrets or placeholders like <EMAIL_1>. Output {\"memories\": []} if nothing is durable."
-)
+PROPOSE_SYSTEM = load_prompt("memory", "propose").render()
 
 
 def _clamp(value, default: float) -> float:
@@ -58,20 +55,20 @@ class MemoryWiring:
             return None
 
     async def before(self, user_id: str | None, safe_text: str) -> str:
-        if not self._allowed(user_id):
+        if not await asyncio.to_thread(self._allowed, user_id):
             return ""
         vectors = await self._embed([safe_text])
-        memories = self._store.recall(user_id, safe_text, self._budget, query_vector=vectors[0] if vectors else None)
+        memories = await asyncio.to_thread(self._store.recall, user_id, safe_text, self._budget, query_vector=vectors[0] if vectors else None)
         return "\n".join(f"- {m.text}" for m in memories)
 
     async def after(self, user_id: str | None, safe_text: str, *, allow: bool) -> int:
         """Returns how many memories were stored. Never raises: memory must not break a conversation."""
-        if not allow or self._llm is None or not self._allowed(user_id) or len(safe_text) < MIN_CHARS_TO_EXTRACT:
+        if not allow or self._llm is None or len(safe_text) < MIN_CHARS_TO_EXTRACT or not await asyncio.to_thread(self._allowed, user_id):
             return 0
         try:
             stored = []
             for candidate in await self._propose(safe_text):
-                result = self._store.write(user_id, candidate, consent=True)
+                result = await asyncio.to_thread(self._store.write, user_id, candidate, consent=True)
                 if result.status in ("stored", "superseded") and result.memory is not None:
                     stored.append(result.memory)
             if stored:

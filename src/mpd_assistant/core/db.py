@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_TENANT = "masterprodev"
 
 
-def make_engine(database_url: str, pool_size: int = 5, max_overflow: int = 5) -> Engine:
+def make_engine(database_url: str, pool_size: int = 5, max_overflow: int = 5, statement_timeout_ms: int = 15000) -> Engine:
     """Postgres engine. Connections are retried with backoff (a Postgres restart takes seconds), stale pooled connections
     are detected before use, and the pool is bounded. Size it so that replicas x (pool_size + max_overflow) stays under
     the server's max_connections; put PgBouncer in front before raising it past that."""
@@ -25,9 +25,10 @@ def make_engine(database_url: str, pool_size: int = 5, max_overflow: int = 5) ->
     def connect():
         import psycopg2
 
-        return retry_sync(lambda: psycopg2.connect(url, connect_timeout=5), attempts=3, base_delay=0.3, retry_on=(psycopg2.OperationalError,))
+        options = f"-c statement_timeout={statement_timeout_ms}" if statement_timeout_ms else None  # a stuck query ends instead of holding a connection
+        return retry_sync(lambda: psycopg2.connect(url, connect_timeout=5, options=options), attempts=3, base_delay=0.3, retry_on=(psycopg2.OperationalError,))
 
-    return create_engine(url, creator=connect, pool_pre_ping=True, pool_size=pool_size, max_overflow=max_overflow, pool_recycle=1800)
+    return create_engine(url, creator=connect, pool_pre_ping=True, pool_size=pool_size, max_overflow=max_overflow, pool_recycle=1800, pool_timeout=5)
 
 
 def check_engine(engine: Engine) -> bool:

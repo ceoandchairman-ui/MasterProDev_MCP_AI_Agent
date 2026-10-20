@@ -31,11 +31,27 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = "https://router.huggingface.co/v1"
     LLM_MODEL_CHEAP: str | None = None
     LLM_MODEL_REASONING: str | None = None
+    # Each tier can use its own endpoint and key (for example a self-hosted server for the cheap tier); empty means LLM_BASE_URL
+    # and HUGGINGFACE_API_KEY. A fallback model is tried on the same endpoint when the primary fails.
+    LLM_CHEAP_BASE_URL: str | None = None
+    LLM_CHEAP_API_KEY: str | None = None
+    LLM_MID_BASE_URL: str | None = None
+    LLM_MID_API_KEY: str | None = None
+    LLM_REASONING_BASE_URL: str | None = None
+    LLM_REASONING_API_KEY: str | None = None
+    LLM_FALLBACK_CHEAP: str | None = None
+    LLM_FALLBACK_MID: str | None = None
+    LLM_FALLBACK_REASONING: str | None = None
+    LLM_MAX_RETRIES: int = 2
+    LLM_MAX_CONCURRENCY: int = 8  # in-flight model calls per tier
     CATALOG_PATH: str | None = None
     JUDGE_SAMPLE_RATE: float = 0.2
     SESSION_DAILY_TOKENS: int = 60000
     GLOBAL_DAILY_TOKENS: int = 2000000
     ESCALATION_EMAIL: str | None = None
+    THREADPOOL_SIZE: int = 64  # threads for blocking database and cache calls made from request handlers
+    TURN_TIMEOUT_SECONDS: int = 45  # one conversation turn, end to end; 0 turns the limit off
+    GRAPH_RECURSION_LIMIT: int = 30  # LangGraph's own backstop on top of the step guard (the real maximum is about 12)
     CACHE_ENABLED: bool = True
     SEMANTIC_CACHE_ENABLED: bool = True
     SEMANTIC_CACHE_THRESHOLD: float = 0.92
@@ -80,6 +96,9 @@ class Settings(BaseSettings):
     AUDIO_API_KEY: str | None = None
     VISION_MODEL: str | None = None
     OCR_ENGINE: str = "none"  # none | tesseract | vision
+    TOOL_TIMEOUT_SECONDS: int = 15  # one call to a tool service
+    TOOL_MAX_RETRIES: int = 2  # read-only tools only; sends and deletes are never repeated
+    TOOL_MAX_CONCURRENCY: int = 16
     CALENDAR_SERVER_URL: str | None = None
     GMAIL_SERVER_URL: str | None = None
     DB_SERVER_URL: str | None = None  # the company-data tool service (read-only)

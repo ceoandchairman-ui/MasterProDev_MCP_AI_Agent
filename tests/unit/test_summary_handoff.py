@@ -75,7 +75,7 @@ async def test_long_conversation_gets_summarized_and_fed_back_to_the_agent():
     assert "mobile apps" in RollingSummarizer(llm, kv).context_for("t1")
     await svc.chat("t1", "And what about web platforms for logistics, one more question")
     answers = [c for c in llm.calls if "Answer ONLY from the provided context" in c[0]["content"]]
-    assert "Earlier in this conversation" in answers[-1][1]["content"]
+    assert "Earlier in this conversation" in answers[-1][-1]["content"]  # the final user message carries the summary; earlier turns sit before it
 
 
 def test_handoff_packet_lists_known_and_missing_facts_within_the_cap():

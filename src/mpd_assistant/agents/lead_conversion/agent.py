@@ -3,6 +3,7 @@
 from typing import Any, Dict, Protocol
 
 from mpd_assistant.agents.common import parse_json_object
+from mpd_assistant.agents.context import HISTORY_BUDGET, recent_turns
 from mpd_assistant.agents.prompts import load_prompt
 from mpd_assistant.business.funnel import InvalidTransition, Stage, apply_transition
 from mpd_assistant.core.llm.client import LLM, LLMError
@@ -62,7 +63,7 @@ def make_lead_conversion(llm: LLM, leads: LeadRepository, companies=None):
 
         try:
             result = await llm.complete(
-                [{"role": "system", "content": EXTRACT.render()}, {"role": "user", "content": _last_user(state)}],
+                [{"role": "system", "content": EXTRACT.render()}, *recent_turns(state, HISTORY_BUDGET["lead"]), {"role": "user", "content": _last_user(state)}],
                 tier="cheap",
                 max_tokens=200,
                 temperature=0.0,

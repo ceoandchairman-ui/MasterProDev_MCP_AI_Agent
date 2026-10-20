@@ -30,8 +30,8 @@ from mpd_assistant.core.db import check_engine, ensure_tenant, make_engine
 from mpd_assistant.core.kv import KeyValueStore, MemoryKV, RedisKV
 from mpd_assistant.core.llm.budget import TokenBudget
 from mpd_assistant.core.llm.client import OpenAICompatibleLLM
+from mpd_assistant.core.llm.factory import build_llm
 from mpd_assistant.core.llm.metered import MeteredLLM
-from mpd_assistant.core.llm.resilient import BreakerLLM
 from mpd_assistant.core.logging import configure_logging
 from mpd_assistant.core.startup import assert_production_ready
 from mpd_assistant.evaluation.online.judge import LlmJudge
@@ -119,7 +119,7 @@ def _kv(redis_url: str, production: bool) -> KeyValueStore:
     try:
         import redis
 
-        client = redis.Redis.from_url(redis_url)
+        client = redis.Redis.from_url(redis_url, socket_timeout=2.0, socket_connect_timeout=2.0, health_check_interval=30)
         client.ping()
         return RedisKV(client)
     except Exception:
@@ -147,7 +147,7 @@ def _response_cache(settings, production: bool):
     try:
         import redis.asyncio as aioredis
 
-        return ResponseCache(RedisBackend(aioredis.Redis.from_url(settings.REDIS_CACHE_URL or settings.REDIS_URL)))
+        return ResponseCache(RedisBackend(aioredis.Redis.from_url(settings.REDIS_CACHE_URL or settings.REDIS_URL, socket_timeout=2.0, socket_connect_timeout=2.0, health_check_interval=30)))
     except Exception:
         if production:
             raise
@@ -276,10 +276,8 @@ def build_services() -> Services:
         notify_change=tell_old_contact,
     )
 
-    llm = None
-    if settings.HUGGINGFACE_API_KEY and settings.HUGGINGFACE_MODEL:
-        models = {"mid": settings.HUGGINGFACE_MODEL, "cheap": settings.LLM_MODEL_CHEAP or settings.HUGGINGFACE_MODEL, "reasoning": settings.LLM_MODEL_REASONING or settings.HUGGINGFACE_MODEL}
-        llm = GuardedLLM(BreakerLLM(OpenAICompatibleLLM(settings.LLM_BASE_URL, settings.HUGGINGFACE_API_KEY, models)))
+    routed = build_llm(settings, OpenAICompatibleLLM)
+    llm = GuardedLLM(routed) if routed is not None else None
 
     retriever = None
     embedder = None
@@ -302,7 +300,10 @@ def build_services() -> Services:
     executor = None
     routes = tool_routes(settings)
     if routes and settings.MCP_SERVICE_KEY:
-        remote = http_backend(routes, settings.MCP_SERVICE_KEY, httpx.AsyncClient())
+        remote = http_backend(
+            routes, settings.MCP_SERVICE_KEY, httpx.AsyncClient(), registry,
+            timeout=settings.TOOL_TIMEOUT_SECONDS, retries=settings.TOOL_MAX_RETRIES, max_concurrency=settings.TOOL_MAX_CONCURRENCY,
+        )
         backend = with_memory_tools(MemoryTools(memory_store, users.memory_consent, kv, embedder), remote)
         executor = ToolExecutor(
             registry,
@@ -373,6 +374,8 @@ def build_services() -> Services:
         uploads=uploads,
         patterns=patterns,
         episodes=episodes,
+        turn_timeout=settings.TURN_TIMEOUT_SECONDS or None,
+        recursion_limit=settings.GRAPH_RECURSION_LIMIT,
     )
     sessions = SessionService(session_repo)
     gateway = ChannelGateway(chat, sessions, users, notifications, kv, settings.BLIND_INDEX_KEY)  # type: ignore[arg-type]
@@ -427,6 +430,7 @@ def build_services() -> Services:
         cors_origins=tuple(o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()),
         trusted_proxy_hops=settings.TRUSTED_PROXY_HOPS,
         edge_requests_per_minute=settings.EDGE_REQUESTS_PER_MINUTE,
+        threadpool_size=settings.THREADPOOL_SIZE,
     )
 
 

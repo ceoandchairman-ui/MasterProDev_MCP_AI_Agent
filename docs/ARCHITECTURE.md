@@ -110,6 +110,29 @@ None of it has run against live Postgres, Redis, a language model or any provide
   allowlisted read-only queries (lead stage, quotes, customer profile with company, never name, email or phone); the quoting
   service stays stateless. Every tool is declared once in `tools/registry.py` with its arguments: the planner is shown them,
   the Comms agent rejects bad arguments before anything runs, and the executor, not the model, supplies `user_id` and idempotency keys.
+- **Limits and resilience** (all configurable in `core/config.py`, defaults in `.env.example`):
+  - *Per turn:* one conversation turn may take `TURN_TIMEOUT_SECONDS` (45); past that the user gets the retry message. The graph
+    has an explicit `GRAPH_RECURSION_LIMIT` (30; the real maximum is about 12): at most 3 sub-tasks per message, the supervisor
+    escalates after 6 visits, the plan-act-reflect loop runs at most 2 times for the Solution Architect, Comms plans at most
+    3 actions. A loop-limit stop hands the conversation to a person.
+  - *Model calls:* each tier (cheap, mid, reasoning) has its own endpoint, key, timeout, circuit breaker and optional fallback
+    model (`LLM_<TIER>_*`, `LLM_FALLBACK_<TIER>`). Transient failures (429, 5xx, timeouts) are retried with backoff and jitter,
+    honouring `Retry-After`; permanent refusals (401, 402, 400) fail at once. A request the provider rejects as malformed
+    never opens the circuit. At most `LLM_MAX_CONCURRENCY` calls per tier run at once.
+  - *Tool calls:* each tool service has its own circuit breaker. Read-only tools are retried; sends, event changes and deletes
+    never are. Calls run at most `TOOL_MAX_CONCURRENCY` at a time. Writes also have per-user daily limits
+    (`ToolSpec.limit_per_day`, shared across a person's sessions), and a repeated confirmed action is neither repeated nor counted.
+  - *Event loop:* blocking Postgres and Redis calls in the chat path run on a thread pool (`THREADPOOL_SIZE`), handlers that
+    never await are plain functions, and every Redis and Postgres call is time-bounded (2 s sockets, 15 s statements, 5 s waiting
+    for a pooled connection). The remaining blocking calls (key-value reads inside `ChatService`) are short and bounded; a full
+    async rewrite (`asyncpg`, `redis.asyncio`) is the next step if `scripts/load_test.py` shows the loop is the limit. Run more
+    than one worker with `WEB_CONCURRENCY` (uvicorn reads it) so one slow process cannot stall every request.
+- **Prompts and context:** every prompt, including the judge, summariser and memory prompts, is a versioned file under
+  `agents/*/prompts/` and its version is part of the cache key. The Concierge, Comms and Lead agents carry the last few turns
+  (trimmed to a per-agent budget), and the Concierge turns a follow-up such as "and how long does it take?" into a standalone
+  search query with one cheap model call. Background notes (summary, memories, files, style) are fitted to a token budget:
+  uploaded-file text and style examples are dropped first, then the least relevant memories, and references such as "that
+  email" are never dropped. `scripts/compare_models.py` measures candidate models on the project's own prompts.
 - **Human approval** is checkpointed state (`pending_action`), not a LangGraph `interrupt()`: sends, event changes and
   payments wait for an explicit yes on the next turn, and the checkpointer keeps the question across restarts.
 - **Also written, not run live:** key rotation (`privacy/rotation.py`, `scripts/rotate_keys.py`, `DATA_ENCRYPTION_KEYS_PREVIOUS`),

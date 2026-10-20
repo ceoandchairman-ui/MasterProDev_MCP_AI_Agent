@@ -46,3 +46,4 @@ image_unreadable: "Je n'ai pas pu lire cette image. Pouvez-vous la décrire ou e
 email_received: "Merci pour votre courriel. Nous l'avons bien reçu et vous répondrons sous peu."
 voice_welcome: "Bonjour, vous avez joint MasterProDev. Dites-nous comment nous pouvons vous aider après le signal."
 voice_goodbye: "Merci d'avoir appelé MasterProDev. Au revoir."
+tool_limit_reached: "Vous avez atteint la limite quotidienne pour ce type d'action. Elle se réinitialise demain, ou un membre de notre équipe peut vous aider maintenant."

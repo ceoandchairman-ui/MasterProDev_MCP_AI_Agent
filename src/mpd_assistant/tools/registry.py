@@ -86,6 +86,7 @@ class ToolSpec:
     description: str = ""
     params: Tuple[Param, ...] = ()  # empty means the tool takes no arguments the model controls
     inject_user: bool = False  # the executor sets `user_id` from the verified session; the model can never choose it
+    limit_per_day: int | None = None  # most calls one user may make in a day; the counter is shared across their sessions
 
     @property
     def needs_confirmation(self) -> bool:
@@ -179,7 +180,7 @@ def default_registry() -> ToolRegistry:
     )
     r.register(
         ToolSpec(
-            "create_calendar_event", comms, Risk.WRITE, Role.VERIFIED, description="Create a calendar event",
+            "create_calendar_event", comms, Risk.WRITE, Role.VERIFIED, limit_per_day=20, description="Create a calendar event",
             params=(
                 Param("title", "str", True, "event title", 200), Param("start_time", "datetime", True), Param("end_time", "datetime", True), tz,
                 Param("description", "str", False), Param("attendees", "emails", False, "guest email addresses"), Param("idempotency_key", "str"),
@@ -188,18 +189,18 @@ def default_registry() -> ToolRegistry:
     )
     r.register(
         ToolSpec(
-            "reschedule_calendar_event", comms, Risk.WRITE, Role.VERIFIED, description="Move an existing event to a new time",
+            "reschedule_calendar_event", comms, Risk.WRITE, Role.VERIFIED, limit_per_day=20, description="Move an existing event to a new time",
             params=(Param("event_id", "str", True, "id from get_calendar_events", 200), Param("start_time", "datetime", True), Param("end_time", "datetime", True), tz),
         )
     )
-    r.register(ToolSpec("delete_calendar_event", comms, Risk.DESTRUCTIVE, Role.STAFF, description="Delete an event", params=(Param("event_id", "str", True, "id from get_calendar_events", 200),)))
+    r.register(ToolSpec("delete_calendar_event", comms, Risk.DESTRUCTIVE, Role.STAFF, limit_per_day=10, description="Delete an event", params=(Param("event_id", "str", True, "id from get_calendar_events", 200),)))
 
     # Email
     r.register(ToolSpec("get_emails", comms, Risk.READ, Role.STAFF, description="List recent emails", params=(Param("limit", "int", False), Param("query", "str", False, "Gmail search text", 200))))
     r.register(ToolSpec("read_email", comms, Risk.READ, Role.STAFF, description="Read one email in full", params=(Param("email_id", "str", True, "id from get_emails", 200),)))
     mail = (Param("to", "emails", True, "recipient addresses"), Param("subject", "str", True, "subject line", 200), Param("body", "str", True, "message text", 20000), Param("cc", "emails", False))
-    r.register(ToolSpec("create_email_draft", comms, Risk.WRITE, Role.VERIFIED, description="Save an email as a draft without sending", params=mail))
-    r.register(ToolSpec("send_email", comms, Risk.WRITE, Role.VERIFIED, description="Send an email", params=mail + (Param("idempotency_key", "str"),)))
+    r.register(ToolSpec("create_email_draft", comms, Risk.WRITE, Role.VERIFIED, limit_per_day=40, description="Save an email as a draft without sending", params=mail))
+    r.register(ToolSpec("send_email", comms, Risk.WRITE, Role.VERIFIED, limit_per_day=20, description="Send an email", params=mail + (Param("idempotency_key", "str"),)))
 
     # Company data (read-only, scoped to the signed-in user by the executor)
     r.register(ToolSpec("get_lead_stage", Agent.LEAD_CONVERSION, Risk.READ, Role.VERIFIED, description="The signed-in user's funnel stage, timeline and budget", params=(Param("user_id", "str"),), inject_user=True))

@@ -4,11 +4,14 @@ The graph, its checkpoints and every model call only ever see tokens such as <EM
 Optional collaborators (cache, memory, escalations, summaries) are wired in by the application factory.
 """
 
+import asyncio
 import logging
 import re
 import time
 from dataclasses import dataclass
 from typing import Any, List
+
+from langgraph.errors import GraphRecursionError
 
 from mpd_assistant.cache.keys import build_key, may_cache
 from mpd_assistant.cache.store import DEFAULT_TTL_SECONDS, ResponseCache
@@ -66,7 +69,10 @@ class ChatService:
         uploads: Any = None,
         patterns: Any = None,
         episodes: Any = None,
+        turn_timeout: float | None = None,
+        recursion_limit: int = 30,
     ):
+        self._turn_timeout, self._recursion_limit = turn_timeout, recursion_limit
         self._entities, self._topics, self._uploads, self._patterns, self._episodes = entities, topics, uploads, patterns, episodes
         self._semantic = semantic
         self._graph = graph
@@ -117,6 +123,20 @@ class ChatService:
                 parts.append(f"The user changed topic. The earlier unfinished topic was: {shift.parked.summary}. ")
         return "".join(p for p in parts if p).strip()
 
+    async def _escalate_loop(self, session_id: str, session_row: str | None, safe_text: str, decision) -> "ChatResult":
+        reference = None
+        if self._escalations is not None:
+            state = {"session_id": session_id, "session_row": session_row, "messages": [{"role": "user", "content": safe_text}], "language": decision.language}
+            try:
+                reference = await self._escalations.hook(state, "loop_limit")
+            except Exception:
+                logger.exception("escalation after a loop-limit stop failed")
+        reply = render("escalation_notice", decision.language, {"reference": reference}) if reference else render("temporary_error", decision.language)
+        return ChatResult(
+            reply, bool(reference), reference, ["loop_limit"], safe_user_text=safe_text,
+            intent=decision.intent.value, agent=decision.agent.value, mode=decision.mode.value,
+        )
+
     async def end_conversation(self, thread_id: str, user_id: str | None, outcome: str = "no_outcome") -> None:
         """Called when a conversation is closed: keeps a short episode (with consent) and clears per-thread working state."""
         if self._episodes is not None and user_id:
@@ -164,9 +184,9 @@ class ChatService:
         started = time.perf_counter()
         safe_text = self._vault.tokenize(session_id, raw_text)
 
-        if self._escalations is not None and session_row and self._escalations.is_paused(session_row):
+        if self._escalations is not None and session_row and await asyncio.to_thread(self._escalations.is_paused, session_row):
             # A person has been asked to take over: the assistant stays quiet instead of talking over them.
-            reference = self._escalations.open_reference(session_row)
+            reference = await asyncio.to_thread(self._escalations.open_reference, session_row)
             return ChatResult(
                 render("escalation_paused", route(safe_text).language, {"reference": reference or ""}),
                 True,
@@ -249,7 +269,7 @@ class ChatService:
             style_examples = self._patterns.few_shot_block(decision.intent.value, decision.language)
         marker = set_scope(session_id)  # every model call in this turn is charged to this conversation
         try:
-            out = await self._graph.ainvoke(
+            run = self._graph.ainvoke(
                 {
                     "messages": [{"role": "user", "content": safe_text}],
                     "session_id": session_id,
@@ -268,8 +288,22 @@ class ChatService:
                     "attachment_context": attachment_context,
                     "style_examples": style_examples,
                 },
-                config={"configurable": {"thread_id": session_id}},
+                config={"configurable": {"thread_id": session_id}, "recursion_limit": self._recursion_limit},
             )
+            out = await (asyncio.wait_for(run, self._turn_timeout) if self._turn_timeout else run)
+        except TimeoutError:
+            # The turn ran out of time (a slow model or tool). The user gets a retry message instead of a hung request.
+            DEGRADED.labels("turn_timeout").inc()
+            logger.error("turn exceeded %.0f seconds and was cancelled", self._turn_timeout or 0)
+            return ChatResult(
+                render("temporary_error", decision.language), False, None, ["turn_timeout"], safe_user_text=safe_text,
+                intent=decision.intent.value, agent=decision.agent.value, mode=decision.mode.value,
+            )
+        except GraphRecursionError:
+            # The graph kept looping. A person takes over rather than the user seeing a server error.
+            DEGRADED.labels("loop_limit").inc()
+            logger.error("conversation graph hit its recursion limit (%d)", self._recursion_limit)
+            return await self._escalate_loop(session_id, session_row, safe_text, decision)
         finally:
             reset_scope(marker)
         graph_reply = out.get("response") or ""

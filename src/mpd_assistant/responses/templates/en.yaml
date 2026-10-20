@@ -48,3 +48,4 @@ image_unreadable: "I couldn't read that image. Could you describe it, or send a 
 email_received: "Thanks for your email. We received it and will reply shortly."
 voice_welcome: "Hello, you have reached MasterProDev. Please tell me how we can help after the tone."
 voice_goodbye: "Thank you for calling MasterProDev. Goodbye."
+tool_limit_reached: "You have reached today's limit for that kind of action. It resets tomorrow, or a member of our team can help you now."

@@ -16,7 +16,7 @@ from typing import Dict, List
 from mpd_assistant.core.config import get_settings
 from mpd_assistant.core.db import check_engine, ensure_tenant, make_engine
 from mpd_assistant.core.kv import KeyValueStore, MemoryKV, RedisKV
-from mpd_assistant.core.llm.client import OpenAICompatibleLLM
+from mpd_assistant.core.llm.factory import build_llm
 from mpd_assistant.core.logging import configure_logging
 from mpd_assistant.ingestion.indexer import index_directory
 from mpd_assistant.memory.consolidation import Consolidator
@@ -40,7 +40,7 @@ def _kv(url: str) -> KeyValueStore:
     try:
         import redis
 
-        client = redis.Redis.from_url(url)
+        client = redis.Redis.from_url(url, socket_timeout=2.0, socket_connect_timeout=2.0, health_check_interval=30)
         client.ping()
         return RedisKV(client)
     except Exception:
@@ -50,7 +50,7 @@ def _kv(url: str) -> KeyValueStore:
 
 def build_jobs() -> Dict[str, Job]:
     s = get_settings()
-    engine = make_engine(s.DATABASE_URL)
+    engine = make_engine(s.DATABASE_URL, statement_timeout_ms=300000)  # jobs may run long statements; five minutes at most
     if not check_engine(engine):
         raise SystemExit("Database is unreachable")
     tenant = ensure_tenant(engine)
@@ -61,10 +61,7 @@ def build_jobs() -> Dict[str, Job]:
 
     jobs["retention"] = Job("retention", 24 * 3600, retention)
 
-    llm = None
-    if s.HUGGINGFACE_API_KEY and s.HUGGINGFACE_MODEL:
-        models = {"mid": s.HUGGINGFACE_MODEL, "cheap": s.LLM_MODEL_CHEAP or s.HUGGINGFACE_MODEL, "reasoning": s.LLM_MODEL_REASONING or s.HUGGINGFACE_MODEL}
-        llm = OpenAICompatibleLLM(s.LLM_BASE_URL, s.HUGGINGFACE_API_KEY, models)
+    llm = build_llm(s)
     store = MemoryStore(repo=SqlMemoryRepository(engine))
 
     from mpd_assistant.identity.sql import SqlUserRepository

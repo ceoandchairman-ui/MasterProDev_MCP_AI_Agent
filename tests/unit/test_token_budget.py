@@ -96,7 +96,7 @@ async def test_chat_stops_before_calling_the_model_once_the_conversation_budget_
     budget = TokenBudget(MemoryKV(), per_scope_daily=150, global_daily=0)
     svc, llm = service(budget)
     first = await svc.chat("s1", "Tell me about your mobile app work for logistics companies")
-    second = await svc.chat("s1", "And what about your web platform work for retail companies")
+    second = await svc.chat("s1", "Tell me about your web platform work for retail companies in detail")  # not a follow-up, so no rewrite call
     blocked = await svc.chat("s1", "One more question about cloud migration services please")
     assert first.reply.startswith("An answer") and second.reply.startswith("An answer")
     assert "daily limit" in blocked.reply and blocked.eval_reasons == ["budget_session"] and llm.calls == 2

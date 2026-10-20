@@ -11,6 +11,7 @@ import re
 from collections.abc import Callable
 
 from mpd_assistant.agents.common import parse_json_object
+from mpd_assistant.agents.prompts import load_prompt
 from mpd_assistant.core.kv import KeyValueStore
 from mpd_assistant.core.llm.client import LLM, LLMError
 from mpd_assistant.memory.long_term.store import MAX_TEXT, Candidate, MemoryStore, WriteResult
@@ -23,11 +24,7 @@ MIN_SUMMARY_CHARS = 40
 _TOKEN = re.compile(r"<([A-Z_]+)_\d+>")
 _TOKEN_WORDS = {"EMAIL": "their email", "PHONE": "their phone number", "PERSON": "the user", "NAME": "the user", "USER_EMAIL": "their email"}
 
-CONDENSE_SYSTEM = (
-    "Condense this conversation summary into ONE sentence of at most 220 characters, written about 'the user' in the "
-    "past tense. Keep only what would matter in a later conversation. No names, contact details or placeholders. "
-    'Output ONLY JSON: {"text": str}.'
-)
+CONDENSE_SYSTEM = load_prompt("memory", "condense").render()
 
 
 def scrub_tokens(text: str) -> str:

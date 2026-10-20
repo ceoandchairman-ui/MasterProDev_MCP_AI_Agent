@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List
 
+from mpd_assistant.agents.prompts import load_prompt
 from mpd_assistant.core.kv import KeyValueStore
 from mpd_assistant.core.llm.client import LLM, LLMError
 
@@ -9,11 +10,7 @@ SUMMARY_TTL_SECONDS = 7 * 24 * 3600
 KEEP_RECENT = 4
 MAX_SUMMARY_CHARS = 900
 
-SYSTEM = (
-    "Summarize this conversation for the assistant's own later use in under 120 words: what the user wants, "
-    "facts they gave, decisions made, and open questions. Keep placeholders like <EMAIL_1> exactly as written. "
-    "Do not invent anything."
-)
+SYSTEM = load_prompt("memory", "summarize").render()
 
 
 class RollingSummarizer:

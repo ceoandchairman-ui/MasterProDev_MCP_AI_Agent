@@ -6,6 +6,7 @@ Side effects always wait for an explicit user confirmation on the next turn.
 from typing import Any, Dict
 
 from mpd_assistant.agents.common import PlanStep, is_affirmative, is_negative, parse_plan
+from mpd_assistant.agents.context import HISTORY_BUDGET, recent_turns
 from mpd_assistant.agents.prompts import load_prompt
 from mpd_assistant.core.llm.client import LLM, LLMError
 from mpd_assistant.graph.state import AgentState
@@ -40,13 +41,15 @@ def make_comms(llm: LLM, executor: ToolExecutor, registry, on_booked=None, token
             outcome = await executor.run(
                 step.tool,
                 step.args,
-                ToolContext(Agent.COMMS_SCHEDULING, Role.VERIFIED, confirmed, untrusted_content_in_context=tainted, session_id=session_id, google_access_token=google_token, session_row=state.get("session_row") or ""),
+                ToolContext(Agent.COMMS_SCHEDULING, Role.VERIFIED, confirmed, untrusted_content_in_context=tainted, session_id=session_id, google_access_token=google_token, session_row=state.get("session_row") or "", user_id=state.get("user_id")),
             )
             tainted = tainted or outcome.untrusted
             if outcome.status == "needs_confirmation":
                 pending = {"tool": step.tool, "args": step.args}
                 question = f"I'm ready to run {step.tool} with {step.args}. Shall I go ahead? (yes/no)"
                 return {"response": question, "pending_action": pending}
+            if outcome.reason == "daily_limit":
+                return {"response": render("tool_limit_reached", language), "pending_action": None}
             if outcome.status != "ok":
                 return {"response": render("temporary_error", language), "pending_action": None}
             done.append(f"{step.tool}: {outcome.output}")
@@ -71,7 +74,7 @@ def make_comms(llm: LLM, executor: ToolExecutor, registry, on_booked=None, token
 
         try:
             planned = await llm.complete(
-                [{"role": "system", "content": PLANNER.render(tools=catalog)}, {"role": "user", "content": text}],
+                [{"role": "system", "content": PLANNER.render(tools=catalog)}, *recent_turns(state, HISTORY_BUDGET["comms"]), {"role": "user", "content": text}],
                 tier="mid",
                 max_tokens=300,
                 temperature=0.0,

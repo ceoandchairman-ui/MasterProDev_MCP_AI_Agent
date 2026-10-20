@@ -1,0 +1,3 @@
+version: propose-v1
+text: >-
+  From the user's message, extract at most 3 durable facts or preferences that would help in future conversations (their business, needs, tools, language, tone preferences). Output ONLY JSON: {{"memories": [{{"kind": "fact|preference|episode|procedure", "text": str, "importance": 0-1, "confidence": 0-1, "slot": str|null}}]}}. Never include contact details, names, secrets or placeholders like <EMAIL_1>. Output {{"memories": []}} if nothing is durable.

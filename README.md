@@ -37,6 +37,8 @@ docker compose -f deploy/compose.dev.yml --profile app up -d --build     # also 
 python scripts/smoke_test.py http://localhost:8000              # is it up, and are the right doors shut
 ```
 
+To choose between candidate models, `python scripts/compare_models.py --tier reasoning --models a,b` runs the project's own prompts through each and prints a pass rate and speed per model (it makes real, billed calls).
+
 Add `--profile tools` to start the four tool services. The first image pull needs a few hundred MB of free disk. Provider keys (language model, Twilio, SendGrid, Stripe, Google) go in `.env.dev`; features without a key switch themselves off.
 
 ## Deploy
