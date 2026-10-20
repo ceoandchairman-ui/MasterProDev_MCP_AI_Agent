@@ -1,6 +1,6 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "mcp_servers/calendar_server/Dockerfile"
+dockerfilePath = "services/mcp_calendar/Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"

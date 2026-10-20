@@ -9,7 +9,7 @@ import asyncio
 import io
 import uuid
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 from mpd_assistant.core.kv import KeyValueStore
 from mpd_assistant.multimodal.ocr import OcrEngine, OcrError, VisionModelOcr, strip_metadata
@@ -38,7 +38,7 @@ class UploadResult:
     note: str = ""  # e.g. "low_ocr_confidence", "possible_instructions"
 
 
-def sniff(data: bytes) -> Optional[str]:
+def sniff(data: bytes) -> str | None:
     if data.startswith(b"%PDF-"):
         return "pdf"
     if data.startswith(b"PK\x03\x04") and b"word/" in data[:4000]:
@@ -89,7 +89,7 @@ def _docx_text(data: bytes) -> str:
 
 
 class UploadService:
-    def __init__(self, kv: KeyValueStore, vault: PiiVault, ocr: Optional[OcrEngine] = None, max_bytes: int = MAX_BYTES):
+    def __init__(self, kv: KeyValueStore, vault: PiiVault, ocr: OcrEngine | None = None, max_bytes: int = MAX_BYTES):
         self._kv, self._vault, self._ocr, self._max = kv, vault, ocr, max_bytes
 
     @property
@@ -184,7 +184,7 @@ class UploadService:
             used += len(body)
         return "\n".join(blocks)
 
-    def remove(self, thread_id: str, upload_id: Optional[str] = None) -> int:
+    def remove(self, thread_id: str, upload_id: str | None = None) -> int:
         stored = self._kv.get(self._key(thread_id)) or []
         kept = [i for i in stored if upload_id is not None and i["id"] != upload_id]
         self._kv.set(self._key(thread_id), kept, TTL_SECONDS)

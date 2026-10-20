@@ -6,7 +6,7 @@ import base64
 import io
 import logging
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Protocol
 
 import httpx
 
@@ -22,7 +22,7 @@ class OcrError(RuntimeError):
 @dataclass
 class OcrResult:
     text: str
-    confidence: Optional[float] = None  # 0-1 when the engine reports it
+    confidence: float | None = None  # 0-1 when the engine reports it
     engine: str = ""
 
 
@@ -71,7 +71,7 @@ class TesseractOcr:
 class VisionModelOcr:
     """Any OpenAI-compatible chat endpoint with image input. The image goes to that vendor: configure per policy D13."""
 
-    def __init__(self, base_url: str, api_key: str, model: str, client: Optional[httpx.AsyncClient] = None, timeout: float = 60.0):
+    def __init__(self, base_url: str, api_key: str, model: str, client: httpx.AsyncClient | None = None, timeout: float = 60.0):
         self._url = base_url.rstrip("/") + "/chat/completions"
         self._key, self._model, self._client, self._timeout = api_key, model, client, timeout
 
@@ -105,3 +105,12 @@ class VisionModelOcr:
 
 
 __all__ = ["OcrEngine", "OcrError", "OcrResult", "TesseractOcr", "VisionModelOcr", "strip_metadata"]
+
+
+def build_ocr(settings) -> OcrEngine | None:
+    """The OCR engine the settings ask for, or None (text-only documents). Used by uploads and by the knowledge indexer."""
+    if settings.OCR_ENGINE == "tesseract":
+        return TesseractOcr()
+    if settings.OCR_ENGINE == "vision" and settings.VISION_MODEL and settings.HUGGINGFACE_API_KEY:
+        return VisionModelOcr(settings.LLM_BASE_URL, settings.HUGGINGFACE_API_KEY, settings.VISION_MODEL)
+    return None

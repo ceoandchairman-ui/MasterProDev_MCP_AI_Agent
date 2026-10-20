@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
+from typing import List
 
 from mpd_assistant.observability.metrics import PII_DETECTIONS
 from mpd_assistant.privacy.detector import detect
@@ -29,7 +29,7 @@ _ENGLISH_HINT = re.compile(r"(?i)\b(the|and|you|your|with|for|is|are|hello|thank
 
 
 def evaluate_response(
-    response: Optional[str],
+    response: str | None,
     *,
     language: str = "en",
     allowed_pii: tuple = (),

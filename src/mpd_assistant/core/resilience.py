@@ -7,7 +7,7 @@ polite "please retry" message, not a stack trace, and should not be hammered whi
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
-from typing import Optional, Tuple, Type, TypeVar
+from typing import Tuple, Type, TypeVar
 
 T = TypeVar("T")
 
@@ -23,7 +23,7 @@ class CircuitBreaker:
     def __init__(self, failure_threshold: int = 5, reset_seconds: float = 30.0, clock: Callable[[], float] = time.monotonic):
         self._threshold, self._reset, self._clock = failure_threshold, reset_seconds, clock
         self._failures = 0
-        self._opened_at: Optional[float] = None
+        self._opened_at: float | None = None
 
     @property
     def is_open(self) -> bool:
@@ -71,7 +71,7 @@ _DB_ERROR_MODULES = ("sqlalchemy.exc", "psycopg2", "asyncpg", "sqlite3")
 _REDIS_ERROR_MODULES = ("redis",)
 
 
-def infrastructure_failure(exc: BaseException) -> Optional[str]:
+def infrastructure_failure(exc: BaseException) -> str | None:
     """'postgres' or 'redis' when the exception is a connection-level failure of that dependency, else None.
     Programming errors (a KeyError, a bad argument) return None so they still surface as bugs."""
     for current in (exc, exc.__cause__, exc.__context__):

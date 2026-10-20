@@ -36,6 +36,7 @@ quotes priced by code and verified against a content hash before payment.
 | `messaging` | provider-agnostic outbound layer: Twilio (SMS, WhatsApp) and SendGrid wrappers, consent, rate/spend caps, idempotency, confirmations |
 | `channels` | inbound normalization (Twilio webhooks with signature check), per-channel formatting, cross-channel identity by phone |
 | `api` | v2 FastAPI app and the `create()` ASGI factory |
+| `services` (repo root) | tool services, one image each: Calendar, Gmail, company data, quoting; shared base in `services/_common` |
 
 Legacy code (`mcp_host/`, `mcp_servers/`) still runs the current product and has been hardened
 (service-key auth, role policy, escaped output, rate limits). It is removed after the new pipeline
@@ -77,7 +78,7 @@ token metrics, durable tool-call audit, pseudonymized turn records, and an LLM e
 personal data, daily token budgets (per conversation and global), a sampled LLM judge that replaces unsupported
 answers, and step-up verification for sensitive account actions. A single test (`tests/unit/test_end_to_end.py`) drives a whole journey through the real factory.
 
-## Built and tested (356 tests)
+## Built and tested (run `pytest tests/unit tests/privacy` for the current count)
 
 Everything above and in the module map: five LLM agents with a fake model, the guarded tool executor, hybrid
 retrieval with a fail-soft hosted reranker, account security (step-up, contact changes, export, deletion), per-user Google access, messaging and multi-channel gateway, SSE
@@ -94,28 +95,29 @@ None of it has run against live Postgres, Redis, a language model or any provide
   `python scripts/run_evals.py --retrieval` against the real embedder. Test scores use a toy embedder.
 - **Streaming is progressive display**, not token-level: the reply is produced whole, then split into sentences.
 - **Cache hits skip the graph**, so a cached exchange is not added to that conversation's history.
-- **Memory** stores text proposed by the model after validation; there is no consolidation job, entity tracking or
-  knowledge graph. Embedding-based memory recall is not used (lexical overlap only).
-- **Written but not yet wired into `api/app.py` or tested** (code only, no live service has run it):
-  payments (`business/payments.py`, `business/quote_store.py`, `agents/payment`; the Stripe webhook route exists in
-  `api/main.py`), uploads, OCR, voice and image input (`multimodal/`, `/v2/upload`, `/v2/voice`), OCR in the
-  knowledge indexer, inbound email (`channels/email_inbound.py`) and Twilio Voice (`channels/voice.py`) channels,
-  entity and topic tracking (`memory/short_term/entities.py`, `topics.py`; `ChatService` accepts them but they are
-  not constructed), memory consolidation and the background worker (`memory/consolidation.py`, `worker/`), the
-  admin escalation inbox (`business/admin.py`, `/v2/admin/*`), the web widget (`web/widget/`), the quoting and
-  company-data MCP services (`services/mcp_quoting`, `services/mcp_db`), per-IP edge rate limiting and CORS.
-- **Also written, not wired or tested:** episodic memory (`memory/episodic.py`), a reviewed reply-pattern library with
-  admin approval routes (`memory/procedural.py`, `/v2/admin/patterns`), memory tools for agents with guardrails
-  (`memory/tools.py`, registered in `tools/registry.py`), meaning-based and cross-language memory recall (embeddings
-  on memories; migration 0006), key rotation (`privacy/rotation.py`, `scripts/rotate_keys.py`,
-  `DATA_ENCRYPTION_KEYS_PREVIOUS`), a load-test tool (`scripts/load_test.py`) and runbooks (`docs/runbooks/`).
-- **Gap-closing batch, written and covered only by the existing suite (no new tests yet):** versioned prompt registry
-  with the five agent prompts moved to YAML (checked byte-identical to the originals, S2.7); the Solution Architect now
-  runs through the bounded plan-act-reflect subgraph with per-phase metrics (S6.0); tool-call idempotency, a shared
-  read-tool cache and tool-result offloading in the executor (S5.5, S16.4, S19.4); a retrieval cache and per-agent
-  document scopes (S7.4, S7.3); admin cache purge (S16.5); prompt-prefix stability metric (S19.9); audited staff
-  lookup, duplicate detection and merge of people (S21.7, S19.14); failure-mode handling: retries, circuit breakers,
-  best-effort state, degraded replies, configurable pool sizing (S14.13); new alert rules.
+- **Memory** stores text proposed by the model after validation. Entity and topic tracking, episodic memory (written when
+  a conversation ends in escalation or is closed with `POST /v2/session/{id}/end`), approved reply patterns (staff review
+  them in the console), the memory tools, the nightly consolidation job and embedding-based recall are wired. The
+  knowledge-graph memory is not built.
+- **Wired into `api/app.py` and covered by unit tests, never run live:** payments (stored quotes, Stripe checkout, signed
+  webhook, receipt email), staff review of quotes the pricing rules held back (`/v2/admin/quotes`; before this nothing could
+  make such a quote payable), uploads and OCR (also used by the worker's reindex job), voice (speech endpoints and the Twilio
+  Voice channel), inbound email, the staff console (`/admin`) and admin routes, delivery tracking (Twilio status callback,
+  SendGrid event webhook, retries for transient failures, a dead-letter list), per-IP edge limiting and CORS, entity and
+  topic notes in the prompt, uploaded-file context and approved style examples.
+- **Tool services** (`services/`): Calendar and Gmail run per-user on the caller's Google token, with time-zone-aware
+  events, free-slot search, rescheduling, drafts, idempotency keys and short error codes; the company-data service answers
+  allowlisted read-only queries (lead stage, quotes, customer profile with company, never name, email or phone); the quoting
+  service stays stateless. Every tool is declared once in `tools/registry.py` with its arguments: the planner is shown them,
+  the Comms agent rejects bad arguments before anything runs, and the executor, not the model, supplies `user_id` and idempotency keys.
+- **Human approval** is checkpointed state (`pending_action`), not a LangGraph `interrupt()`: sends, event changes and
+  payments wait for an explicit yes on the next turn, and the checkpointer keeps the question across restarts.
+- **Also written, not run live:** key rotation (`privacy/rotation.py`, `scripts/rotate_keys.py`, `DATA_ENCRYPTION_KEYS_PREVIOUS`),
+  a load-test tool (`scripts/load_test.py`) and runbooks (`docs/runbooks/`).
+- **Gap-closing batch:** versioned prompt registry (S2.7); the Solution Architect runs through the bounded plan-act-reflect
+  subgraph (S6.0); tool-call idempotency, a shared read-tool cache and tool-result offloading (S5.5, S16.4, S19.4); a retrieval
+  cache and per-agent document scopes (S7.4, S7.3); admin cache purge (S16.5); prompt-prefix stability metric (S19.9); audited
+  staff lookup, duplicate detection and merge of people (S21.7, S19.14); failure-mode handling (S14.13); new alert rules.
 - **Done and tested:** semantic cache (S16.3), task decomposition across agents (S6.8), the per-turn state reset
   (a conversation used to be escalated to a person on its seventh message), memory evaluation with a golden set
   (`python scripts/run_evals.py --memory`, S19.25), and the memory-recall noise fix it exposed (an unrelated question
@@ -126,11 +128,15 @@ None of it has run against live Postgres, Redis, a language model or any provide
   services, volumes, resource caps and cost limits; `deploy/railway/edge.yaml` lists the domain, TLS and edge settings.
   `scripts/check_railway_topology.py` checks them against the service tomls. The domains are placeholders, and the dashboard
   still has to be set to match.
-- **Still missing:** knowledge-graph memory (optional, only if flat memory fails the evaluation), and everything under
-  "Never run live" above.
-- **Legacy MCP servers stay in `mcp_servers/`** because the root `Dockerfile`, `docker-entrypoint.sh`,
-  `docker/docker-compose.yml` and `tests/integration/test_mcp_servers.py` still run them. They move to
-  `services/` when the legacy container is retired. Time-zone handling and dead-code fixes (S5.3) are applied in place.
+- **Still missing:** the knowledge-graph memory (optional, only if flat memory fails the evaluation); a browser test of the
+  widget and the console (their scripts are syntax-checked and statically tested only); the cutover from the legacy host
+  (`NEW_PIPELINE_PERCENT` is 0) and everything under "Never run live" above.
+- **Legacy MCP servers** in `mcp_servers/` still run in the root `Dockerfile` container, `docker/docker-compose.yml` and
+  `tests/integration/test_mcp_servers.py`. The new Calendar and Gmail services in `services/` are what the Railway tomls
+  build; the legacy copies go when the legacy container is retired.
+- **The company-data database role** (`MCP_DB_URL`) needs `SELECT` on `companies` as well as users, leads and quotes (migration 0007).
+- **One-off jobs:** `python -m mpd_assistant.worker.main --once reindex` replaces the legacy seeder (`seed.py`), including OCR
+  of scanned documents when `OCR_ENGINE` is set; `--once retention` and `--once consolidate` run the other jobs.
 - **Vendor deletion** after an erasure request is manual; backups are not purged by erasure and need a retention
   policy. Vault retention (7 days) and conversation retention are placeholders.
 - **Placeholders pending business input:** quote catalog (`CATALOG_PATH`), approval threshold, the "3 Es" stages,

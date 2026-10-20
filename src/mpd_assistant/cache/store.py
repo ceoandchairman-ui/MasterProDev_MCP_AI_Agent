@@ -3,7 +3,7 @@
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
-from typing import Dict, Optional, Protocol, Tuple
+from typing import Dict, Protocol, Tuple
 
 from mpd_assistant.observability.metrics import CACHE_EVENTS
 
@@ -11,7 +11,7 @@ DEFAULT_TTL_SECONDS = {"faq": 24 * 3600, "knowledge_question": 3600, "greeting":
 
 
 class CacheBackend(Protocol):
-    async def get(self, key: str) -> Optional[str]: ...
+    async def get(self, key: str) -> str | None: ...
     async def set(self, key: str, value: str, ttl: int) -> None: ...
     async def delete_prefix(self, prefix: str) -> int: ...
 
@@ -21,7 +21,7 @@ class MemoryBackend:
         self._data: Dict[str, Tuple[str, float]] = {}
         self._clock = clock
 
-    async def get(self, key: str) -> Optional[str]:
+    async def get(self, key: str) -> str | None:
         item = self._data.get(key)
         if item is None:
             return None
@@ -46,7 +46,7 @@ class RedisBackend:
     def __init__(self, client):
         self._r = client
 
-    async def get(self, key: str) -> Optional[str]:
+    async def get(self, key: str) -> str | None:
         try:
             value = await self._r.get(key)
             return value.decode() if isinstance(value, bytes) else value
@@ -79,7 +79,7 @@ class ResponseCache:
     def backend(self) -> CacheBackend:
         return self._backend
 
-    async def get(self, key: str) -> Optional[str]:
+    async def get(self, key: str) -> str | None:
         value = await self._backend.get(key)
         CACHE_EVENTS.labels(self._layer, "hit" if value is not None else "miss").inc()
         return value

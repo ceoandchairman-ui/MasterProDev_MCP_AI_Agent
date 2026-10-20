@@ -1,4 +1,3 @@
-from typing import Optional
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session as DbSession
@@ -26,7 +25,7 @@ class SqlSessionRepository:
     def __init__(self, engine: Engine, tenant_id: str):
         self._engine, self._tenant = engine, tenant_id
 
-    def get(self, session_id: str) -> Optional[Session]:
+    def get(self, session_id: str) -> Session | None:
         with DbSession(self._engine) as db:
             row = db.get(SessionRow, session_id)
             return _to_domain(row) if row else None

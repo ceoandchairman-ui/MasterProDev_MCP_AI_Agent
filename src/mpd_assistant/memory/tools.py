@@ -7,7 +7,7 @@ text). If the model has read untrusted content this turn (email, uploads, retrie
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from mpd_assistant.core.kv import KeyValueStore
 from mpd_assistant.integrations.context import current_user, untrusted_in_context
@@ -26,10 +26,10 @@ ToolBackend = Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
 
 class MemoryTools:
-    def __init__(self, store: MemoryStore, has_consent: Callable[[str], bool], kv: KeyValueStore, embedder: Optional[Embedder] = None):
+    def __init__(self, store: MemoryStore, has_consent: Callable[[str], bool], kv: KeyValueStore, embedder: Embedder | None = None):
         self._store, self._consent, self._kv, self._embedder = store, has_consent, kv, embedder
 
-    def _gate(self, kind: str, per_hour: int) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    def _gate(self, kind: str, per_hour: int) -> tuple[str | None, Dict[str, Any] | None]:
         user_id = current_user()
         if not user_id:
             return None, {"status": "denied", "reason": "no_user"}

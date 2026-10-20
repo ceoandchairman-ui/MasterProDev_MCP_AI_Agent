@@ -1,7 +1,7 @@
 """Anti-abuse for OTP delivery: country allowlist, per-number and per-IP limits, and a daily send cap (SMS pumping)."""
 
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Iterable
 
 import phonenumbers
 
@@ -27,7 +27,7 @@ class SmsAbuseGuard:
     per_ip: int = PER_IP_PER_HOUR
     daily_cap: int = DAILY_SEND_CAP
 
-    def check(self, phone_e164: str, client_ip: Optional[str]) -> None:
+    def check(self, phone_e164: str, client_ip: str | None) -> None:
         try:
             parsed = phonenumbers.parse(phone_e164, None)
             region = phonenumbers.region_code_for_number(parsed)

@@ -2,7 +2,7 @@
 
 import inspect
 import json
-from typing import Awaitable, Callable, Optional
+from typing import Awaitable, Callable
 
 from mpd_assistant.core.crypto import FieldCipher, blind_index
 from mpd_assistant.core.kv import KeyValueStore
@@ -27,7 +27,7 @@ class AccountService:
         sms_otp: OtpService,
         email_sender,
         sms_sender,
-        notify_change: Optional[Notify] = None,
+        notify_change: Notify | None = None,
     ):
         self._users, self._cipher, self._key, self._kv = users, cipher, blind_key, kv
         self._stepup_otp, self._email_otp, self._sms_otp = stepup_otp, email_otp, sms_otp

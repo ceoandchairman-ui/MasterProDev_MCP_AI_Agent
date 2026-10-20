@@ -2,7 +2,7 @@
 
 import hashlib
 import math
-from typing import List, Optional, Protocol
+from typing import List, Protocol
 
 import httpx
 
@@ -20,7 +20,7 @@ class Embedder(Protocol):
 
 
 class OpenAICompatibleEmbedder:
-    def __init__(self, base_url: str, api_key: str, model: str, client: Optional[httpx.AsyncClient] = None, timeout: float = 30.0):
+    def __init__(self, base_url: str, api_key: str, model: str, client: httpx.AsyncClient | None = None, timeout: float = 30.0):
         self._url = base_url.rstrip("/") + "/embeddings"
         self._key, self._model, self._client, self._timeout = api_key, model, client, timeout
 

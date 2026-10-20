@@ -5,7 +5,6 @@ import hmac
 import secrets
 import time
 from collections.abc import Callable
-from typing import Optional
 
 from mpd_assistant.core.kv import KeyValueStore, MemoryKV
 
@@ -22,7 +21,7 @@ class OtpError(Exception):
 class OtpService:
     """Challenges live in a KeyValueStore (Redis in deployments) so any replica can verify a code."""
 
-    def __init__(self, secret: str, clock: Callable[[], float] = time.time, store: Optional[KeyValueStore] = None, namespace: str = "otp"):
+    def __init__(self, secret: str, clock: Callable[[], float] = time.time, store: KeyValueStore | None = None, namespace: str = "otp"):
         self._secret = secret.encode()
         self._clock = clock
         self._store = store if store is not None else MemoryKV()

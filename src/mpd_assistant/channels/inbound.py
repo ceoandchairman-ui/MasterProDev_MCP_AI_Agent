@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import re
 from dataclasses import dataclass
-from typing import Dict, Mapping, Optional
+from typing import Dict, Mapping
 from xml.sax.saxutils import escape
 
 from mpd_assistant.messaging.models import Channel
@@ -19,7 +19,7 @@ class InboundMessage:
     channel: Channel
     sender: str  # E.164 phone for sms/whatsapp
     text: str
-    message_id: Optional[str] = None
+    message_id: str | None = None
 
 
 def twilio_signature(auth_token: str, url: str, params: Mapping[str, str]) -> str:
@@ -29,13 +29,13 @@ def twilio_signature(auth_token: str, url: str, params: Mapping[str, str]) -> st
     return base64.b64encode(digest).decode()
 
 
-def validate_twilio_signature(auth_token: str, url: str, params: Mapping[str, str], signature: Optional[str]) -> bool:
+def validate_twilio_signature(auth_token: str, url: str, params: Mapping[str, str], signature: str | None) -> bool:
     if not signature or not auth_token:
         return False
     return hmac.compare_digest(twilio_signature(auth_token, url, params), signature)
 
 
-def parse_twilio_form(form: Mapping[str, str]) -> Optional[InboundMessage]:
+def parse_twilio_form(form: Mapping[str, str]) -> InboundMessage | None:
     sender, body = form.get("From", ""), form.get("Body", "")
     if not sender or not body.strip():
         return None

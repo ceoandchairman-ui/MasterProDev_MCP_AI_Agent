@@ -3,11 +3,11 @@
 import json
 import time
 from collections.abc import Callable
-from typing import Any, Dict, Optional, Protocol, Tuple
+from typing import Any, Dict, Protocol, Tuple
 
 
 class KeyValueStore(Protocol):
-    def get(self, key: str) -> Optional[Any]: ...
+    def get(self, key: str) -> Any | None: ...
     def set(self, key: str, value: Any, ttl_seconds: int) -> None: ...
     def delete(self, key: str) -> None: ...
     def incr(self, key: str, ttl_seconds: int) -> int: ...
@@ -18,7 +18,7 @@ class MemoryKV:
         self._data: Dict[str, Tuple[str, float]] = {}
         self._clock = clock
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         item = self._data.get(key)
         if item is None:
             return None
@@ -68,7 +68,7 @@ class BestEffortKV:
         self._breaker.record_success()
         return result
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         return self._try(lambda: self._inner.get(key), None)
 
     def set(self, key: str, value: Any, ttl_seconds: int) -> None:
@@ -88,7 +88,7 @@ class RedisKV:
         self._r = client
         self._prefix = prefix
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         raw = self._r.get(self._prefix + key)
         if raw is None:
             return None

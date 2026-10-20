@@ -12,7 +12,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Optional, Protocol
+from typing import Protocol
 
 import httpx
 
@@ -46,7 +46,7 @@ class CheckoutProvider(Protocol):
 
 
 class StripeCheckout:
-    def __init__(self, secret_key: str, success_url: str, cancel_url: str, client: Optional[httpx.AsyncClient] = None, timeout: float = 15.0):
+    def __init__(self, secret_key: str, success_url: str, cancel_url: str, client: httpx.AsyncClient | None = None, timeout: float = 15.0):
         self._key, self._success, self._cancel = secret_key, success_url, cancel_url
         self._client, self._timeout = client, timeout
 
@@ -78,7 +78,7 @@ class StripeCheckout:
             raise PaymentError(f"Checkout creation failed: {type(exc).__name__}") from exc  # never include key or body
 
 
-def verify_stripe_signature(payload: bytes, header: str, secret: str, now: Optional[float] = None, tolerance: int = SIGNATURE_TOLERANCE_SECONDS) -> None:
+def verify_stripe_signature(payload: bytes, header: str, secret: str, now: float | None = None, tolerance: int = SIGNATURE_TOLERANCE_SECONDS) -> None:
     """Stripe-Signature: t=<unix>,v1=<hex hmac-sha256 of "t.payload">[,v1=...]. Raises InvalidSignature."""
     if not secret or not header:
         raise InvalidSignature("missing signature or secret")
@@ -106,14 +106,14 @@ def verify_stripe_signature(payload: bytes, header: str, secret: str, now: Optio
 class CheckoutResult:
     ok: bool
     reason: str = ""
-    url: Optional[str] = None
-    quote: Optional[StoredQuote] = None
+    url: str | None = None
+    quote: StoredQuote | None = None
 
 
 @dataclass
 class WebhookOutcome:
     status: str  # paid | duplicate | ignored | mismatch | unknown_quote
-    quote_ref: Optional[str] = None
+    quote_ref: str | None = None
 
 
 QuoteCallback = Callable[[StoredQuote], Awaitable[None]]
@@ -123,11 +123,11 @@ class PaymentService:
     def __init__(
         self,
         quotes: QuoteRepository,
-        provider: Optional[CheckoutProvider],
+        provider: CheckoutProvider | None,
         kv: KeyValueStore,
-        webhook_secret: Optional[str],
-        on_paid: Optional[QuoteCallback] = None,
-        on_mismatch: Optional[QuoteCallback] = None,
+        webhook_secret: str | None,
+        on_paid: QuoteCallback | None = None,
+        on_mismatch: QuoteCallback | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
         self._quotes, self._provider, self._kv, self._secret = quotes, provider, kv, webhook_secret
@@ -137,7 +137,7 @@ class PaymentService:
     def configured(self) -> bool:
         return self._provider is not None and bool(self._secret)
 
-    def check(self, user_id: str, ref: Optional[str] = None) -> tuple[Optional[StoredQuote], str]:
+    def check(self, user_id: str, ref: str | None = None) -> tuple[StoredQuote | None, str]:
         """Guard with no side effects except marking an expired quote. Returns (quote, "") when payable."""
         quote = self._quotes.find_for_user(user_id, ref)
         if quote is None:
@@ -157,7 +157,7 @@ class PaymentService:
             return quote, "quote_changed"  # total must include every line (plus tax)
         return quote, ""
 
-    async def start_checkout(self, user_id: str, ref: Optional[str] = None) -> CheckoutResult:
+    async def start_checkout(self, user_id: str, ref: str | None = None) -> CheckoutResult:
         if not self.configured:
             return CheckoutResult(False, "payments_not_configured")
         quote, reason = self.check(user_id, ref)

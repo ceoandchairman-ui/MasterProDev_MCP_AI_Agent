@@ -8,7 +8,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Protocol
+from typing import Callable, Dict, List, Protocol
 
 from mpd_assistant.cache.semantic import cosine
 from mpd_assistant.memory.short_term.window import estimate_tokens
@@ -30,7 +30,7 @@ class Candidate:
     text: str
     importance: float = 0.5
     confidence: float = 0.8
-    slot: Optional[str] = None  # e.g. "preferred_language"; same slot + different text = contradiction
+    slot: str | None = None  # e.g. "preferred_language"; same slot + different text = contradiction
     source: str = "user_message"  # user_message | tool_result | upload | email
     language: str = "en"  # language the text is written in; recall also matches across languages by meaning
 
@@ -43,28 +43,28 @@ class Memory:
     text: str
     importance: float
     confidence: float
-    slot: Optional[str]
+    slot: str | None
     created_at: float
-    valid_to: Optional[float] = None
-    last_used: Optional[float] = None
+    valid_to: float | None = None
+    last_used: float | None = None
     uses: int = 0
-    superseded_by: Optional[str] = None
+    superseded_by: str | None = None
     language: str = "en"
-    embedding: Optional[List[float]] = None
+    embedding: List[float] | None = None
 
 
 @dataclass
 class WriteResult:
     status: str  # stored | duplicate | superseded | rejected | needs_confirmation
     reason: str = ""
-    memory: Optional[Memory] = None
+    memory: Memory | None = None
 
 
 _TOKEN_RE = re.compile(r"<[A-Z_]+_\d+>")
 UNTRUSTED_SOURCES = {"tool_result", "upload", "email"}
 
 
-def validate(candidate: Candidate, consent: bool) -> Optional[str]:
+def validate(candidate: Candidate, consent: bool) -> str | None:
     """Return a rejection reason, or None if the candidate may be considered for storage."""
     if not consent:
         return "no_memory_consent"
@@ -146,7 +146,7 @@ class InMemoryRepository:
 
 
 class MemoryStore:
-    def __init__(self, clock: Callable[[], float] = time.time, similarity: Similarity = query_coverage, repo: Optional[MemoryRepository] = None):
+    def __init__(self, clock: Callable[[], float] = time.time, similarity: Similarity = query_coverage, repo: MemoryRepository | None = None):
         self._repo: MemoryRepository = repo or InMemoryRepository()
         self._clock = clock
         self._similarity = similarity
@@ -200,7 +200,7 @@ class MemoryStore:
         token_budget: int,
         limit: int = 5,
         diversity: float = 0.7,
-        query_vector: Optional[List[float]] = None,
+        query_vector: List[float] | None = None,
     ) -> List[Memory]:
         """Rank by relevance x recency x importance, pick greedily with MMR diversity, stop at the token budget.
 
@@ -258,7 +258,7 @@ class MemoryStore:
     def active(self, user_id: str) -> List[Memory]:
         return self._active(user_id)
 
-    def archive(self, user_id: str, memory_ids: List[str], superseded_by: Optional[str] = None) -> int:
+    def archive(self, user_id: str, memory_ids: List[str], superseded_by: str | None = None) -> int:
         """Retire memories without deleting them (they stay in exports until the user deletes them)."""
         now = self._clock()
         count = 0

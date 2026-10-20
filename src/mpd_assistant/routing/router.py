@@ -3,7 +3,7 @@
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from mpd_assistant.routing.intents import (
     GATED_INTENTS,
@@ -57,7 +57,7 @@ _RULES: List[Tuple[Intent, List[str], float]] = [
 ]
 
 
-def route(text: str, verified: bool = False, language: Optional[str] = None) -> RouteDecision:
+def route(text: str, verified: bool = False, language: str | None = None) -> RouteDecision:
     t = normalize(text)
     lang = language or detect_language(t)
 

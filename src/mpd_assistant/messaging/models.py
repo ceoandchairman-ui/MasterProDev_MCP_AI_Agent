@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Optional, Protocol
+from typing import Dict, Protocol
 
 
 class Channel(str, Enum):
@@ -24,16 +24,16 @@ class OutboundMessage:
     locale: str = "en"
     variables: Dict[str, str] = field(default_factory=dict)
     purpose: Purpose = Purpose.TRANSACTIONAL
-    idempotency_key: Optional[str] = None
-    user_id: Optional[str] = None
-    subject: Optional[str] = None  # email only
-    body: Optional[str] = None  # pre-rendered text for conversational replies; template is then only a label
+    idempotency_key: str | None = None
+    user_id: str | None = None
+    subject: str | None = None  # email only
+    body: str | None = None  # pre-rendered text for conversational replies; template is then only a label
 
 
 @dataclass
 class SendResult:
     status: str  # sent | skipped | blocked | failed
-    provider_id: Optional[str] = None
+    provider_id: str | None = None
     reason: str = ""
 
 
@@ -42,7 +42,7 @@ class Provider(Protocol):
 
     channels: frozenset
 
-    async def send(self, channel: Channel, to: str, body: str, subject: Optional[str] = None) -> SendResult: ...
+    async def send(self, channel: Channel, to: str, body: str, subject: str | None = None) -> SendResult: ...
 
 
 def mask(target: str) -> str:

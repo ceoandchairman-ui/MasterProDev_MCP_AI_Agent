@@ -8,7 +8,7 @@ timestamp, an id) leaked into the system prompt.
 
 import hashlib
 from collections import deque
-from typing import Deque, Optional
+from typing import Deque
 
 from mpd_assistant.core.llm.budget import TokenBudget, current_scope
 from mpd_assistant.core.llm.client import LLM, LLMResult
@@ -28,7 +28,7 @@ def prefix_fingerprint(messages) -> str:
 
 
 class MeteredLLM:
-    def __init__(self, inner: LLM, agent: str, budget: Optional[TokenBudget] = None):
+    def __init__(self, inner: LLM, agent: str, budget: TokenBudget | None = None):
         self._inner, self._agent, self._budget = inner, agent, budget
         self._recent: Deque[str] = deque(maxlen=RECENT_PREFIXES)
 

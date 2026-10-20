@@ -1,12 +1,12 @@
 """Stored quotes. Payment reads the amount from here by id, never from conversation state or model output.
 
-Statuses: draft -> accepted -> paid, or needs_approval -> approved -> accepted -> paid, or expired.
+Statuses: draft -> accepted -> paid, or needs_approval -> approved -> accepted -> paid, or needs_approval -> rejected, or expired.
 """
 
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Dict, List, Optional, Protocol
+from typing import Dict, List, Protocol
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session as DbSession
@@ -26,7 +26,7 @@ class StoredQuote:
     currency: str
     content_hash: str
     status: str
-    expires_at: Optional[datetime]
+    expires_at: datetime | None
     lines: List[dict] = field(default_factory=list)
 
     @property
@@ -39,9 +39,11 @@ class StoredQuote:
 
 class QuoteRepository(Protocol):
     def save(self, user_id: str, quote: BuiltQuote) -> StoredQuote: ...
-    def get(self, quote_id: str) -> Optional[StoredQuote]: ...
-    def find_for_user(self, user_id: str, ref: Optional[str] = None) -> Optional[StoredQuote]: ...
+    def get(self, quote_id: str) -> StoredQuote | None: ...
+    def find_for_user(self, user_id: str, ref: str | None = None) -> StoredQuote | None: ...
     def set_status(self, quote_id: str, status: str) -> None: ...
+    def find_by_ref(self, ref: str) -> StoredQuote | None: ...
+    def list_by_status(self, status: str, limit: int = 50) -> List[StoredQuote]: ...
 
 
 def _line_rows(quote: BuiltQuote) -> List[dict]:
@@ -64,10 +66,10 @@ class MemoryQuoteRepository:
         self._items[stored.id] = stored
         return stored
 
-    def get(self, quote_id: str) -> Optional[StoredQuote]:
+    def get(self, quote_id: str) -> StoredQuote | None:
         return self._items.get(quote_id)
 
-    def find_for_user(self, user_id: str, ref: Optional[str] = None) -> Optional[StoredQuote]:
+    def find_for_user(self, user_id: str, ref: str | None = None) -> StoredQuote | None:
         mine = [q for q in self._items.values() if q.user_id == user_id]
         if ref:
             mine = [q for q in mine if q.id.upper().startswith(ref.upper())]
@@ -76,6 +78,13 @@ class MemoryQuoteRepository:
     def set_status(self, quote_id: str, status: str) -> None:
         if quote_id in self._items:
             self._items[quote_id].status = status
+
+    def find_by_ref(self, ref: str) -> StoredQuote | None:
+        matches = [q for q in self._items.values() if q.id.upper().startswith(ref.upper())] if len(ref) >= 8 else []
+        return matches[0] if len(matches) == 1 else None
+
+    def list_by_status(self, status: str, limit: int = 50) -> List[StoredQuote]:
+        return [q for q in self._items.values() if q.status == status][:limit]
 
 
 class SqlQuoteRepository:
@@ -111,7 +120,7 @@ class SqlQuoteRepository:
             db.commit()
             return self._domain(row, user_id)
 
-    def get(self, quote_id: str) -> Optional[StoredQuote]:
+    def get(self, quote_id: str) -> StoredQuote | None:
         with DbSession(self._engine) as db:
             row = db.get(QuoteRow, quote_id)
             if row is None:
@@ -119,7 +128,7 @@ class SqlQuoteRepository:
             lead = db.get(Lead, row.lead_id)
             return self._domain(row, lead.user_id if lead else "")
 
-    def find_for_user(self, user_id: str, ref: Optional[str] = None) -> Optional[StoredQuote]:
+    def find_for_user(self, user_id: str, ref: str | None = None) -> StoredQuote | None:
         with DbSession(self._engine) as db:
             query = (
                 select(QuoteRow)
@@ -138,6 +147,26 @@ class SqlQuoteRepository:
             if row is not None:
                 row.status = status
                 db.commit()
+
+    def find_by_ref(self, ref: str) -> StoredQuote | None:
+        if len(ref) < 8:
+            return None
+        with DbSession(self._engine) as db:
+            rows = db.execute(
+                select(QuoteRow, Lead.user_id).join(Lead, Lead.id == QuoteRow.lead_id).where(Lead.tenant_id == self._tenant, QuoteRow.id.like(ref.lower() + "%"))
+            ).all()
+            return self._domain(rows[0][0], rows[0][1]) if len(rows) == 1 else None
+
+    def list_by_status(self, status: str, limit: int = 50) -> List[StoredQuote]:
+        with DbSession(self._engine) as db:
+            rows = db.execute(
+                select(QuoteRow, Lead.user_id)
+                .join(Lead, Lead.id == QuoteRow.lead_id)
+                .where(Lead.tenant_id == self._tenant, QuoteRow.status == status)
+                .order_by(QuoteRow.created_at)
+                .limit(limit)
+            ).all()
+            return [self._domain(row, user_id) for row, user_id in rows]
 
 
 __all__ = ["MemoryQuoteRepository", "PAYABLE", "QuoteRepository", "SqlQuoteRepository", "StoredQuote"]

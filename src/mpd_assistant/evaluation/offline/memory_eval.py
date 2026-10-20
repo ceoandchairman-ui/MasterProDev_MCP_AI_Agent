@@ -6,7 +6,7 @@ Cases needing meaning-based matching (for example a French question about an Eng
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import yaml
 
@@ -30,7 +30,7 @@ class _Clock:
         return self.t
 
 
-async def run_memory(path: Path, embedder: Optional[Embedder] = None) -> Dict[str, Any]:
+async def run_memory(path: Path, embedder: Embedder | None = None) -> Dict[str, Any]:
     cases: List[dict] = yaml.safe_load(path.read_text(encoding="utf-8"))["cases"]
     hits = positives = quiet = negatives = skipped = 0
     reciprocal: List[float] = []

@@ -32,6 +32,7 @@ def build_runners(
     payments=None,
     has_step_up=None,
     start_step_up=None,
+    companies=None,
 ) -> Dict[Agent, object]:
     runners: Dict[Agent, object] = {}
     if payments is not None:
@@ -43,7 +44,7 @@ def build_runners(
     if executor is not None:
         runners[Agent.COMMS_SCHEDULING] = make_comms(MeteredLLM(llm, "comms_scheduling", budget), executor, registry, on_booked, google_token_provider)
     if leads is not None:
-        runners[Agent.LEAD_CONVERSION] = make_lead_conversion(MeteredLLM(llm, "lead_conversion", budget), leads)
+        runners[Agent.LEAD_CONVERSION] = make_lead_conversion(MeteredLLM(llm, "lead_conversion", budget), leads, companies)
     runners[Agent.SOLUTION_ARCHITECT] = make_solution_architect(MeteredLLM(llm, "solution_architect", budget))
     if catalog:
         def save_quote(state, quote):

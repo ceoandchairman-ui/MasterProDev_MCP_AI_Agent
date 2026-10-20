@@ -7,7 +7,7 @@ tokens and short non-personal labels are stored, so the table holds no raw conta
 import re
 import time
 from dataclasses import asdict, dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from mpd_assistant.core.kv import KeyValueStore
 
@@ -60,7 +60,7 @@ class EntityTracker:
         self._save(thread_id, entities)
         return True
 
-    def recent(self, thread_id: str, kind: Optional[str] = None) -> List[Entity]:
+    def recent(self, thread_id: str, kind: str | None = None) -> List[Entity]:
         entities = sorted(self._load(thread_id), key=lambda e: e.seen_at, reverse=True)
         return [e for e in entities if kind is None or e.kind == kind]
 

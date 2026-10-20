@@ -1,6 +1,5 @@
 """Provider wrappers. Credentials and response bodies are never copied into errors or logs."""
 
-from typing import Optional
 
 import httpx
 
@@ -19,10 +18,10 @@ class TwilioProvider:
         self,
         account_sid: str,
         auth_token: str,
-        sms_from: Optional[str] = None,
-        whatsapp_from: Optional[str] = None,
-        status_callback_url: Optional[str] = None,
-        client: Optional[httpx.AsyncClient] = None,
+        sms_from: str | None = None,
+        whatsapp_from: str | None = None,
+        status_callback_url: str | None = None,
+        client: httpx.AsyncClient | None = None,
         timeout: float = 10.0,
     ):
         self._sid, self._token = account_sid, auth_token
@@ -36,7 +35,7 @@ class TwilioProvider:
             return (f"whatsapp:{to}", f"whatsapp:{self._wa_from}") if self._wa_from else (None, None)
         return (to, self._sms_from) if self._sms_from else (None, None)
 
-    async def send(self, channel: Channel, to: str, body: str, subject: Optional[str] = None) -> SendResult:
+    async def send(self, channel: Channel, to: str, body: str, subject: str | None = None) -> SendResult:
         to_addr, from_addr = self._addresses(channel, to)
         if not to_addr or not from_addr:
             return SendResult("failed", reason="channel_not_configured")
@@ -66,12 +65,12 @@ class SendGridProvider:
 
     channels = frozenset({Channel.EMAIL})
 
-    def __init__(self, api_key: str, from_email: str, from_name: str = "MasterProDev", client: Optional[httpx.AsyncClient] = None, timeout: float = 10.0):
+    def __init__(self, api_key: str, from_email: str, from_name: str = "MasterProDev", client: httpx.AsyncClient | None = None, timeout: float = 10.0):
         self._key, self._from, self._name = api_key, from_email, from_name
         self._client = client
         self._timeout = timeout
 
-    async def send(self, channel: Channel, to: str, body: str, subject: Optional[str] = None) -> SendResult:
+    async def send(self, channel: Channel, to: str, body: str, subject: str | None = None) -> SendResult:
         payload = {
             "personalizations": [{"to": [{"email": to}]}],
             "from": {"email": self._from, "name": self._name},

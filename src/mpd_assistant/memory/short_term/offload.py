@@ -3,7 +3,7 @@ full result can be re-opened on demand. Results are scoped to the conversation t
 
 import json
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from mpd_assistant.core.kv import KeyValueStore
 
@@ -36,7 +36,7 @@ class ToolResultStore:
     def _key(session_id: str, ref: str) -> str:
         return f"toolresult:{session_id}:{ref}"
 
-    def put(self, session_id: str, tool: str, output: Dict[str, Any]) -> Optional[str]:
+    def put(self, session_id: str, tool: str, output: Dict[str, Any]) -> str | None:
         """Returns a reference, or None when the output is too large to keep at all."""
         serialized = json.dumps(output, default=str, ensure_ascii=False)
         if len(serialized) > MAX_STORED_CHARS:
@@ -45,7 +45,7 @@ class ToolResultStore:
         self._kv.set(self._key(session_id, ref), {"tool": tool, "output": json.loads(serialized)}, TTL_SECONDS)
         return ref
 
-    def get(self, session_id: str, ref: str) -> Optional[Dict[str, Any]]:
+    def get(self, session_id: str, ref: str) -> Dict[str, Any] | None:
         """Only the owning conversation can re-open a result."""
         stored = self._kv.get(self._key(session_id, ref))
         return stored["output"] if stored else None

@@ -5,7 +5,7 @@ The caller's phone number maps to their verified account exactly as for SMS, so 
 without re-identifying; an unknown caller is a visitor and gets the same gating as in chat.
 """
 
-from typing import Mapping, Optional
+from typing import Mapping
 from xml.sax.saxutils import escape, quoteattr
 
 from mpd_assistant.channels.gateway import ChannelGateway
@@ -89,7 +89,7 @@ class VoiceGateway:
         return gather(reply, self._action, state["lang"])
 
 
-def _float(value: Optional[str]) -> Optional[float]:
+def _float(value: str | None) -> float | None:
     try:
         return float(value) if value not in (None, "") else None
     except ValueError:

@@ -2,7 +2,6 @@
 
 import hashlib
 import re
-from typing import Optional
 
 from mpd_assistant.privacy.detector import detect
 from mpd_assistant.routing.intents import Intent, Mode
@@ -24,7 +23,7 @@ def build_key(
     query: str,
     prompt_version: str,
     corpus_version: str,
-    user_id: Optional[str] = None,
+    user_id: str | None = None,
 ) -> str:
     scope = f"user:{user_id}" if user_id else "shared"
     digest = hashlib.sha256(normalize_query(query).encode()).hexdigest()[:32]

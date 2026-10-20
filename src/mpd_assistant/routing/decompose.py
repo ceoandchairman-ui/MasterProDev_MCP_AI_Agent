@@ -5,7 +5,7 @@ part is a request for a person (that always wins and is handled whole).
 """
 
 import re
-from typing import List, Optional
+from typing import List
 
 from mpd_assistant.routing.intents import Mode
 from mpd_assistant.routing.router import route
@@ -20,7 +20,7 @@ _SPLIT = re.compile(
 )
 
 
-def split_tasks(text: str, *, verified: bool = False, language: Optional[str] = None) -> List[str]:
+def split_tasks(text: str, *, verified: bool = False, language: str | None = None) -> List[str]:
     """Returns the sub-tasks in order, or [text] when the message should be handled as one."""
     parts = [p.strip(" ,.;") for p in _SPLIT.split(text or "") if p and p.strip(" ,.;")]
     parts = [p for p in parts if len(p.split()) >= MIN_WORDS]

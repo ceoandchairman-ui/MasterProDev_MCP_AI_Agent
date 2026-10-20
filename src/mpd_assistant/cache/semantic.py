@@ -8,7 +8,7 @@ an error.
 import math
 import uuid
 from collections import OrderedDict
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from mpd_assistant.cache.store import CacheBackend
 from mpd_assistant.observability.metrics import CACHE_EVENTS
@@ -28,7 +28,7 @@ def cosine(a: List[float], b: List[float]) -> float:
 class SemanticCache:
     def __init__(self, backend: CacheBackend, embedder: Embedder, threshold: float = DEFAULT_THRESHOLD):
         self._backend, self._embedder, self._threshold = backend, embedder, threshold
-        self._index: "OrderedDict[str, List[Tuple[str, List[float]]]]" = OrderedDict()
+        self._index: OrderedDict[str, List[Tuple[str, List[float]]]] = OrderedDict()
 
     @staticmethod
     def scope(tenant: str, locale: str, agent: str, prompt_version: str, corpus_version: str) -> str:
@@ -45,7 +45,7 @@ class SemanticCache:
             self._index.move_to_end(scope)
         return entries
 
-    async def lookup(self, scope: str, text: str) -> Optional[str]:
+    async def lookup(self, scope: str, text: str) -> str | None:
         entries = self._index.get(scope)
         if not entries:
             CACHE_EVENTS.labels("semantic", "miss").inc()

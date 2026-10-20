@@ -9,7 +9,7 @@ import hashlib
 import io
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session as DbSession
@@ -33,7 +33,7 @@ class IndexError_(RuntimeError):
 @dataclass
 class Extracted:
     text: str
-    ocr_confidence: Optional[float] = None
+    ocr_confidence: float | None = None
 
 
 def read_document(path: Path) -> str:
@@ -79,7 +79,7 @@ def _to_png(data: bytes) -> bytes:
         return out.getvalue()
 
 
-async def extract(path: Path, ocr: Optional[OcrEngine] = None) -> Extracted:
+async def extract(path: Path, ocr: OcrEngine | None = None) -> Extracted:
     text = await asyncio.to_thread(read_document, path)
     if text.strip():
         return Extracted(text)
@@ -104,7 +104,7 @@ async def index_document(
     text: str,
     embedder: Embedder,
     expected_dim: int = EMBEDDING_DIM,
-    ocr_confidence: Optional[float] = None,
+    ocr_confidence: float | None = None,
 ) -> str:
     """Returns 'indexed', 'unchanged' or 'empty'."""
     doc_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -152,7 +152,7 @@ async def index_directory(
     directory: Path,
     embedder: Embedder,
     expected_dim: int = EMBEDDING_DIM,
-    ocr: Optional[OcrEngine] = None,
+    ocr: OcrEngine | None = None,
     prune: bool = True,
 ) -> Dict[str, str]:
     """Index every supported file; with prune, drop index entries for files that no longer exist."""

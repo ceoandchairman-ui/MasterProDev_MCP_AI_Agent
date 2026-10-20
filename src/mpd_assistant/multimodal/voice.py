@@ -1,6 +1,6 @@
 """Speech to text and text to speech through OpenAI-compatible audio endpoints. Audio is never stored."""
 
-from typing import Optional, Protocol
+from typing import Protocol
 
 import httpx
 
@@ -14,7 +14,7 @@ class VoiceError(RuntimeError):
 
 
 class SpeechToText(Protocol):
-    async def transcribe(self, audio: bytes, content_type: str, language: Optional[str] = None) -> str: ...
+    async def transcribe(self, audio: bytes, content_type: str, language: str | None = None) -> str: ...
 
 
 class TextToSpeech(Protocol):
@@ -22,11 +22,11 @@ class TextToSpeech(Protocol):
 
 
 class OpenAICompatibleSTT:
-    def __init__(self, base_url: str, api_key: str, model: str, client: Optional[httpx.AsyncClient] = None, timeout: float = 60.0):
+    def __init__(self, base_url: str, api_key: str, model: str, client: httpx.AsyncClient | None = None, timeout: float = 60.0):
         self._url = base_url.rstrip("/") + "/audio/transcriptions"
         self._key, self._model, self._client, self._timeout = api_key, model, client, timeout
 
-    async def transcribe(self, audio: bytes, content_type: str, language: Optional[str] = None) -> str:
+    async def transcribe(self, audio: bytes, content_type: str, language: str | None = None) -> str:
         if len(audio) > MAX_AUDIO_BYTES:
             raise VoiceError("Audio is too long")
         if content_type.split(";")[0].strip() not in AUDIO_TYPES:
@@ -49,7 +49,7 @@ class OpenAICompatibleSTT:
 
 
 class OpenAICompatibleTTS:
-    def __init__(self, base_url: str, api_key: str, model: str, voices: Optional[dict] = None, client: Optional[httpx.AsyncClient] = None, timeout: float = 60.0):
+    def __init__(self, base_url: str, api_key: str, model: str, voices: dict | None = None, client: httpx.AsyncClient | None = None, timeout: float = 60.0):
         self._url = base_url.rstrip("/") + "/audio/speech"
         self._key, self._model, self._client, self._timeout = api_key, model, client, timeout
         self._voices = voices or {"en": "alloy", "fr": "alloy"}

@@ -1,7 +1,7 @@
 """Hybrid retrieval helpers: reciprocal rank fusion, reranking interface and grounding threshold."""
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Protocol, Sequence
+from typing import Dict, List, Protocol, Sequence
 
 RRF_K = 60
 
@@ -14,7 +14,7 @@ class Hit:
     score: float = 0.0
 
 
-def reciprocal_rank_fusion(rankings: Sequence[Sequence[Hit]], k: int = RRF_K, top_n: Optional[int] = None) -> List[Hit]:
+def reciprocal_rank_fusion(rankings: Sequence[Sequence[Hit]], k: int = RRF_K, top_n: int | None = None) -> List[Hit]:
     """Fuse ranked lists (e.g. BM25 and vector). A document's fused score is sum(1 / (k + rank))."""
     scores: Dict[str, float] = {}
     first_seen: Dict[str, Hit] = {}

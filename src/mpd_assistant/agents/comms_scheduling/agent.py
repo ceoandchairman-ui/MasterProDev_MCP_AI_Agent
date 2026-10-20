@@ -24,6 +24,7 @@ def _last_user(state: AgentState) -> str:
 
 def make_comms(llm: LLM, executor: ToolExecutor, registry, on_booked=None, token_provider=None):
     allowed = [s.name for s in registry.for_agent(Agent.COMMS_SCHEDULING, Role.VERIFIED)]
+    catalog = registry.describe(Agent.COMMS_SCHEDULING, Role.VERIFIED)
 
     async def execute(steps, language: str, confirmed: frozenset, session_id: str, state: AgentState) -> Dict[str, Any]:
         done = []
@@ -32,6 +33,10 @@ def make_comms(llm: LLM, executor: ToolExecutor, registry, on_booked=None, token
         if token_provider and not google_token:
             return {"response": render("google_connect_needed", language), "pending_action": None}
         for step in steps:
+            problems = registry.validate_args(step.tool, step.args)
+            if problems:
+                return {"response": "I can't do that yet: " + "; ".join(problems[:3]) + ". Could you give me those details?", "pending_action": None}
+            step = PlanStep(step.tool, registry.clean_args(step.tool, step.args))
             outcome = await executor.run(
                 step.tool,
                 step.args,
@@ -66,7 +71,7 @@ def make_comms(llm: LLM, executor: ToolExecutor, registry, on_booked=None, token
 
         try:
             planned = await llm.complete(
-                [{"role": "system", "content": PLANNER.render(tools=", ".join(allowed))}, {"role": "user", "content": text}],
+                [{"role": "system", "content": PLANNER.render(tools=catalog)}, {"role": "user", "content": text}],
                 tier="mid",
                 max_tokens=300,
                 temperature=0.0,

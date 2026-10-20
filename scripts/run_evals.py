@@ -13,6 +13,7 @@ from pathlib import Path
 
 from mpd_assistant.core.config import get_settings
 from mpd_assistant.core.db import ensure_tenant, make_engine
+from mpd_assistant.evaluation.offline.memory_eval import run_memory
 from mpd_assistant.evaluation.offline.runner import (
     failures_against_thresholds,
     publish,
@@ -20,7 +21,6 @@ from mpd_assistant.evaluation.offline.runner import (
     run_routing,
     write_report,
 )
-from mpd_assistant.evaluation.offline.memory_eval import run_memory
 from mpd_assistant.retrieval.embeddings import OpenAICompatibleEmbedder
 from mpd_assistant.retrieval.pg import PgRetriever
 

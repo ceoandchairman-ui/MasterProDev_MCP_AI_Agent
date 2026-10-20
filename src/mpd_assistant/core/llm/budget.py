@@ -2,13 +2,12 @@
 
 from contextvars import ContextVar, Token
 from datetime import UTC, datetime
-from typing import Optional
 
 from mpd_assistant.core.kv import KeyValueStore
 from mpd_assistant.core.llm.client import LLMError
 from mpd_assistant.observability.metrics import BUDGET_BLOCKS
 
-_scope: ContextVar[Optional[str]] = ContextVar("token_budget_scope", default=None)
+_scope: ContextVar[str | None] = ContextVar("token_budget_scope", default=None)
 
 
 class BudgetExceeded(LLMError):
@@ -17,7 +16,7 @@ class BudgetExceeded(LLMError):
         self.which = which
 
 
-def set_scope(scope: Optional[str]) -> Token:
+def set_scope(scope: str | None) -> Token:
     return _scope.set(scope)
 
 
@@ -25,7 +24,7 @@ def reset_scope(marker: Token) -> None:
     _scope.reset(marker)
 
 
-def current_scope() -> Optional[str]:
+def current_scope() -> str | None:
     return _scope.get()
 
 
@@ -42,7 +41,7 @@ class TokenBudget:
     def _used(self, key: str) -> int:
         return int(self._kv.get(key) or 0)
 
-    def exhausted(self, scope: Optional[str]) -> Optional[str]:
+    def exhausted(self, scope: str | None) -> str | None:
         """Which budget is spent ('global' or 'session'), or None when there is room."""
         if self._global and self._used(f"tokens:global:{self._day()}") >= self._global:
             return "global"
@@ -50,13 +49,13 @@ class TokenBudget:
             return "session"
         return None
 
-    def check(self, scope: Optional[str]) -> None:
+    def check(self, scope: str | None) -> None:
         which = self.exhausted(scope)
         if which:
             BUDGET_BLOCKS.labels(which).inc()
             raise BudgetExceeded(which)
 
-    def record(self, scope: Optional[str], tokens: int) -> None:
+    def record(self, scope: str | None, tokens: int) -> None:
         if tokens <= 0:
             return
         day = self._day()

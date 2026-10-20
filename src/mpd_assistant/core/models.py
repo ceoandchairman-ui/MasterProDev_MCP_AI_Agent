@@ -42,6 +42,21 @@ class Tenant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class Company(Base):
+    """A customer organisation. Business data, not personal data: names of companies are not encrypted."""
+
+    __tablename__ = "companies"
+    __table_args__ = (UniqueConstraint("tenant_id", "name_key", name="uq_companies_tenant_name"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"))
+    name: Mapped[str] = mapped_column(String(200))
+    name_key: Mapped[str] = mapped_column(String(200))  # lower-cased, whitespace-collapsed: makes upserts idempotent
+    industry: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    size_band: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    website: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class User(Base):
     """One master record per person: verified identity, customer, and lead owner."""
 
@@ -62,6 +77,7 @@ class User(Base):
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     marketing_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     memory_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    company_id: Mapped[str | None] = mapped_column(ForeignKey("companies.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

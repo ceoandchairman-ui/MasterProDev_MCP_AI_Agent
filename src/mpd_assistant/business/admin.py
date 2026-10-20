@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session as DbSession
@@ -13,14 +13,14 @@ from mpd_assistant.core.models import AuditLog
 
 logger = logging.getLogger(__name__)
 
-AuditSink = Callable[[str, str, Optional[str], Dict], None]
+AuditSink = Callable[[str, str, str | None, Dict], None]
 
 
 class SqlAuditLog:
     def __init__(self, engine: Engine):
         self._engine = engine
 
-    def __call__(self, actor: str, action: str, target: Optional[str], detail: Dict) -> None:
+    def __call__(self, actor: str, action: str, target: str | None, detail: Dict) -> None:
         try:
             with DbSession(self._engine) as db:
                 db.add(AuditLog(actor=actor[:64], action=action[:60], target=(target or "")[:64] or None, detail=detail))
@@ -47,13 +47,17 @@ class AdminService:
         self,
         escalations: EscalationService,
         repo,
-        audit: Optional[AuditSink] = None,
-        grafana_url: Optional[str] = None,
-        langsmith_url: Optional[str] = None,
+        audit: AuditSink | None = None,
+        grafana_url: str | None = None,
+        langsmith_url: str | None = None,
         patterns=None,
-        cache_purgers: Optional[Dict[str, Callable[[], Awaitable[int]]]] = None,
+        cache_purgers: Dict[str, Callable[[], Awaitable[int]]] | None = None,
         people=None,
+        quotes=None,
+        delivery=None,
     ):
+        self.delivery = delivery  # DeliveryTracker: messages the providers reported as undelivered
+        self.quotes = quotes  # QuoteReview: staff approve or decline quotes the pricing rules held back
         self.people = people  # PeopleDirectory: audited lookup and merge of customer records
         self._service, self._repo, self._audit = escalations, repo, audit
         self._patterns = patterns
@@ -63,7 +67,7 @@ class AdminService:
     def list_open(self) -> List[EscalationView]:
         return [_view(e) for e in sorted(self._repo.list_open(), key=lambda e: e.created_at)]
 
-    def get(self, reference: str) -> Optional[EscalationView]:
+    def get(self, reference: str) -> EscalationView | None:
         esc = self._repo.get(reference.upper())
         return _view(esc) if esc else None
 
@@ -73,6 +77,22 @@ class AdminService:
         if done and self._audit:
             self._audit(actor, "escalation_resolved", reference, {})
         return done
+
+    def undelivered(self, limit: int = 50) -> List[Dict]:
+        return self.delivery.dead_letters(limit) if self.delivery is not None else []
+
+    def pending_quotes(self) -> List[Dict]:
+        if self.quotes is None:
+            return []
+        return [
+            {"reference": q.ref, "total_cents": q.total_cents, "currency": q.currency, "lines": [{"name": x.get("name"), "quantity": x.get("quantity"), "total_cents": x.get("total_cents")} for x in q.lines]}
+            for q in self.quotes.pending()
+        ]
+
+    async def decide_quote(self, reference: str, approve: bool, actor: str = "staff") -> str:
+        if self.quotes is None:
+            return "not_found"
+        return await self.quotes.decide(reference, approve, actor)
 
     def pending_patterns(self) -> List[Dict]:
         if self._patterns is None:
@@ -94,7 +114,7 @@ class AdminService:
     def cache_layers(self) -> List[str]:
         return sorted(self._purgers)
 
-    async def purge_cache(self, layer: str, actor: str = "staff") -> Optional[int]:
+    async def purge_cache(self, layer: str, actor: str = "staff") -> int | None:
         """Clears one cache layer (response, semantic, retrieval). Returns entries removed, or None for an unknown layer."""
         purge = self._purgers.get(layer)
         if purge is None:
@@ -108,6 +128,9 @@ class AdminService:
         return {
             "open_escalations": len(self._repo.list_open()),
             "patterns_awaiting_review": len(self._patterns.pending(limit=201)) if self._patterns is not None else 0,
+            "undelivered_messages": len(self.undelivered(201)),
+            "cache_layers": self.cache_layers,
+            "quotes_awaiting_review": len(self.quotes.pending(limit=201)) if self.quotes is not None else 0,
             "links": {k: v for k, v in self._links.items() if v},
         }
 

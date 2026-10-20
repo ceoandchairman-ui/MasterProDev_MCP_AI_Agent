@@ -1,6 +1,6 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "mcp_servers/gmail_server/Dockerfile"
+dockerfilePath = "services/mcp_gmail/Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"

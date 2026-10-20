@@ -9,7 +9,6 @@ ones: episodes fade faster than facts (45-day half-life).
 import hashlib
 import re
 from collections.abc import Callable
-from typing import Optional
 
 from mpd_assistant.agents.common import parse_json_object
 from mpd_assistant.core.kv import KeyValueStore
@@ -44,7 +43,7 @@ def _shorten(text: str, limit: int) -> str:
 
 
 class EpisodeWriter:
-    def __init__(self, store: MemoryStore, summaries, has_consent: Callable[[str], bool], kv: KeyValueStore, llm: Optional[LLM] = None):
+    def __init__(self, store: MemoryStore, summaries, has_consent: Callable[[str], bool], kv: KeyValueStore, llm: LLM | None = None):
         self._store, self._summaries, self._consent, self._kv, self._llm = store, summaries, has_consent, kv, llm
 
     async def _condense(self, summary: str) -> str:
@@ -63,7 +62,7 @@ class EpisodeWriter:
                 pass
         return summary
 
-    async def record(self, user_id: str, thread_id: str, outcome: str = "no_outcome") -> Optional[WriteResult]:
+    async def record(self, user_id: str, thread_id: str, outcome: str = "no_outcome") -> WriteResult | None:
         """Writes the episode once per distinct summary. Returns None when there is nothing to record or consent is off."""
         if not user_id or not self._consent(user_id):
             return None

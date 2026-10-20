@@ -5,7 +5,7 @@ and tests run without an LLM. 'Reason' is the planner's chain of thought; the gr
 """
 
 import time
-from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
+from typing import Any, Awaitable, Callable, Dict, List, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -18,13 +18,13 @@ class PrarState(TypedDict, total=False):
     context: Dict[str, Any]
     plan: List[Dict[str, Any]]
     observations: List[Dict[str, Any]]
-    answer: Optional[str]
+    answer: str | None
     done: bool
     loops: int
     actions_taken: int
     reflection: str
     timings: Dict[str, float]
-    stop_reason: Optional[str]
+    stop_reason: str | None
 
 
 Planner = Callable[[PrarState], Awaitable[List[Dict[str, Any]]]]

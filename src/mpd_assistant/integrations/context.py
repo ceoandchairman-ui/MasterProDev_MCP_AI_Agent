@@ -1,12 +1,11 @@
 """Per-call Google access token, carried from the tool executor to the HTTP backend without touching arguments."""
 
 from contextvars import ContextVar, Token
-from typing import Optional
 
-_access_token: ContextVar[Optional[str]] = ContextVar("google_access_token", default=None)
+_access_token: ContextVar[str | None] = ContextVar("google_access_token", default=None)
 
 
-def set_token(token: Optional[str]) -> Token:
+def set_token(token: str | None) -> Token:
     return _access_token.set(token)
 
 
@@ -14,14 +13,14 @@ def reset_token(marker: Token) -> None:
     _access_token.reset(marker)
 
 
-def current_token() -> Optional[str]:
+def current_token() -> str | None:
     return _access_token.get()
 
 
-_user_id: ContextVar[Optional[str]] = ContextVar("tool_user_id", default=None)
+_user_id: ContextVar[str | None] = ContextVar("tool_user_id", default=None)
 
 
-def set_user(user_id: Optional[str]) -> Token:
+def set_user(user_id: str | None) -> Token:
     return _user_id.set(user_id)
 
 
@@ -45,6 +44,6 @@ def untrusted_in_context() -> bool:
     return _untrusted.get()
 
 
-def current_user() -> Optional[str]:
+def current_user() -> str | None:
     """The user a local tool is running for. Tools never take the user id from model-written arguments."""
     return _user_id.get()

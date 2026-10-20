@@ -3,7 +3,7 @@
 from functools import cache
 from pathlib import Path
 from string import Template
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import yaml
 
@@ -24,7 +24,7 @@ def _load_locale(locale: str, directory: str = str(TEMPLATE_DIR)) -> Dict[str, s
     return {str(k): str(v) for k, v in data.items()}
 
 
-def render(key: str, locale: str = DEFAULT_LOCALE, variables: Optional[Dict[str, Any]] = None, directory: Optional[Path] = None) -> str:
+def render(key: str, locale: str = DEFAULT_LOCALE, variables: Dict[str, Any] | None = None, directory: Path | None = None) -> str:
     base = str(directory or TEMPLATE_DIR)
     raw = _load_locale(locale, base).get(key)
     if raw is None and locale != DEFAULT_LOCALE:

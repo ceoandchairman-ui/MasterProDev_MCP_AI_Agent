@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import asdict, dataclass
-from typing import List, Optional
+from typing import List
 
 from mpd_assistant.core.kv import KeyValueStore
 
@@ -32,7 +32,7 @@ class ParkedTask:
 class TopicShift:
     shifted: bool
     resume: bool = False
-    parked: Optional[ParkedTask] = None
+    parked: ParkedTask | None = None
 
 
 class TopicTracker:

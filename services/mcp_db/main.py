@@ -5,6 +5,7 @@ transaction is read-only, and personal data (names, emails, phones, quote line i
 Use a database role that only has SELECT on these tables.  Run: uvicorn --factory services.mcp_db.main:create --port 8004
 """
 
+import json
 import os
 import re
 from typing import Any, Callable, Dict, List
@@ -15,6 +16,8 @@ from sqlalchemy.engine import Engine
 from services._common.mcp_common.base_server import BaseMCPServer
 
 _ID = re.compile(r"^[0-9a-f]{32}$")
+_QUOTE_REF = re.compile(r"^[0-9A-Fa-f]{8}$")
+PARAM_PATTERNS: Dict[str, "re.Pattern[str]"] = {"quote_ref": _QUOTE_REF}  # any parameter not listed must be a 32-character id
 MAX_ROWS = 50
 DEFAULT_TENANT = "masterprodev"
 
@@ -41,6 +44,26 @@ QUERIES: Dict[str, Dict[str, Any]] = {
             "WHERE l.tenant_id = :tenant AND l.user_id = :user_id ORDER BY q.created_at DESC LIMIT :limit"
         ),
     },
+    "get_quote": {
+        "description": "One of a user's quotes by its 8-character reference: status, total, expiry and priced line items",
+        "params": ["user_id", "quote_ref"],
+        "sql": (
+            "SELECT upper(substr(q.id, 1, 8)) AS ref, q.status AS status, q.total_cents AS total_cents, q.currency AS currency, "
+            "q.expires_at AS expires_at, q.line_items AS line_items FROM quotes q JOIN leads l ON l.id = q.lead_id "
+            "WHERE l.tenant_id = :tenant AND l.user_id = :user_id AND upper(substr(q.id, 1, 8)) = upper(:quote_ref) LIMIT 1"
+        ),
+    },
+    "get_customer_profile": {
+        "description": "Company, funnel stage and quote count for a user (no name, email or phone)",
+        "params": ["user_id"],
+        "sql": (
+            "SELECT c.name AS company, l.stage AS stage, l.timeline AS timeline, l.budget_range AS budget_range, "
+            "(SELECT COUNT(*) FROM quotes q WHERE q.lead_id = l.id) AS quote_count, u.created_at AS customer_since "
+            "FROM users u LEFT JOIN leads l ON l.user_id = u.id AND l.tenant_id = u.tenant_id "
+            "LEFT JOIN companies c ON c.id = u.company_id "
+            "WHERE u.tenant_id = :tenant AND u.id = :user_id AND u.deleted_at IS NULL LIMIT 1"
+        ),
+    },
     "funnel_counts": {
         "description": "Number of leads in each funnel stage",
         "params": [],
@@ -49,7 +72,15 @@ QUERIES: Dict[str, Dict[str, Any]] = {
 }
 
 
-def _plain(value: Any) -> Any:
+JSON_COLUMNS = frozenset({"line_items"})
+
+
+def _plain(value: Any, column: str = "") -> Any:
+    if column in JSON_COLUMNS and isinstance(value, str):
+        try:
+            return json.loads(value)  # some drivers hand back JSON columns as text
+        except ValueError:
+            return None
     return value.isoformat() if hasattr(value, "isoformat") else value
 
 
@@ -66,7 +97,7 @@ class DatabaseMCPServer(BaseMCPServer):
         self._tenant_id: str | None = None
 
     def get_available_tools(self) -> List[Dict[str, Any]]:
-        return [{"name": n, "description": q["description"], "parameters": {p: "32-character id" for p in q["params"]}} for n, q in QUERIES.items()]
+        return [{"name": n, "description": q["description"], "parameters": {p: ("8-character reference" if p == "quote_ref" else "32-character id") for p in q["params"]}} for n, q in QUERIES.items()]
 
     def _tenant(self, conn) -> str:
         if self._tenant_id is None:
@@ -81,7 +112,7 @@ class DatabaseMCPServer(BaseMCPServer):
         bound: Dict[str, Any] = {"limit": MAX_ROWS}
         for p in spec["params"]:
             value = params.get(p)
-            if not isinstance(value, str) or not _ID.match(value):
+            if not isinstance(value, str) or not PARAM_PATTERNS.get(p, _ID).match(value):
                 return {"error": f"invalid_{p}"}
             bound[p] = value
         with self._engine.connect() as conn:
@@ -91,7 +122,7 @@ class DatabaseMCPServer(BaseMCPServer):
             sql = spec["sql"]
             used = {k: v for k, v in bound.items() if f":{k}" in sql}
             rows = conn.execute(text(sql), used).mappings().all()
-        return {"rows": [{k: _plain(v) for k, v in dict(r).items()} for r in rows]}
+        return {"rows": [{k: _plain(v, k) for k, v in dict(r).items()} for r in rows]}
 
     async def execute_tool(self, tool_name: str, params: Dict[str, Any]) -> Any:
         if tool_name not in QUERIES:

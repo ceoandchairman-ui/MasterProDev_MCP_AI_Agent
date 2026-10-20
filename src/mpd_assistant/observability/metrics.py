@@ -21,6 +21,8 @@ EVAL_REASONS = Counter("mpd_eval_reasons_total", "Evaluator failure reasons", ["
 ESCALATIONS = Counter("mpd_escalations_total", "Escalations to a human", ["reason"], registry=REGISTRY)
 PII_DETECTIONS = Counter("mpd_pii_detections_total", "PII detected at a boundary", ["boundary", "type"], registry=REGISTRY)
 MESSAGES = Counter("mpd_messages_total", "Outbound messages", ["channel", "purpose", "status"], registry=REGISTRY)
+MESSAGE_DELIVERY = Counter("mpd_message_delivery_total", "Provider delivery receipts", ["channel", "status"], registry=REGISTRY)
+MESSAGE_RETRIES = Counter("mpd_message_retries_total", "Outbound sends retried after a transient provider failure", ["channel"], registry=REGISTRY)
 JUDGE_VERDICTS = Counter("mpd_judge_verdicts_total", "LLM judge outcomes", ["verdict"], registry=REGISTRY)
 BUDGET_BLOCKS = Counter("mpd_budget_blocks_total", "Requests stopped by a token budget", ["scope"], registry=REGISTRY)
 EVAL_SCORE = Gauge("mpd_eval_score", "Latest offline evaluation score", ["suite", "metric"], registry=REGISTRY)

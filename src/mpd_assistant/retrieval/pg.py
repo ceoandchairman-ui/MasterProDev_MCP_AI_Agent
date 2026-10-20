@@ -7,7 +7,7 @@ fusion, scoring and tenant filtering are tested without a server.
 
 import asyncio
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session as DbSession
@@ -41,7 +41,7 @@ class PgRetriever:
         engine: Engine,
         tenant_id: str,
         embedder: Embedder,
-        reranker: Optional[Reranker] = None,
+        reranker: Reranker | None = None,
         candidates: int = 20,
         top_k: int = 5,
     ):

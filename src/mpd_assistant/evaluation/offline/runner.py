@@ -3,7 +3,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import yaml
 
@@ -68,7 +68,7 @@ async def run_retrieval(path: Path, retriever, min_score: float, top_k: int = 3)
     }
 
 
-def ragas_scores(samples: List[Dict[str, Any]], llm=None, embeddings=None) -> Optional[Dict[str, float]]:
+def ragas_scores(samples: List[Dict[str, Any]], llm=None, embeddings=None) -> Dict[str, float] | None:
     """Faithfulness, answer relevancy and context precision/recall via Ragas. Returns None when Ragas or a judge
     model is unavailable, so offline runs never fail just because the optional dependency is missing."""
     try:

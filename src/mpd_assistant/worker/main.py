@@ -22,6 +22,7 @@ from mpd_assistant.ingestion.indexer import index_directory
 from mpd_assistant.memory.consolidation import Consolidator
 from mpd_assistant.memory.long_term.sql import SqlMemoryRepository
 from mpd_assistant.memory.long_term.store import MemoryStore
+from mpd_assistant.multimodal.ocr import build_ocr
 from mpd_assistant.retrieval.embeddings import OpenAICompatibleEmbedder
 from mpd_assistant.worker.jobs.retention import purge_conversations
 
@@ -80,7 +81,7 @@ def build_jobs() -> Dict[str, Job]:
         embedder = OpenAICompatibleEmbedder(s.EMBEDDING_BASE_URL or s.LLM_BASE_URL, key, s.EMBEDDING_MODEL)
 
         async def reindex():
-            return await index_directory(engine, tenant, Path(s.KNOWLEDGE_BASE_PATH), embedder)
+            return await index_directory(engine, tenant, Path(s.KNOWLEDGE_BASE_PATH), embedder, ocr=build_ocr(s))
 
         jobs["reindex"] = Job("reindex", 6 * 3600, reindex)
     return jobs

@@ -3,7 +3,7 @@
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Dict, List, Optional, Protocol
+from typing import Dict, List, Protocol
 
 from mpd_assistant.graph.handoff import build_packet
 from mpd_assistant.memory.short_term.window import Message
@@ -29,9 +29,9 @@ class Notifier(Protocol):
 
 
 class EscalationRepository(Protocol):
-    def open_for_session(self, session_id: str) -> Optional[Escalation]: ...
+    def open_for_session(self, session_id: str) -> Escalation | None: ...
     def save(self, escalation: Escalation) -> None: ...
-    def get(self, reference: str) -> Optional[Escalation]: ...
+    def get(self, reference: str) -> Escalation | None: ...
     def list_open(self) -> List[Escalation]: ...
 
 
@@ -39,13 +39,13 @@ class InMemoryEscalations:
     def __init__(self):
         self._by_ref: Dict[str, Escalation] = {}
 
-    def open_for_session(self, session_id: str) -> Optional[Escalation]:
+    def open_for_session(self, session_id: str) -> Escalation | None:
         return next((e for e in self._by_ref.values() if e.session_id == session_id and e.status == "open"), None)
 
     def save(self, escalation: Escalation) -> None:
         self._by_ref[escalation.reference] = escalation
 
-    def get(self, reference: str) -> Optional[Escalation]:
+    def get(self, reference: str) -> Escalation | None:
         return self._by_ref.get(reference)
 
     def list_open(self) -> List[Escalation]:
@@ -59,7 +59,7 @@ def build_summary(messages: List[Message]) -> str:
 
 
 class EscalationService:
-    def __init__(self, notifier: Optional[Notifier] = None, repo: Optional[EscalationRepository] = None):
+    def __init__(self, notifier: Notifier | None = None, repo: EscalationRepository | None = None):
         self._notifier = notifier
         self._repo: EscalationRepository = repo or InMemoryEscalations()
 
@@ -79,7 +79,7 @@ class EscalationService:
     def is_paused(self, session_id: str) -> bool:
         return self._repo.open_for_session(session_id) is not None
 
-    def open_reference(self, session_id: str) -> Optional[str]:
+    def open_reference(self, session_id: str) -> str | None:
         esc = self._repo.open_for_session(session_id)
         return esc.reference if esc else None
 
@@ -95,10 +95,10 @@ class EscalationService:
 class EscalationFlow:
     """Glue used by the graph: record the escalation, alert staff once, return the reference for the user."""
 
-    def __init__(self, service: EscalationService, notifications, staff_email: Optional[str]):
+    def __init__(self, service: EscalationService, notifications, staff_email: str | None):
         self._service, self._notifications, self._staff_email = service, notifications, staff_email
 
-    async def hook(self, state, reason: str) -> Optional[str]:
+    async def hook(self, state, reason: str) -> str | None:
         session_id = state.get("session_row") or state.get("session_id") or ""
         esc = self._service.raise_escalation(session_id, reason, state.get("messages", []))
         if esc.is_new:
@@ -123,5 +123,5 @@ class EscalationFlow:
     def is_paused(self, session_id: str) -> bool:
         return self._service.is_paused(session_id)
 
-    def open_reference(self, session_id: str) -> Optional[str]:
+    def open_reference(self, session_id: str) -> str | None:
         return self._service.open_reference(session_id)

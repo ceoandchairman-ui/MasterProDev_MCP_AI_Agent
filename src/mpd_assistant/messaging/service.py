@@ -1,19 +1,21 @@
 """NotificationService: the one place every outbound message passes through."""
 
-from collections.abc import Callable
+import asyncio
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable
 
 from mpd_assistant.core.kv import KeyValueStore
+from mpd_assistant.messaging.delivery import transient
 from mpd_assistant.messaging.models import Channel, OutboundMessage, Provider, Purpose, SendResult
-from mpd_assistant.observability.metrics import MESSAGES
+from mpd_assistant.observability.metrics import MESSAGE_RETRIES, MESSAGES
 from mpd_assistant.responses.engine import TemplateNotFound, render
 
 OPT_OUT_WORDS = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit", "arret", "arrêt"}
 OPT_IN_WORDS = {"start", "unstop", "yes", "oui"}
 
 
-def classify_keyword(text: str) -> Optional[str]:
+def classify_keyword(text: str) -> str | None:
     word = (text or "").strip().lower()
     if word in OPT_OUT_WORDS:
         return "opt_out"
@@ -30,9 +32,13 @@ class NotificationService:
         *,
         per_target_per_hour: int = 5,
         daily_cap_per_channel: int = 500,
-        has_consent: Callable[[Optional[str]], bool] = lambda user_id: False,
+        has_consent: Callable[[str | None], bool] = lambda user_id: False,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        tracker=None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        retry_delays: Sequence[float] = (0.5, 1.5),
     ):
+        self._tracker, self._sleep, self._retry_delays = tracker, sleep, tuple(retry_delays)
         self._by_channel: Dict[Channel, Provider] = {}
         for p in providers:
             for ch in p.channels:
@@ -99,7 +105,15 @@ class NotificationService:
                 subject = None
 
         result = await provider.send(msg.channel, msg.to, body, subject)
+        for delay in self._retry_delays:  # transient provider trouble is retried a couple of times with a growing pause
+            if result.status != "failed" or not transient(result.reason):
+                break
+            MESSAGE_RETRIES.labels(msg.channel.value).inc()
+            await self._sleep(delay)
+            result = await provider.send(msg.channel, msg.to, body, subject)
         MESSAGES.labels(msg.channel.value, msg.purpose.value, result.status).inc()
+        if result.status == "sent" and self._tracker is not None:
+            self._tracker.sent(result.provider_id, msg.channel, msg.to, msg.template, msg.purpose.value)
         if result.status == "sent" and msg.idempotency_key:
             self._kv.set(f"idem:{msg.idempotency_key}", {"provider_id": result.provider_id}, 86400)
         return result

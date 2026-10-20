@@ -2,7 +2,7 @@
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session as DbSession
@@ -72,7 +72,7 @@ class DataSubjectService:
             }
 
     # --- erasure ----------------------------------------------------------------------------
-    def erase(self, user_id: str, *, phone: Optional[str] = None, email: Optional[str] = None) -> ErasureReport:
+    def erase(self, user_id: str, *, phone: str | None = None, email: str | None = None) -> ErasureReport:
         """Hard-deletes personal rows. The audit entry keeps only the user id hash, never personal values."""
         report = ErasureReport(user_id)
         with DbSession(self._engine) as db:
@@ -109,7 +109,7 @@ class DataSubjectService:
         report.vendors_to_notify = ["SendGrid (suppression list, if contacted)", "Twilio (opt-out record, if messages were sent)"]
         return report
 
-    def _erase_kv(self, user_id: str, session_ids: List[str], phone: Optional[str], email: Optional[str], report: ErasureReport) -> int:
+    def _erase_kv(self, user_id: str, session_ids: List[str], phone: str | None, email: str | None, report: ErasureReport) -> int:
         keys: List[str] = []
         for sid in session_ids:
             keys += [f"vault:{sid}", f"pending:{sid}"]

@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session as DbSession
@@ -12,7 +12,7 @@ class SqlLeadRepository:
     def __init__(self, engine: Engine, tenant_id: str):
         self._engine, self._tenant = engine, tenant_id
 
-    def upsert(self, user_id: Optional[str], stage: str, slots: Dict[str, str]) -> None:
+    def upsert(self, user_id: str | None, stage: str, slots: Dict[str, str]) -> None:
         if not user_id:
             return  # anonymous visitors are not stored as leads
         with DbSession(self._engine) as db:

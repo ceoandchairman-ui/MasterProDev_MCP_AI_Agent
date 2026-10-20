@@ -3,7 +3,7 @@
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional, Protocol
+from typing import Callable, Dict, Protocol
 
 IDLE_TIMEOUT_SECONDS = 30 * 60
 ABSOLUTE_TIMEOUT_SECONDS = 24 * 3600
@@ -13,7 +13,7 @@ ABSOLUTE_TIMEOUT_SECONDS = 24 * 3600
 class Session:
     id: str
     thread_id: str
-    user_id: Optional[str]
+    user_id: str | None
     created_at: float
     last_seen: float
     verified: bool = False
@@ -21,7 +21,7 @@ class Session:
 
 
 class SessionRepository(Protocol):
-    def get(self, session_id: str) -> Optional[Session]: ...
+    def get(self, session_id: str) -> Session | None: ...
     def save(self, session: Session) -> None: ...
     def for_user(self, user_id: str) -> list: ...
 
@@ -30,7 +30,7 @@ class MemorySessionRepository:
     def __init__(self):
         self._rows: Dict[str, Session] = {}
 
-    def get(self, session_id: str) -> Optional[Session]:
+    def get(self, session_id: str) -> Session | None:
         return self._rows.get(session_id)
 
     def save(self, session: Session) -> None:
@@ -45,13 +45,13 @@ class SessionService:
         self._repo = repo
         self._clock = clock
 
-    def create(self, user_id: Optional[str] = None, verified: bool = False) -> Session:
+    def create(self, user_id: str | None = None, verified: bool = False) -> Session:
         now = self._clock()
         session = Session(uuid.uuid4().hex, uuid.uuid4().hex, user_id, now, now, verified)
         self._repo.save(session)
         return session
 
-    def resume(self, session_id: str) -> Optional[Session]:
+    def resume(self, session_id: str) -> Session | None:
         """Return a live session and refresh its idle timer, or None if unknown, revoked or expired."""
         session = self._repo.get(session_id)
         if session is None or session.revoked:
@@ -94,7 +94,7 @@ class SessionService:
             self._repo.save(s)
         return len(sessions)
 
-    def upgrade_to_verified(self, session_id: str, user_id: str) -> Optional[Session]:
+    def upgrade_to_verified(self, session_id: str, user_id: str) -> Session | None:
         """A visitor becomes a verified user without losing the thread (and so the history)."""
         session = self.resume(session_id)
         if session is None:

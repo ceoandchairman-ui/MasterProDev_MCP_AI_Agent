@@ -2,7 +2,6 @@
 
 import hmac
 import os
-from typing import Optional
 
 from fastapi import HTTPException, Request
 
@@ -10,7 +9,7 @@ ALLOW_UNAUTH_ENV = "MCP_ALLOW_UNAUTHENTICATED"
 SERVICE_KEY_ENV = "MCP_SERVICE_KEY"
 
 
-def get_service_key() -> Optional[str]:
+def get_service_key() -> str | None:
     return os.environ.get(SERVICE_KEY_ENV) or None
 
 
@@ -26,13 +25,13 @@ def check_startup_config() -> None:
         )
 
 
-def keys_match(provided: Optional[str], expected: str) -> bool:
+def keys_match(provided: str | None, expected: str) -> bool:
     if not provided:
         return False
     return hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8"))
 
 
-def _bearer_token(request: Request) -> Optional[str]:
+def _bearer_token(request: Request) -> str | None:
     header = request.headers.get("authorization", "")
     scheme, _, token = header.partition(" ")
     if scheme.lower() == "bearer" and token:

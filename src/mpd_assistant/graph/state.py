@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Dict, List, Optional, TypedDict
+from typing import Annotated, Any, Dict, List, TypedDict
 
 
 def append_messages(left: List[Dict[str, Any]], right: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -10,32 +10,32 @@ class AgentState(TypedDict, total=False):
 
     messages: Annotated[List[Dict[str, Any]], append_messages]
     session_id: str
-    user_id: Optional[str]
+    user_id: str | None
     verified: bool
     language: str
     intent: str
     agent: str
     mode: str
     requires_identity: bool
-    response: Optional[str]
+    response: str | None
     steps: int
     escalated: bool
-    reference: Optional[str]
-    pending_action: Optional[Dict[str, Any]]
+    reference: str | None
+    pending_action: Dict[str, Any] | None
     memory_context: str
-    evidence: Optional[str]
+    evidence: str | None
     thread_summary: str
     context_notes: str
     attachment_context: str
     style_examples: str
-    session_row: Optional[str]
+    session_row: str | None
     lead_slots: Dict[str, str]
     lead_stage: str
-    scope: Optional[Dict[str, Any]]
-    quote_hash: Optional[str]
-    quote_id: Optional[str]
-    current_task: Optional[str]
+    scope: Dict[str, Any] | None
+    quote_hash: str | None
+    quote_id: str | None
+    current_task: str | None
     task_queue: List[str]
     partials: List[str]
-    eval_verdict: Optional[str]
+    eval_verdict: str | None
     eval_reasons: List[str]

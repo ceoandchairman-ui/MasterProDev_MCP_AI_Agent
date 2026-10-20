@@ -3,7 +3,7 @@ hands out a Stripe-hosted checkout link. The quote is only ever marked paid by t
 
 import re
 from collections.abc import Awaitable, Callable
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from mpd_assistant.agents.common import is_affirmative, is_negative
 from mpd_assistant.agents.quote.agent import money
@@ -27,8 +27,8 @@ def _last_user(state: AgentState) -> str:
 
 def make_payment_node(
     payments: PaymentService,
-    has_step_up: Optional[Callable[[str], bool]] = None,
-    start_step_up: Optional[Callable[[str], Awaitable[bool]]] = None,
+    has_step_up: Callable[[str], bool] | None = None,
+    start_step_up: Callable[[str], Awaitable[bool]] | None = None,
 ):
     async def run(state: AgentState) -> Dict[str, Any]:
         language = state.get("language", "en")

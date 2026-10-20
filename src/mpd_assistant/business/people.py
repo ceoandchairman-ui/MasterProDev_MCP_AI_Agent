@@ -9,20 +9,19 @@ import hashlib
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List
 
 from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import Session as DbSession
 
 from mpd_assistant.core.crypto import FieldCipher, blind_index
-from mpd_assistant.core.models import FunnelEvent, Lead, MemoryRow, OAuthToken
+from mpd_assistant.core.models import FunnelEvent, Lead, MemoryRow, OAuthToken, User
 from mpd_assistant.core.models import Quote as QuoteRow
 from mpd_assistant.core.models import Session as SessionRow
-from mpd_assistant.core.models import User
 from mpd_assistant.identity.normalize import InvalidIdentifier, normalize_email, normalize_phone
 from mpd_assistant.messaging.models import mask
 
-AuditSink = Callable[[str, str, Optional[str], Dict], None]
+AuditSink = Callable[[str, str, str | None, Dict], None]
 
 
 class MergeError(ValueError):
@@ -38,7 +37,7 @@ class PersonView:
     role: str
     verified: bool
     memory_consent: bool
-    lead_stage: Optional[str] = None
+    lead_stage: str | None = None
 
 
 @dataclass
@@ -52,10 +51,10 @@ def _ref(user_id: str) -> str:
 
 
 class PeopleDirectory:
-    def __init__(self, engine: Engine, tenant_id: str, cipher: FieldCipher, blind_key: str, audit: Optional[AuditSink] = None):
+    def __init__(self, engine: Engine, tenant_id: str, cipher: FieldCipher, blind_key: str, audit: AuditSink | None = None):
         self._engine, self._tenant, self._cipher, self._key, self._audit = engine, tenant_id, cipher, blind_key, audit
 
-    def _log(self, actor: str, action: str, target: Optional[str], detail: Dict) -> None:
+    def _log(self, actor: str, action: str, target: str | None, detail: Dict) -> None:
         if self._audit:
             self._audit(actor, action, target, detail)
 
@@ -72,7 +71,7 @@ class PeopleDirectory:
             lead_stage=lead.stage if lead else None,
         )
 
-    def lookup(self, *, email: Optional[str] = None, phone: Optional[str] = None, actor: str = "staff") -> Optional[PersonView]:
+    def lookup(self, *, email: str | None = None, phone: str | None = None, actor: str = "staff") -> PersonView | None:
         if bool(email) == bool(phone):
             raise InvalidIdentifier("Give either an email or a phone number")
         column, index = (User.email_index, blind_index(self._key, normalize_email(email))) if email else (User.phone_index, blind_index(self._key, normalize_phone(phone)))

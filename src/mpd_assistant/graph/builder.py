@@ -4,7 +4,7 @@ Agents are injected as async callables so the graph can be tested without an LLM
 """
 
 import uuid
-from typing import Any, Awaitable, Callable, Dict, Mapping, Optional
+from typing import Any, Awaitable, Callable, Dict, Mapping
 
 from langgraph.graph import END, START, StateGraph
 
@@ -12,8 +12,8 @@ from mpd_assistant.agents.common import is_affirmative, is_negative
 from mpd_assistant.evaluation.online.rules import Verdict, evaluate_response
 from mpd_assistant.graph.state import AgentState
 from mpd_assistant.responses.engine import TemplateNotFound, render
-from mpd_assistant.routing.intents import Agent, Intent, Mode
 from mpd_assistant.routing.decompose import split_tasks
+from mpd_assistant.routing.intents import Agent, Intent, Mode
 from mpd_assistant.routing.router import route
 
 Runner = Callable[[AgentState], Awaitable[Dict[str, Any]]]
@@ -82,10 +82,10 @@ async def template_node(state: AgentState) -> Dict[str, Any]:
     return {"response": render(key, state.get("language", "en"))}
 
 
-EscalationHook = Callable[[AgentState, str], Awaitable[Optional[str]]]
+EscalationHook = Callable[[AgentState, str], Awaitable[str | None]]
 
 
-def make_escalation_node(hook: Optional[EscalationHook] = None):
+def make_escalation_node(hook: EscalationHook | None = None):
     """The hook saves the escalation and alerts staff; it returns the reference to show the user."""
 
     async def node(state: AgentState) -> Dict[str, Any]:
@@ -176,7 +176,7 @@ async def persist(state: AgentState) -> Dict[str, Any]:
     }
 
 
-def _agent_node(runner: Optional[Runner], language_key: str = "no_answer") -> Runner:
+def _agent_node(runner: Runner | None, language_key: str = "no_answer") -> Runner:
     async def node(state: AgentState) -> Dict[str, Any]:
         if runner is None:
             return {"response": render(language_key, state.get("language", "en"))}
@@ -191,9 +191,9 @@ def _agent_node(runner: Optional[Runner], language_key: str = "no_answer") -> Ru
 
 
 def build_graph(
-    runners: Optional[Mapping[Agent, Runner]] = None,
+    runners: Mapping[Agent, Runner] | None = None,
     checkpointer: Any = None,
-    escalation_hook: Optional[EscalationHook] = None,
+    escalation_hook: EscalationHook | None = None,
     judge: Any = None,
 ):
     runners = runners or {}

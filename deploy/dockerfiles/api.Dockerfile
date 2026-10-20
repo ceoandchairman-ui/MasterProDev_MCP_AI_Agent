@@ -8,6 +8,10 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install .
 
+# Schema migrations ship with the image so a one-off job can run `alembic upgrade head` next to the app
+COPY alembic.ini ./
+COPY migrations ./migrations
+
 RUN useradd --system --uid 10001 appuser
 USER appuser
 

@@ -7,10 +7,18 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from mpd_assistant.core.kv import KeyValueStore
-from mpd_assistant.integrations.context import current_token, reset_token, reset_untrusted, reset_user, set_token, set_untrusted, set_user
+from mpd_assistant.integrations.context import (
+    current_token,
+    reset_token,
+    reset_untrusted,
+    reset_user,
+    set_token,
+    set_untrusted,
+    set_user,
+)
 from mpd_assistant.memory.short_term.offload import ToolResultStore, digest
 from mpd_assistant.observability.metrics import TOOL_CALLS, TOOL_LATENCY
 from mpd_assistant.privacy.detector import detect
@@ -38,9 +46,9 @@ class ToolContext:
     confirmed_tools: frozenset = frozenset()  # tools the user explicitly confirmed this turn
     untrusted_content_in_context: bool = False  # email bodies, uploads, retrieved text
     session_id: str = ""
-    google_access_token: Optional[str] = None  # per-user, sent as a header to Google-backed servers only
+    google_access_token: str | None = None  # per-user, sent as a header to Google-backed servers only
     session_row: str = ""
-    user_id: Optional[str] = None  # made available to local tools through context, never through arguments
+    user_id: str | None = None  # made available to local tools through context, never through arguments
 
 
 IDEMPOTENCY_TTL_SECONDS = 600
@@ -84,10 +92,10 @@ class ToolExecutor:
         rehydrate: Callable[[str, str], str] | None = None,
         pseudonymize: Callable[[str, str], str] | None = None,
         audit_sink: Callable[[str, Dict[str, Any], "ToolContext", ToolOutcome, int], None] | None = None,
-        kv: Optional[KeyValueStore] = None,
+        kv: KeyValueStore | None = None,
         read_cache: Any = None,
         cache_scope: str = "",
-        offload: Optional[ToolResultStore] = None,
+        offload: ToolResultStore | None = None,
     ):
         self._registry = registry
         self._backend = backend
@@ -104,6 +112,8 @@ class ToolExecutor:
         spec = self._registry.get(tool)
         if spec is None or not self._registry.is_allowed(tool, ctx.role, ctx.agent):
             return self._record(tool, args, ctx, ToolOutcome(tool, "denied", reason="not_permitted"))
+        if spec.inject_user and not ctx.user_id:
+            return self._record(tool, args, ctx, ToolOutcome(tool, "denied", reason="identity_required"))
         if spec.needs_confirmation:
             if ctx.untrusted_content_in_context and tool not in ctx.confirmed_tools:
                 return self._record(tool, args, ctx, ToolOutcome(tool, "needs_confirmation", reason="side_effect_after_untrusted_content"))
@@ -128,6 +138,10 @@ class ToolExecutor:
         started = time.perf_counter()
         try:
             real_args = _map_strings(args, lambda t: self._rehydrate(ctx.session_id, t)) if self._rehydrate else args
+            if spec.inject_user:
+                real_args = {**real_args, "user_id": ctx.user_id}  # always the verified session's user, whatever the model proposed
+            if spec.takes_idempotency_key:
+                real_args = {**real_args, "idempotency_key": f"{ctx.session_id}:{_digest_args(args)}"}
             marker = set_token(ctx.google_access_token)
             user_marker = set_user(ctx.user_id)
             taint_marker = set_untrusted(ctx.untrusted_content_in_context)
@@ -164,7 +178,7 @@ class ToolExecutor:
                 return {"truncated": True, "preview": digest(output), "ref": ref}
         return {"truncated": True, "preview": text[:MAX_RESULT_CHARS]}
 
-    def open_result(self, session_id: str, ref: str) -> Optional[Dict[str, Any]]:
+    def open_result(self, session_id: str, ref: str) -> Dict[str, Any] | None:
         """Re-open an offloaded result. Only the conversation that produced it can."""
         return self._offload.get(session_id, ref) if self._offload is not None else None
 
@@ -179,7 +193,7 @@ class ToolExecutor:
         return outcome
 
 
-def http_backend(routes: Dict[str, tuple[str, str]], service_key: Optional[str], client) -> ToolBackend:
+def http_backend(routes: Dict[str, tuple[str, str]], service_key: str | None, client) -> ToolBackend:
     """Backend that calls MCP tool servers over HTTP. routes: registry tool -> (server base URL, server tool name)."""
 
     async def call(tool: str, args: Dict[str, Any]) -> Dict[str, Any]:

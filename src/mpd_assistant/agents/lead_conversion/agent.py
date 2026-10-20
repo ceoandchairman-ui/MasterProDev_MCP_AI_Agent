@@ -11,7 +11,8 @@ from mpd_assistant.responses.engine import render
 
 EXTRACT = load_prompt("lead_conversion", "extract")
 PROMPT_VERSION = EXTRACT.version
-SLOTS = ("need", "timeline", "budget")
+SLOTS = ("need", "timeline", "budget")  # all required before a lead counts as qualified
+OPTIONAL_SLOTS = ("company",)  # recorded when the user volunteers it; never asked for or required
 MAX_SLOT_CHARS = 200
 
 
@@ -34,7 +35,7 @@ def _last_user(state: AgentState) -> str:
 def _merge_slots(existing: Dict[str, str], raw: str) -> Dict[str, str]:
     obj = parse_json_object(raw) or {}
     merged = dict(existing)
-    for slot in SLOTS:
+    for slot in SLOTS + OPTIONAL_SLOTS:
         value = obj.get(slot)
         if isinstance(value, str) and value.strip() and value.strip().lower() != "null":
             merged[slot] = value.strip()[:MAX_SLOT_CHARS]
@@ -53,7 +54,7 @@ def _advance(current: Stage, target: Stage) -> Stage:
     return stage
 
 
-def make_lead_conversion(llm: LLM, leads: LeadRepository):
+def make_lead_conversion(llm: LLM, leads: LeadRepository, companies=None):
     async def run(state: AgentState) -> Dict[str, Any]:
         language = state.get("language", "en")
         slots = dict(state.get("lead_slots") or {})
@@ -69,6 +70,12 @@ def make_lead_conversion(llm: LLM, leads: LeadRepository):
             slots = _merge_slots(slots, result.text)
         except LLMError:
             pass  # keep what we know; still ask the next question
+
+        if companies is not None and slots.get("company") and state.get("user_id"):
+            try:
+                companies.link_user(state["user_id"], slots["company"])
+            except Exception:
+                pass  # a failed customer-record write must never block the conversation
 
         missing = [s for s in SLOTS if s not in slots]
         stage = _advance(stage, Stage.ENGAGED)

@@ -8,7 +8,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, List
 
 from mpd_assistant.cache.keys import build_key, may_cache
 from mpd_assistant.cache.store import DEFAULT_TTL_SECONDS, ResponseCache
@@ -19,7 +19,7 @@ from mpd_assistant.observability.metrics import DEGRADED, record_turn
 from mpd_assistant.privacy.detector import detect
 from mpd_assistant.privacy.vault import PiiVault
 from mpd_assistant.responses.engine import render
-from mpd_assistant.routing.intents import Intent, Mode
+from mpd_assistant.routing.intents import Agent, Intent, Mode
 from mpd_assistant.routing.router import detect_language, route
 
 logger = logging.getLogger(__name__)
@@ -54,14 +54,20 @@ class ChatService:
         graph: Any,
         vault: PiiVault,
         *,
-        cache: Optional[ResponseCache] = None,
-        cache_settings: Optional[CacheSettings] = None,
+        cache: ResponseCache | None = None,
+        cache_settings: CacheSettings | None = None,
         memory: Any = None,
         escalations: Any = None,
         summarizer: Any = None,
         budget: Any = None,
         semantic: Any = None,
+        entities: Any = None,
+        topics: Any = None,
+        uploads: Any = None,
+        patterns: Any = None,
+        episodes: Any = None,
     ):
+        self._entities, self._topics, self._uploads, self._patterns, self._episodes = entities, topics, uploads, patterns, episodes
         self._semantic = semantic
         self._graph = graph
         self._vault = vault
@@ -72,7 +78,7 @@ class ChatService:
         self._summarizer = summarizer
         self._budget = budget
 
-    def _cache_key(self, decision, safe_text: str, user_id: Optional[str]) -> Optional[str]:
+    def _cache_key(self, decision, safe_text: str, user_id: str | None) -> str | None:
         if self._cache is None or decision.requires_identity or decision.mode is Mode.ESCALATE:
             return None
         if decision.intent.value not in DEFAULT_TTL_SECONDS:
@@ -88,7 +94,7 @@ class ChatService:
             corpus_version=s.corpus_version,
         )
 
-    def _semantic_scope(self, decision, safe_text: str) -> Optional[str]:
+    def _semantic_scope(self, decision, safe_text: str) -> str | None:
         """Semantic reuse is limited to shareable knowledge questions with no personal data in them."""
         if self._semantic is None or decision.intent not in SEMANTIC_INTENTS or decision.requires_identity:
             return None
@@ -96,6 +102,31 @@ class ChatService:
             return None
         s = self._cache_settings
         return self._semantic.scope(s.tenant, decision.language, decision.agent.value, s.prompt_version, s.corpus_version)
+
+    def _turn_notes(self, thread_id: str, decision, safe_text: str) -> str:
+        """What 'that email' or 'the meeting' refers to, and whether the user switched or resumed a topic."""
+        parts: List[str] = []
+        if self._entities is not None:
+            parts.append(self._entities.context_note(thread_id, safe_text))
+        if self._topics is not None:
+            task_open = decision.agent not in (Agent.CONCIERGE, Agent.ESCALATION)
+            shift = self._topics.observe(thread_id, decision.intent.value, safe_text, task_open=task_open)
+            if shift.resume and shift.parked:
+                parts.append(f"The user is resuming an earlier topic: {shift.parked.summary}. ")
+            elif shift.parked:
+                parts.append(f"The user changed topic. The earlier unfinished topic was: {shift.parked.summary}. ")
+        return "".join(p for p in parts if p).strip()
+
+    async def end_conversation(self, thread_id: str, user_id: str | None, outcome: str = "no_outcome") -> None:
+        """Called when a conversation is closed: keeps a short episode (with consent) and clears per-thread working state."""
+        if self._episodes is not None and user_id:
+            try:
+                await self._episodes.record(user_id, thread_id, outcome)
+            except Exception:
+                logger.exception("episode record failed")  # losing an episode must never break closing a conversation
+        for tracker in (self._entities, self._topics):
+            if tracker is not None:
+                tracker.clear(thread_id)
 
     async def chat(
         self,
@@ -211,6 +242,11 @@ class ChatService:
                 )
 
         memory_context = await self._memory.before(user_id, safe_text) if self._memory else ""
+        context_notes = self._turn_notes(session_id, decision, safe_text)
+        attachment_context = self._uploads.context_for(session_id) if self._uploads is not None else ""
+        style_examples = ""
+        if self._patterns is not None and decision.mode in (Mode.GENERATED, Mode.REASONED):
+            style_examples = self._patterns.few_shot_block(decision.intent.value, decision.language)
         marker = set_scope(session_id)  # every model call in this turn is charged to this conversation
         try:
             out = await self._graph.ainvoke(
@@ -228,6 +264,9 @@ class ChatService:
                     "memory_context": memory_context,
                     "thread_summary": self._summarizer.context_for(session_id) if self._summarizer else "",
                     "session_row": session_row,
+                    "context_notes": context_notes,
+                    "attachment_context": attachment_context,
+                    "style_examples": style_examples,
                 },
                 config={"configurable": {"thread_id": session_id}},
             )
@@ -260,6 +299,13 @@ class ChatService:
         )
         if cacheable and key is not None:
             await self._cache.set(key, graph_reply, DEFAULT_TTL_SECONDS[decision.intent.value])
+        if self._patterns is not None and final.verdict is Verdict.PASS and out.get("eval_verdict") == "pass" and decision.mode is Mode.REASONED and not out.get("escalated"):
+            try:
+                self._patterns.propose(decision.intent.value, decision.language, safe_text, graph_reply)  # staff approve before it is ever used
+            except Exception:
+                logger.exception("pattern proposal failed")
+        if out.get("escalated") and self._episodes is not None and user_id:
+            await self.end_conversation(session_id, user_id, "escalated")
         if cacheable and semantic_scope is not None:
             await self._semantic.store(semantic_scope, safe_text, graph_reply, DEFAULT_TTL_SECONDS[decision.intent.value])
 

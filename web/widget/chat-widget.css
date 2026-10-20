@@ -41,3 +41,7 @@
 .mpd-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--mpd-muted); }
 .mpd-bubble:focus-visible, .mpd-send:focus-visible, .mpd-chip:focus-visible, .mpd-input:focus-visible, .mpd-icon-btn:focus-visible, .mpd-link-btn:focus-visible { outline: 2px solid var(--mpd-accent); outline-offset: 2px; }
 @media (max-width: 480px) { .mpd-root:not(.mpd-full) { right: 8px; bottom: 8px; } }
+.mpd-account { max-height: 46%; overflow-y: auto; }
+.mpd-account-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; }
+.mpd-danger { border-color: #c0392b; color: #c0392b; }
+@media (prefers-color-scheme: dark) { .mpd-danger { border-color: #ff7a6b; color: #ff7a6b; } }

@@ -5,7 +5,6 @@ Credentials come from configuration. Without a client id the feature reports its
 
 import secrets
 from datetime import UTC, datetime
-from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
@@ -41,10 +40,10 @@ class GoogleOAuth:
         engine: Engine,
         kv: KeyValueStore,
         cipher: FieldCipher,
-        client_id: Optional[str],
-        client_secret: Optional[str],
-        redirect_uri: Optional[str],
-        http: Optional[httpx.AsyncClient] = None,
+        client_id: str | None,
+        client_secret: str | None,
+        redirect_uri: str | None,
+        http: httpx.AsyncClient | None = None,
     ):
         self._engine, self._kv, self._cipher = engine, kv, cipher
         self._client_id, self._client_secret, self._redirect = client_id, client_secret, redirect_uri
@@ -97,7 +96,7 @@ class GoogleOAuth:
         self._kv.set(f"oauth-access:{PROVIDER}:{bound['user_id']}", self._cipher.encrypt(data["access_token"]), ACCESS_CACHE_SECONDS)
         return bound["user_id"]
 
-    async def access_token(self, user_id: str) -> Optional[str]:
+    async def access_token(self, user_id: str) -> str | None:
         """Current access token for the user, refreshed when needed. None if the user never connected."""
         if not self.configured:
             return None
@@ -143,7 +142,7 @@ class GoogleOAuth:
             row.updated_at = datetime.now(UTC)
             db.commit()
 
-    def _load(self, user_id: str) -> Optional[str]:
+    def _load(self, user_id: str) -> str | None:
         with DbSession(self._engine) as db:
             row = db.scalar(select(OAuthToken).where(OAuthToken.user_id == user_id, OAuthToken.provider == PROVIDER))
             return self._cipher.decrypt(row.refresh_enc) if row else None

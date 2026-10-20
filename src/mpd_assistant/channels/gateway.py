@@ -1,6 +1,6 @@
 """ChannelGateway: one conversation pipeline for every channel, with cross-channel identity by phone."""
 
-from typing import Optional, Protocol
+from typing import Protocol
 
 from mpd_assistant.channels.inbound import InboundMessage, format_for_channel
 from mpd_assistant.core.crypto import blind_index
@@ -45,7 +45,7 @@ class ChannelGateway:
         self._kv.set(map_key, session.id, SESSION_MAP_TTL)
         return session
 
-    async def handle(self, inbound: InboundMessage) -> Optional[str]:
+    async def handle(self, inbound: InboundMessage) -> str | None:
         """Returns the reply text for the channel, or None when no reply should be sent."""
         action = classify_keyword(inbound.text)
         if action == "opt_out":

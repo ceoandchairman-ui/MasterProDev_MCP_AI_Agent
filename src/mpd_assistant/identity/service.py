@@ -5,7 +5,7 @@ import json
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from typing import Dict, Optional, Protocol
+from typing import Dict, Protocol
 
 from mpd_assistant.core.crypto import FieldCipher, blind_index
 from mpd_assistant.core.kv import KeyValueStore, MemoryKV
@@ -29,9 +29,9 @@ class VerifiedUser:
 
 
 class UserRepository(Protocol):
-    def find_by_email_index(self, index: str) -> Optional[VerifiedUser]: ...
-    def find_by_phone_index(self, index: str) -> Optional[VerifiedUser]: ...
-    def find_by_id(self, user_id: str) -> Optional[VerifiedUser]: ...
+    def find_by_email_index(self, index: str) -> VerifiedUser | None: ...
+    def find_by_phone_index(self, index: str) -> VerifiedUser | None: ...
+    def find_by_id(self, user_id: str) -> VerifiedUser | None: ...
     def save(self, user: VerifiedUser) -> None: ...
 
 
@@ -39,10 +39,10 @@ class MemoryUserRepository:
     def __init__(self):
         self._by_email: Dict[str, VerifiedUser] = {}
 
-    def find_by_email_index(self, index: str) -> Optional[VerifiedUser]:
+    def find_by_email_index(self, index: str) -> VerifiedUser | None:
         return self._by_email.get(index)
 
-    def find_by_id(self, user_id: str) -> Optional[VerifiedUser]:
+    def find_by_id(self, user_id: str) -> VerifiedUser | None:
         return next((u for u in self._by_email.values() if u.id == user_id), None)
 
     def update_contact(self, user_id: str, **fields) -> None:
@@ -63,7 +63,7 @@ class MemoryUserRepository:
         consent = self.__dict__.setdefault('_consent', set())
         (consent.add if enabled else consent.discard)(user_id)
 
-    def find_by_phone_index(self, index: str) -> Optional[VerifiedUser]:
+    def find_by_phone_index(self, index: str) -> VerifiedUser | None:
         return next((u for u in self._by_email.values() if u.phone_index == index), None)
 
     def save(self, user: VerifiedUser) -> None:
@@ -98,7 +98,7 @@ class IdentityService:
         sms_otp: OtpService,
         email_sender: Sender,
         sms_sender: Sender,
-        kv: Optional[KeyValueStore] = None,
+        kv: KeyValueStore | None = None,
         abuse=None,
     ):
         self._cipher, self._key, self._users = cipher, blind_key, users
@@ -107,7 +107,7 @@ class IdentityService:
         self._kv = kv if kv is not None else MemoryKV()
         self._abuse = abuse
 
-    async def start(self, session_id: str, name: str, email: str, phone: str, client_ip: Optional[str] = None) -> None:
+    async def start(self, session_id: str, name: str, email: str, phone: str, client_ip: str | None = None) -> None:
         """Validate input and send both codes. Responses never reveal whether the email already exists."""
         pending = _Pending(normalize_name(name), normalize_email(email), normalize_phone(phone))
         if self._abuse is not None:
@@ -116,7 +116,7 @@ class IdentityService:
         await _deliver(self._sms_sender, pending.phone, self._sms_otp.issue(pending.phone))
         self._save_pending(session_id, pending)
 
-    def verify(self, session_id: str, email_code: str, phone_code: str) -> Optional[VerifiedUser]:
+    def verify(self, session_id: str, email_code: str, phone_code: str) -> VerifiedUser | None:
         pending = self._load_pending(session_id)
         if pending is None:
             return None
@@ -146,7 +146,7 @@ class IdentityService:
     def _save_pending(self, session_id: str, pending: _Pending) -> None:
         self._kv.set(f"pending:{session_id}", self._cipher.encrypt(json.dumps(asdict(pending))), PENDING_TTL_SECONDS)
 
-    def _load_pending(self, session_id: str) -> Optional[_Pending]:
+    def _load_pending(self, session_id: str) -> _Pending | None:
         raw = self._kv.get(f"pending:{session_id}")
         return _Pending(**json.loads(self._cipher.decrypt(raw))) if raw else None
 

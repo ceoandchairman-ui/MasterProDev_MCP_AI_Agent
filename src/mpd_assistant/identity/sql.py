@@ -1,4 +1,3 @@
-from typing import Optional
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session as DbSession
@@ -18,18 +17,18 @@ class SqlUserRepository:
     def __init__(self, engine: Engine, tenant_id: str):
         self._engine, self._tenant = engine, tenant_id
 
-    def _one(self, *conditions) -> Optional[VerifiedUser]:
+    def _one(self, *conditions) -> VerifiedUser | None:
         with DbSession(self._engine) as db:
             row = db.scalar(select(User).where(User.tenant_id == self._tenant, User.deleted_at.is_(None), *conditions))
             return _to_domain(row) if row else None
 
-    def find_by_email_index(self, index: str) -> Optional[VerifiedUser]:
+    def find_by_email_index(self, index: str) -> VerifiedUser | None:
         return self._one(User.email_index == index)
 
-    def find_by_phone_index(self, index: str) -> Optional[VerifiedUser]:
+    def find_by_phone_index(self, index: str) -> VerifiedUser | None:
         return self._one(User.phone_index == index)
 
-    def find_by_id(self, user_id: str) -> Optional[VerifiedUser]:
+    def find_by_id(self, user_id: str) -> VerifiedUser | None:
         return self._one(User.id == user_id)
 
     def update_contact(self, user_id: str, **fields) -> None:

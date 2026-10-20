@@ -3,7 +3,7 @@
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List
 
 _AFFIRM = {"yes", "y", "yep", "yeah", "sure", "ok", "okay", "confirm", "confirmed", "go ahead", "please do", "do it", "oui", "d'accord", "confirme", "vas-y"}
 _NEGATE = {"no", "n", "nope", "cancel", "stop", "don't", "do not", "non", "annule", "annuler"}
@@ -19,7 +19,7 @@ def is_negative(text: str) -> bool:
     return t in _NEGATE or any(t.startswith(n + " ") for n in ("no", "non", "cancel", "stop"))
 
 
-def parse_json_object(text: str) -> Optional[Dict[str, Any]]:
+def parse_json_object(text: str) -> Dict[str, Any] | None:
     """Extract the first JSON object from model output (handles code fences and prose around it)."""
     if not text:
         return None

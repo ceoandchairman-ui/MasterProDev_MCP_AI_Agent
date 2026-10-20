@@ -15,12 +15,24 @@
       thinking: "Thinking...", yes: "Yes", no: "No", verify: "Verify my identity", name: "Full name", email: "Email", phone: "Mobile phone",
       sendCodes: "Send codes", emailCode: "Email code", phoneCode: "Text message code", confirm: "Confirm", attach: "Attach a file",
       mic: "Speak", stop: "Stop recording", error: "Something went wrong. Please try again.", verified: "You are verified.",
-      uploaded: "File added.", codesSent: "Codes sent. Enter them below.", wrongCodes: "Those codes did not work.", cancel: "Cancel" },
+      uploaded: "File added.", codesSent: "Codes sent. Enter them below.", wrongCodes: "Those codes did not work.", cancel: "Cancel",
+      account: "My account", close2: "Close", stepCode: "Security code from your email", sendStepCode: "Email me a code", codeSent: "Code sent to your email.",
+      stepDone: "Security check complete for 15 minutes.", needStepUp: "Please complete the security check first.", google: "Connect Google",
+      googleOff: "Disconnect Google", googleOn: "Google is connected.", googleNone: "Google is not connected.", googleOpened: "Finish connecting in the new tab.",
+      memoryOn: "Remember me", memoryOff: "Stop remembering", memoryShow: "What do you remember?", memoryNone: "Nothing is remembered.", memoryForget: "Forget everything",
+      memoryDone: "Done.", download: "Download my data", del: "Delete my account", delHint: 'Type DELETE to confirm', deleted: "Your account was deleted.",
+      endChat: "End this conversation", ended: "Conversation ended." },
     fr: { title: "Assistant MasterProDev", placeholder: "Écrivez votre message", send: "Envoyer", open: "Ouvrir le clavardage", close: "Fermer",
       thinking: "Un instant...", yes: "Oui", no: "Non", verify: "Vérifier mon identité", name: "Nom complet", email: "Courriel", phone: "Téléphone mobile",
       sendCodes: "Envoyer les codes", emailCode: "Code reçu par courriel", phoneCode: "Code reçu par texto", confirm: "Confirmer", attach: "Joindre un fichier",
       mic: "Parler", stop: "Arrêter", error: "Une erreur est survenue. Veuillez réessayer.", verified: "Votre identité est vérifiée.",
-      uploaded: "Fichier ajouté.", codesSent: "Codes envoyés. Saisissez-les ci-dessous.", wrongCodes: "Ces codes n'ont pas fonctionné.", cancel: "Annuler" }
+      uploaded: "Fichier ajouté.", codesSent: "Codes envoyés. Saisissez-les ci-dessous.", wrongCodes: "Ces codes n'ont pas fonctionné.", cancel: "Annuler",
+      account: "Mon compte", close2: "Fermer", stepCode: "Code de sécurité reçu par courriel", sendStepCode: "M'envoyer un code", codeSent: "Code envoyé par courriel.",
+      stepDone: "Vérification de sécurité faite pour 15 minutes.", needStepUp: "Veuillez d'abord effectuer la vérification de sécurité.", google: "Connecter Google",
+      googleOff: "Déconnecter Google", googleOn: "Google est connecté.", googleNone: "Google n'est pas connecté.", googleOpened: "Terminez la connexion dans le nouvel onglet.",
+      memoryOn: "Se souvenir de moi", memoryOff: "Arrêter de se souvenir", memoryShow: "De quoi vous souvenez-vous ?", memoryNone: "Rien n'est mémorisé.", memoryForget: "Tout oublier",
+      memoryDone: "C'est fait.", download: "Télécharger mes données", del: "Supprimer mon compte", delHint: "Tapez DELETE pour confirmer", deleted: "Votre compte a été supprimé.",
+      endChat: "Terminer cette conversation", ended: "Conversation terminée." }
   }[LANG];
 
   function el(tag, cls, text) {
@@ -82,11 +94,13 @@
   header.appendChild(el("span", "mpd-title", T.title));
   var verifyBtn = el("button", "mpd-link-btn", T.verify); verifyBtn.type = "button";
   var closeBtn = el("button", "mpd-icon-btn", "×"); closeBtn.type = "button"; closeBtn.setAttribute("aria-label", T.close);
-  header.appendChild(verifyBtn); if (!FULL) header.appendChild(closeBtn);
+  var acctBtn = el("button", "mpd-link-btn", T.account); acctBtn.type = "button"; acctBtn.hidden = true;
+  header.appendChild(verifyBtn); header.appendChild(acctBtn); if (!FULL) header.appendChild(closeBtn);
 
   var log = el("div", "mpd-log"); log.setAttribute("role", "log"); log.setAttribute("aria-live", "polite");
   var quick = el("div", "mpd-quick");
   var idPanel = el("form", "mpd-identity"); idPanel.hidden = true;
+  var acctPanel = el("div", "mpd-identity mpd-account"); acctPanel.hidden = true;
 
   var form = el("form", "mpd-form");
   var input = el("input", "mpd-input"); input.type = "text"; input.maxLength = 4000; input.placeholder = T.placeholder; input.setAttribute("aria-label", T.placeholder); input.autocomplete = "off";
@@ -95,7 +109,7 @@
   var mic = el("button", "mpd-icon-btn", "\u{1F3A4}"); mic.type = "button"; mic.setAttribute("aria-label", T.mic);
   var send = el("button", "mpd-send", T.send); send.type = "submit";
   [attach, input, mic, send, fileInput].forEach(function (n) { form.appendChild(n); });
-  [header, log, quick, idPanel, form].forEach(function (n) { panel.appendChild(n); });
+  [header, log, quick, idPanel, acctPanel, form].forEach(function (n) { panel.appendChild(n); });
 
   var bubble = el("button", "mpd-bubble", "\u{1F4AC}"); bubble.type = "button"; bubble.setAttribute("aria-label", T.open);
   root.appendChild(panel); if (!FULL) root.appendChild(bubble);
@@ -238,7 +252,7 @@
       idPanel.onsubmit = function (e) {
         e.preventDefault(); ok.disabled = true;
         post("/v2/identity/verify", { session_id: sessionId, email_code: ec.input.value, phone_code: pc.input.value })
-          .then(function (r) { if (r.ok) { idPanel.hidden = true; verifyBtn.hidden = true; stage = "details"; status(T.verified); } else { ok.disabled = false; status(T.wrongCodes); } })
+          .then(function (r) { if (r.ok) { idPanel.hidden = true; markVerified(); stage = "details"; status(T.verified); } else { ok.disabled = false; status(T.wrongCodes); } })
           .catch(function () { ok.disabled = false; status(T.error); });
       };
     }
@@ -248,10 +262,101 @@
   }
   verifyBtn.addEventListener("click", function () { buildIdentity(); idPanel.hidden = !idPanel.hidden; });
 
+  function markVerified() { verifyBtn.hidden = true; acctBtn.hidden = false; }
+
+  // --- account: security code, Google connection, memory, data export, deletion, end conversation ---
+  function call(method, path, body) {
+    var opts = { method: method };
+    if (body) { opts.headers = { "Content-Type": "application/json" }; opts.body = JSON.stringify(body); }
+    return fetch(API + path, opts).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, j: j }; });
+    });
+  }
+  function detail(x) { return typeof x.j.detail === "string" ? x.j.detail : T.error; }
+  function btn(label, onClick, cls) {
+    var b = el("button", cls || "mpd-chip", label); b.type = "button";
+    b.addEventListener("click", function () { onClick(b); });
+    return b;
+  }
+  function group() { return el("div", "mpd-account-row"); }
+  function asFile(name, text) {
+    var url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    var a = el("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+  function buildAccount() {
+    acctPanel.textContent = "";
+    var sid = sessionId, g;
+
+    var code = field(T.stepCode, "text", "stepup_code", "one-time-code");
+    code.input.inputMode = "numeric"; code.input.maxLength = 12; code.input.required = false;
+    g = group(); g.appendChild(code.wrap);
+    g.appendChild(btn(T.sendStepCode, function () {
+      call("POST", "/v2/account/stepup/start", { session_id: sid }).then(function (x) { status(x.ok ? T.codeSent : detail(x)); }).catch(function () { status(T.error); });
+    }));
+    g.appendChild(btn(T.confirm, function () {
+      call("POST", "/v2/account/stepup/verify", { session_id: sid, code: code.input.value }).then(function (x) { status(x.ok ? T.stepDone : T.wrongCodes); }).catch(function () { status(T.error); });
+    }));
+    acctPanel.appendChild(g);
+
+    g = group();
+    g.appendChild(btn(T.google, function () {
+      call("GET", "/v2/integrations/google/start?session_id=" + encodeURIComponent(sid)).then(function (x) {
+        if (x.ok && x.j.url && safeUrl(x.j.url)) { window.open(safeUrl(x.j.url), "_blank", "noopener,noreferrer"); status(T.googleOpened); }
+        else status(x.status === 403 ? T.needStepUp : detail(x));
+      }).catch(function () { status(T.error); });
+    }));
+    g.appendChild(btn(T.googleOff, function () {
+      call("POST", "/v2/integrations/google/disconnect", { session_id: sid }).then(function (x) { status(x.ok ? T.googleNone : detail(x)); }).catch(function () { status(T.error); });
+    }));
+    acctPanel.appendChild(g);
+
+    g = group();
+    g.appendChild(btn(T.memoryOn, function () { call("POST", "/v2/memory/consent", { session_id: sid, enabled: true }).then(function (x) { status(x.ok ? T.memoryDone : detail(x)); }).catch(function () { status(T.error); }); }));
+    g.appendChild(btn(T.memoryOff, function () { call("POST", "/v2/memory/consent", { session_id: sid, enabled: false }).then(function (x) { status(x.ok ? T.memoryDone : detail(x)); }).catch(function () { status(T.error); }); }));
+    g.appendChild(btn(T.memoryShow, function () {
+      call("GET", "/v2/memory?session_id=" + encodeURIComponent(sid)).then(function (x) {
+        if (!x.ok) { status(detail(x)); return; }
+        var items = x.j.memories || [];
+        bubbleMsg("bot", items.length ? items.map(function (m) { return "- " + m.text; }).join("\n") : T.memoryNone);
+      }).catch(function () { status(T.error); });
+    }));
+    g.appendChild(btn(T.memoryForget, function () { call("POST", "/v2/memory/forget", { session_id: sid }).then(function (x) { status(x.ok ? T.memoryDone : detail(x)); }).catch(function () { status(T.error); }); }));
+    acctPanel.appendChild(g);
+
+    g = group();
+    g.appendChild(btn(T.download, function () {
+      call("GET", "/v2/account/export?session_id=" + encodeURIComponent(sid)).then(function (x) {
+        if (x.ok) asFile("my-data.json", JSON.stringify(x.j, null, 2)); else status(x.status === 403 ? T.needStepUp : detail(x));
+      }).catch(function () { status(T.error); });
+    }));
+    g.appendChild(btn(T.endChat, function () {
+      call("POST", "/v2/session/" + encodeURIComponent(sid) + "/end").then(function (x) {
+        if (x.ok) { log.textContent = ""; status(T.ended); } else status(detail(x));
+      }).catch(function () { status(T.error); });
+    }));
+    acctPanel.appendChild(g);
+
+    var confirmDel = field(T.delHint, "text", "delete_confirm", "off"); confirmDel.input.required = false;
+    g = group(); g.appendChild(confirmDel.wrap);
+    g.appendChild(btn(T.del, function () {
+      call("POST", "/v2/account/delete", { session_id: sid, confirm: confirmDel.input.value }).then(function (x) {
+        if (x.ok) {
+          try { sessionStorage.removeItem("mpd_session"); } catch (e) {}
+          sessionId = null; acctPanel.hidden = true; acctBtn.hidden = true; verifyBtn.hidden = false; log.textContent = ""; status(T.deleted);
+        } else status(x.status === 403 ? T.needStepUp : detail(x));
+      }).catch(function () { status(T.error); });
+    }, "mpd-chip mpd-danger"));
+    acctPanel.appendChild(g);
+
+    acctPanel.appendChild(btn(T.close2, function () { acctPanel.hidden = true; }, "mpd-link-btn"));
+  }
+  acctBtn.addEventListener("click", function () { if (acctPanel.hidden) { buildAccount(); acctPanel.hidden = false; idPanel.hidden = true; } else acctPanel.hidden = true; });
+
   if (sessionId) {
     fetch(API + "/v2/session/" + encodeURIComponent(sessionId)).then(function (r) {
       if (!r.ok) { sessionId = null; try { sessionStorage.removeItem("mpd_session"); } catch (e) {} return null; }
       return r.json();
-    }).then(function (j) { if (j && j.verified) verifyBtn.hidden = true; }).catch(function () {});
+    }).then(function (j) { if (j && j.verified) markVerified(); }).catch(function () {});
   }
 })();

@@ -33,6 +33,17 @@ class ConfirmationService:
         if result.status not in ("sent", "skipped"):
             logger.warning("payment receipt not delivered: %s", result.reason)
 
+    async def quote_decided(self, user_id: str, quote_ref: str, approved: bool, locale: str = "en") -> None:
+        user = self._users.find_by_id(user_id)
+        if user is None or not self._n.has_channel(Channel.EMAIL):
+            return
+        name = "quote_approved" if approved else "quote_declined"
+        result = await self._n.send(
+            OutboundMessage(Channel.EMAIL, self._cipher.decrypt(user.email_enc), name, locale, {"quote": quote_ref}, Purpose.TRANSACTIONAL, f"{name}:{quote_ref}", user.id)
+        )
+        if result.status not in ("sent", "skipped"):
+            logger.warning("quote decision notice not delivered: %s", result.reason)
+
     async def booking_confirmed(self, state: AgentState, args: dict) -> None:
         user = self._users.find_by_id(state.get("user_id") or "")
         if user is None:

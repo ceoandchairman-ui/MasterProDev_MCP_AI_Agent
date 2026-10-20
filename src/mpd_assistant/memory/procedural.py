@@ -10,7 +10,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Dict, List, Optional, Protocol
+from typing import Dict, List, Protocol
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session as DbSession
@@ -37,14 +37,14 @@ class Pattern:
     user_text: str
     reply_text: str
     status: str = PROPOSED
-    reviewed_by: Optional[str] = None
+    reviewed_by: str | None = None
     created_at: float = field(default_factory=time.time)
 
 
 class PatternRepository(Protocol):
     def save(self, pattern: Pattern) -> None: ...
-    def get(self, pattern_id: str) -> Optional[Pattern]: ...
-    def list(self, status: Optional[str] = None, intent: Optional[str] = None, language: Optional[str] = None, limit: int = 50) -> List[Pattern]: ...
+    def get(self, pattern_id: str) -> Pattern | None: ...
+    def list(self, status: str | None = None, intent: str | None = None, language: str | None = None, limit: int = 50) -> List[Pattern]: ...
 
 
 class MemoryPatternRepository:
@@ -54,7 +54,7 @@ class MemoryPatternRepository:
     def save(self, pattern: Pattern) -> None:
         self._items[pattern.id] = pattern
 
-    def get(self, pattern_id: str) -> Optional[Pattern]:
+    def get(self, pattern_id: str) -> Pattern | None:
         return self._items.get(pattern_id)
 
     def list(self, status=None, intent=None, language=None, limit=50) -> List[Pattern]:
@@ -81,7 +81,7 @@ class SqlPatternRepository:
             db.add(row)
             db.commit()
 
-    def get(self, pattern_id: str) -> Optional[Pattern]:
+    def get(self, pattern_id: str) -> Pattern | None:
         with DbSession(self._engine) as db:
             row = db.get(ResponsePattern, pattern_id)
             return self._domain(row) if row and row.tenant_id == self._tenant else None
@@ -98,7 +98,7 @@ class SqlPatternRepository:
             return [self._domain(r) for r in db.scalars(query.order_by(ResponsePattern.created_at).limit(limit))]
 
 
-def screen(text: str) -> Optional[str]:
+def screen(text: str) -> str | None:
     """Reason the text may not enter the library, or None."""
     text = (text or "").strip()
     if not (MIN_TEXT <= len(text) <= MAX_TEXT):
@@ -113,10 +113,10 @@ def screen(text: str) -> Optional[str]:
 
 
 class PatternLibrary:
-    def __init__(self, repo: Optional[PatternRepository] = None):
+    def __init__(self, repo: PatternRepository | None = None):
         self._repo: PatternRepository = repo or MemoryPatternRepository()
 
-    def propose(self, intent: str, language: str, user_text: str, reply_text: str) -> Optional[Pattern]:
+    def propose(self, intent: str, language: str, user_text: str, reply_text: str) -> Pattern | None:
         """Returns the new proposal, or None when it was screened out, a duplicate, or the review backlog is full."""
         if screen(user_text) or screen(reply_text):
             return None

@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 MAX_PACKET_CHARS = 900
 SLOTS = ("need", "timeline", "budget")
+SHOWN_ONLY_WHEN_KNOWN = ("company",)
 
 
 def build_packet(state: Dict[str, Any]) -> str:
@@ -14,6 +15,9 @@ def build_packet(state: Dict[str, Any]) -> str:
     if state.get("lead_stage"):
         lines.append(f"Lead stage: {state['lead_stage']}")
     for slot in SLOTS:
+        if slots.get(slot):
+            lines.append(f"{slot.capitalize()}: {slots[slot]}")
+    for slot in SHOWN_ONLY_WHEN_KNOWN:
         if slots.get(slot):
             lines.append(f"{slot.capitalize()}: {slots[slot]}")
     missing = [s for s in SLOTS if slots and s not in slots]

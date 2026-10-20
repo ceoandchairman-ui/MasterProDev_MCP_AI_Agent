@@ -1,6 +1,6 @@
 """Hosted reranker (Cohere-compatible /rerank API). Fails soft: on any error the original ranking is kept."""
 
-from typing import List, Optional
+from typing import List
 
 import httpx
 
@@ -8,7 +8,7 @@ from mpd_assistant.retrieval.hybrid import Hit
 
 
 class HostedReranker:
-    def __init__(self, base_url: str, api_key: str, model: str, top_n: int = 5, client: Optional[httpx.AsyncClient] = None, timeout: float = 8.0):
+    def __init__(self, base_url: str, api_key: str, model: str, top_n: int = 5, client: httpx.AsyncClient | None = None, timeout: float = 8.0):
         self._url = base_url.rstrip("/") + "/rerank"
         self._key, self._model, self._top_n = api_key, model, top_n
         self._client, self._timeout = client, timeout

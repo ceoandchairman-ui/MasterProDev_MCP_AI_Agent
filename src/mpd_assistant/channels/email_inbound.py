@@ -9,7 +9,7 @@ import email.utils
 import hmac
 import re
 from dataclasses import dataclass
-from typing import Mapping, Optional
+from typing import Mapping
 
 from mpd_assistant.core.crypto import blind_index
 from mpd_assistant.core.kv import KeyValueStore
@@ -41,7 +41,7 @@ class InboundEmail:
     sender: str  # normalized address
     subject: str
     text: str
-    message_id: Optional[str] = None
+    message_id: str | None = None
 
 
 def clean_body(text: str) -> str:
@@ -61,7 +61,7 @@ def _header(raw_headers: str, name: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def is_automated(sender: str, subject: str, raw_headers: str, own_address: Optional[str] = None) -> bool:
+def is_automated(sender: str, subject: str, raw_headers: str, own_address: str | None = None) -> bool:
     if own_address and sender == own_address.lower():
         return True
     if _AUTOMATED_SENDERS.match(sender) or _AUTOMATED_SUBJECT.match(subject or ""):
@@ -74,7 +74,7 @@ def is_automated(sender: str, subject: str, raw_headers: str, own_address: Optio
     return bool(_header(raw_headers, "X-Autoreply") or _header(raw_headers, "X-Autorespond") or _header(raw_headers, "List-Id"))
 
 
-def parse_inbound_email(form: Mapping[str, str], own_address: Optional[str] = None) -> Optional[InboundEmail]:
+def parse_inbound_email(form: Mapping[str, str], own_address: str | None = None) -> InboundEmail | None:
     """None when the message should not be answered (unparseable, automated, or empty after cleaning)."""
     _, address = email.utils.parseaddr(form.get("from", ""))
     try:
@@ -91,7 +91,7 @@ def parse_inbound_email(form: Mapping[str, str], own_address: Optional[str] = No
     return InboundEmail(sender, subject, body, _header(raw_headers, "Message-ID") or None)
 
 
-def valid_token(supplied: str, expected: Optional[str]) -> bool:
+def valid_token(supplied: str, expected: str | None) -> bool:
     """SendGrid Inbound Parse is not signed, so the webhook URL carries a secret token."""
     return bool(expected) and hmac.compare_digest(supplied.encode(), (expected or "").encode())
 
@@ -105,7 +105,7 @@ class EmailGateway:
         notifications: NotificationService,
         kv: KeyValueStore,
         blind_key: str,
-        own_address: Optional[str] = None,
+        own_address: str | None = None,
     ):
         self._chat, self._sessions, self._users = chat, sessions, users
         self._n, self._kv, self._key, self._own = notifications, kv, blind_key, own_address

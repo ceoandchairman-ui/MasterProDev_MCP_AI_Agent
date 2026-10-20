@@ -6,11 +6,12 @@ import hmac
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -47,6 +48,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("Cache-Control", "no-store")
         return response
 
+
+ADMIN_UI_DIR = Path(__file__).parent / "static" / "admin"
+ADMIN_UI_ASSETS = {"admin.js": "text/javascript", "admin.css": "text/css"}  # a fixed list, so no path can reach anything else
+ADMIN_UI_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "Cache-Control": "no-store",
+}
 
 MAX_UPLOADS_PER_HOUR = 20
 MAX_VOICE_PER_HOUR = 60
@@ -186,6 +194,8 @@ class Services:
     email_inbound_token: str | None = None
     admin: object | None = None
     admin_token: str | None = None
+    entities: object | None = None
+    delivery: object | None = None
 
 
 def create_app(services: Services) -> FastAPI:
@@ -228,6 +238,28 @@ def create_app(services: Services) -> FastAPI:
         reply = await services.gateway.handle(inbound) if inbound else None
         return Response(twiml_reply(reply) if reply else empty_twiml(), media_type="application/xml")
 
+    @app.post("/v2/channels/twilio/status", include_in_schema=False)
+    async def twilio_status(request: Request):
+        """Twilio delivery receipts for messages we sent. Signed like the inbound webhook."""
+        if services.delivery is None or not services.twilio_auth_token or not services.public_url:
+            raise HTTPException(status_code=404, detail="Not found")
+        form = {k: str(v) for k, v in (await request.form()).items()}
+        url = services.public_url.rstrip("/") + "/v2/channels/twilio/status"
+        if not validate_twilio_signature(services.twilio_auth_token, url, form, request.headers.get("x-twilio-signature")):
+            raise HTTPException(status_code=403, detail="Invalid signature")
+        return {"status": services.delivery.twilio_status(form)}
+
+    @app.post("/v2/webhooks/sendgrid/{token}", include_in_schema=False)
+    async def sendgrid_events(token: str, request: Request):
+        """SendGrid event webhook. The secret in the URL is the only authentication, so a wrong token looks like a missing page."""
+        if services.delivery is None or not valid_token(token, services.email_inbound_token):
+            raise HTTPException(status_code=404, detail="Not found")
+        try:
+            events = await request.json()
+        except ValueError:
+            return {"handled": 0}  # a malformed batch would only be retried forever
+        return {"handled": services.delivery.sendgrid_events(events) if isinstance(events, list) else 0}
+
     @app.post("/v2/channels/voice", include_in_schema=False)
     async def twilio_voice(request: Request):
         if services.voice is None or not services.twilio_auth_token or not services.public_url:
@@ -248,6 +280,20 @@ def create_app(services: Services) -> FastAPI:
         supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
         if not services.admin_token or not hmac.compare_digest(supplied.encode(), services.admin_token.encode()):
             raise HTTPException(status_code=401, detail="Unauthorized")
+
+    @app.get("/admin", include_in_schema=False)
+    async def admin_console():
+        """The staff console page. It holds no data: every call it makes needs the staff token."""
+        if services.admin is None:
+            raise HTTPException(status_code=404, detail="Not found")
+        return FileResponse(ADMIN_UI_DIR / "index.html", media_type="text/html", headers=ADMIN_UI_HEADERS)
+
+    @app.get("/admin/{asset}", include_in_schema=False)
+    async def admin_asset(asset: str):
+        media = ADMIN_UI_ASSETS.get(asset)
+        if services.admin is None or media is None:
+            raise HTTPException(status_code=404, detail="Not found")
+        return FileResponse(ADMIN_UI_DIR / asset, media_type=media, headers=ADMIN_UI_HEADERS)
 
     @app.get("/v2/admin/overview", include_in_schema=False)
     async def admin_overview(request: Request):
@@ -305,6 +351,24 @@ def create_app(services: Services) -> FastAPI:
         if removed is None:
             raise HTTPException(status_code=404, detail=f"Unknown cache layer. Available: {', '.join(_staff().cache_layers)}")
         return {"layer": layer, "removed": removed}
+
+    @app.get("/v2/admin/undelivered", include_in_schema=False)
+    async def admin_undelivered(request: Request):
+        _check_staff(request)
+        return {"messages": _staff().undelivered()}
+
+    @app.get("/v2/admin/quotes", include_in_schema=False)
+    async def admin_quotes(request: Request):
+        _check_staff(request)
+        return {"quotes": _staff().pending_quotes()}
+
+    @app.post("/v2/admin/quotes/{reference}/{decision}", include_in_schema=False)
+    async def admin_decide_quote(reference: str, decision: Literal["approve", "reject"], request: Request):
+        _check_staff(request)
+        outcome = await _staff().decide_quote(reference, decision == "approve")
+        if outcome in ("not_found", "not_pending"):
+            raise HTTPException(status_code=404 if outcome == "not_found" else 409, detail="Quote not found" if outcome == "not_found" else "Quote is not waiting for review")
+        return {"status": outcome}
 
     @app.get("/v2/admin/patterns", include_in_schema=False)
     async def admin_patterns(request: Request):
@@ -393,6 +457,15 @@ def create_app(services: Services) -> FastAPI:
             raise HTTPException(status_code=404, detail="Unknown or expired session")
         return {"session_id": session.id, "verified": session.verified}
 
+    @app.post("/v2/session/{session_id}/end")
+    async def end_session(session_id: str):
+        """The user closed the conversation: keep a short episode (with consent) and clear working state."""
+        session = services.sessions.resume(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Unknown or expired session")
+        await services.chat.end_conversation(session.thread_id, session.user_id, "closed")
+        return {"status": "ended"}
+
     @app.post("/v2/upload", status_code=201)
     async def upload(session_id: str = Form(max_length=64), file: UploadFile = File(...)):
         """A file the user wants to talk about. Verified users only; the text is kept for this conversation, not forever."""
@@ -408,6 +481,8 @@ def create_app(services: Services) -> FastAPI:
             UPLOADS.labels("unknown", exc.reason).inc()
             raise HTTPException(status_code=422, detail=render("upload_rejected", "en", {"limit": "10 MB"})) from exc
         UPLOADS.labels(result.kind, "accepted").inc()
+        if services.entities is not None:
+            services.entities.remember(session.thread_id, "document", result.id, result.kind)  # so "that file" resolves later
         return {"id": result.id, "kind": result.kind, "note": result.note}
 
     @app.delete("/v2/upload/{upload_id}")

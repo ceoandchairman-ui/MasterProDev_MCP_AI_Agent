@@ -2,7 +2,6 @@
 
 import logging
 from datetime import UTC, datetime
-from typing import Optional
 
 from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session as DbSession
@@ -49,16 +48,16 @@ def ensure_tenant(engine: Engine, name: str = DEFAULT_TENANT) -> str:
         return tenant.id
 
 
-def to_utc(value: Optional[datetime]) -> Optional[datetime]:
+def to_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
-def to_epoch(value: Optional[datetime]) -> Optional[float]:
+def to_epoch(value: datetime | None) -> float | None:
     value = to_utc(value)
     return value.timestamp() if value else None
 
 
-def from_epoch(value: Optional[float]) -> Optional[datetime]:
+def from_epoch(value: float | None) -> datetime | None:
     return datetime.fromtimestamp(value, UTC) if value is not None else None
