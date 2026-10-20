@@ -23,7 +23,7 @@ from mpd_assistant.memory.consolidation import Consolidator
 from mpd_assistant.memory.long_term.sql import SqlMemoryRepository
 from mpd_assistant.memory.long_term.store import MemoryStore
 from mpd_assistant.multimodal.ocr import build_ocr
-from mpd_assistant.retrieval.embeddings import OpenAICompatibleEmbedder
+from mpd_assistant.retrieval.embeddings import build_embedder
 from mpd_assistant.worker.jobs.retention import purge_conversations
 
 logger = logging.getLogger("mpd.worker")
@@ -76,9 +76,8 @@ def build_jobs() -> Dict[str, Job]:
 
     jobs["consolidate"] = Job("consolidate", 24 * 3600, consolidate)
 
-    key = s.EMBEDDING_API_KEY or s.HUGGINGFACE_API_KEY
-    if key:
-        embedder = OpenAICompatibleEmbedder(s.EMBEDDING_BASE_URL or s.LLM_BASE_URL, key, s.EMBEDDING_MODEL)
+    embedder = build_embedder(s)
+    if embedder is not None:
 
         async def reindex():
             return await index_directory(engine, tenant, Path(s.KNOWLEDGE_BASE_PATH), embedder, ocr=build_ocr(s))

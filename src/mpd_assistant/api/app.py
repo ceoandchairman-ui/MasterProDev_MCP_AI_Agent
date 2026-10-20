@@ -66,7 +66,7 @@ from mpd_assistant.privacy.boundaries import GuardedLLM
 from mpd_assistant.privacy.dsr import DataSubjectService
 from mpd_assistant.privacy.kv_store import KvVaultStore
 from mpd_assistant.privacy.vault import PiiVault
-from mpd_assistant.retrieval.embeddings import OpenAICompatibleEmbedder
+from mpd_assistant.retrieval.embeddings import build_embedder
 from mpd_assistant.retrieval.pg import PgRetriever
 from mpd_assistant.retrieval.rerank import HostedReranker
 from mpd_assistant.sessions.service import MemorySessionRepository, SessionService
@@ -284,9 +284,7 @@ def build_services() -> Services:
     retriever = None
     embedder = None
     min_score = settings.RETRIEVAL_MIN_SCORE
-    embedding_key = settings.EMBEDDING_API_KEY or settings.HUGGINGFACE_API_KEY
-    if embedding_key:
-        embedder = OpenAICompatibleEmbedder(settings.EMBEDDING_BASE_URL or settings.LLM_BASE_URL, embedding_key, settings.EMBEDDING_MODEL)
+    embedder = build_embedder(settings)
     if engine is not None and embedder is not None:
         reranker = HostedReranker(settings.RERANK_BASE_URL, settings.RERANK_API_KEY, settings.RERANK_MODEL) if settings.RERANK_BASE_URL and settings.RERANK_API_KEY else None
         retriever = PgRetriever(engine, tenant, embedder, reranker=reranker)

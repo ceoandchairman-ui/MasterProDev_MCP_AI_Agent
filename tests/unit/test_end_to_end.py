@@ -71,7 +71,7 @@ def stack(tmp_path, monkeypatch):
         monkeypatch.setenv(key, value)
     config.get_settings.cache_clear()
     monkeypatch.setattr(app_module, "OpenAICompatibleLLM", ScriptedModel)
-    monkeypatch.setattr(app_module, "OpenAICompatibleEmbedder", lambda *a, **k: HashEmbedder(64))
+    monkeypatch.setattr(app_module, "build_embedder", lambda settings: HashEmbedder(64))
     monkeypatch.setattr(app_module, "ConsoleSender", CapturingSender)
     CapturingSender.sent = {}
     import asyncio

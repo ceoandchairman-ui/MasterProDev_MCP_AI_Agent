@@ -9,16 +9,15 @@ from pathlib import Path
 from mpd_assistant.core.config import get_settings
 from mpd_assistant.core.db import ensure_tenant, make_engine
 from mpd_assistant.ingestion.indexer import index_directory
-from mpd_assistant.retrieval.embeddings import OpenAICompatibleEmbedder
+from mpd_assistant.retrieval.embeddings import build_embedder
 
 
 async def main() -> None:
     s = get_settings()
-    key = s.EMBEDDING_API_KEY or s.HUGGINGFACE_API_KEY
-    if not key:
+    embedder = build_embedder(s)
+    if embedder is None:
         raise SystemExit("Set EMBEDDING_API_KEY or HUGGINGFACE_API_KEY")
     engine = make_engine(s.DATABASE_URL)
-    embedder = OpenAICompatibleEmbedder(s.EMBEDDING_BASE_URL or s.LLM_BASE_URL, key, s.EMBEDDING_MODEL)
     results = await index_directory(engine, ensure_tenant(engine), Path(s.KNOWLEDGE_BASE_PATH), embedder)
     for name, status in results.items():
         print(f"{status:12} {name}")

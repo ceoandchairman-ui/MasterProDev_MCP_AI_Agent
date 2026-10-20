@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     GOOGLE_OAUTH_REDIRECT_URI: str | None = None
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
     EMBEDDING_BASE_URL: str | None = None
+    EMBEDDING_FORMAT: str = "auto"  # auto | openai | huggingface (HuggingFace feature-extraction)
     EMBEDDING_API_KEY: str | None = None
     RETRIEVAL_MIN_SCORE: float = 0.35
     RERANK_BASE_URL: str | None = None
