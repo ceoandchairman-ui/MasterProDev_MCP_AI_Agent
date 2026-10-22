@@ -5,6 +5,9 @@ dockerfilePath = "deploy/dockerfiles/api.Dockerfile"
 [deploy]
 healthcheckPath = "/health"
 healthcheckTimeout = 60
+# Runs inside Railway, on its private network, after the image is built and before the new version takes traffic.
+# A failing migration stops the deploy and leaves the running version untouched.
+preDeployCommand = ["alembic upgrade head"]
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 # Keep at 1 until a two-replica test passes against the production Postgres and Redis (see docs/ARCHITECTURE.md).

@@ -8,7 +8,7 @@ import yaml
 
 RAILWAY_DIR = Path(__file__).resolve().parent.parent / "deploy" / "railway"
 ALLOWED_TOP = {"build", "deploy"}
-ALLOWED_DEPLOY = {"healthcheckPath", "healthcheckTimeout", "restartPolicyType", "restartPolicyMaxRetries", "numReplicas"}
+ALLOWED_DEPLOY = {"healthcheckPath", "healthcheckTimeout", "restartPolicyType", "restartPolicyMaxRetries", "numReplicas", "preDeployCommand"}
 REQUIRED_VOLUMES = {"postgres", "redis-state", "weaviate", "prometheus", "grafana"}
 
 
@@ -43,6 +43,10 @@ def check() -> list[str]:
         deploy = data.get("deploy", {})
         if set(deploy) - ALLOWED_DEPLOY:
             errors.append(f"{spec['config']}: unsupported deploy keys {sorted(set(deploy) - ALLOWED_DEPLOY)}")
+        if name == "api":
+            pre = deploy.get("preDeployCommand", [])
+            if "alembic upgrade head" not in (pre if isinstance(pre, str) else " ".join(pre)):
+                errors.append(f"{spec['config']}: the api must run `alembic upgrade head` as its preDeployCommand")
         replicas = deploy.get("numReplicas", 1)
         if "volume" in spec and replicas != 1:
             errors.append(f"{name}: a service with a volume must have one replica")

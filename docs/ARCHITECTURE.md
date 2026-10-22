@@ -158,6 +158,11 @@ None of it has run against live Postgres, Redis, a language model or any provide
   `tests/integration/test_mcp_servers.py`. The new Calendar and Gmail services in `services/` are what the Railway tomls
   build; the legacy copies go when the legacy container is retired.
 - **The company-data database role** (`MCP_DB_URL`) needs `SELECT` on `companies` as well as users, leads and quotes (migration 0007).
+- **Deploy pipeline:** migrations run inside Railway as the api's `preDeployCommand` (the GitHub runner cannot reach the private
+  Postgres address), and after a deploy `scripts/smoke_test.py` checks that a conversation works and that staff routes and
+  webhooks refuse unsigned callers. CI has a `live` job (pgvector Postgres and Redis Stack service containers) that runs the
+  live-stack tests; it is non-blocking (`continue-on-error`) until it has passed once, then the flag should be removed.
+  None of this has run on GitHub or Railway yet, and `preDeployCommand` should be confirmed on the first real deploy.
 - **One-off jobs:** `python -m mpd_assistant.worker.main --once reindex` replaces the legacy seeder (`seed.py`), including OCR
   of scanned documents when `OCR_ENGINE` is set; `--once retention` and `--once consolidate` run the other jobs.
 - **Vendor deletion** after an erasure request is manual; backups are not purged by erasure and need a retention
