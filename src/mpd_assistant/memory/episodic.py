@@ -48,7 +48,7 @@ class EpisodeWriter:
             try:
                 result = await self._llm.complete(
                     [{"role": "system", "content": CONDENSE_SYSTEM}, {"role": "user", "content": summary}],
-                    tier="cheap",
+                    tier="compress",
                     max_tokens=120,
                     temperature=0.0,
                 )

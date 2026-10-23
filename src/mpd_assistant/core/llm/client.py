@@ -10,7 +10,7 @@ import httpx
 
 Message = Dict[str, str]
 
-TIERS = ("cheap", "mid", "reasoning")
+TIERS = ("cheap", "mid", "reasoning", "compress")  # compress: summaries and other distilling of past conversation
 
 
 @dataclass

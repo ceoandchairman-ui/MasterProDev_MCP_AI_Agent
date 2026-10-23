@@ -32,7 +32,7 @@ class RollingSummarizer:
         try:
             result = await self._llm.complete(
                 [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
-                tier="cheap",
+                tier="compress",
                 max_tokens=220,
                 temperature=0.0,
             )

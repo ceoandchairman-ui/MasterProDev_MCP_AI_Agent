@@ -115,8 +115,12 @@ None of it has run against live Postgres, Redis, a language model or any provide
     has an explicit `GRAPH_RECURSION_LIMIT` (30; the real maximum is about 12): at most 3 sub-tasks per message, the supervisor
     escalates after 6 visits, the plan-act-reflect loop runs at most 2 times for the Solution Architect, Comms plans at most
     3 actions. A loop-limit stop hands the conversation to a person.
-  - *Model calls:* each tier (cheap, mid, reasoning) has its own endpoint, key, timeout, circuit breaker and optional fallback
-    model (`LLM_<TIER>_*`, `LLM_FALLBACK_<TIER>`). Transient failures (429, 5xx, timeouts) are retried with backoff and jitter,
+  - *Model calls:* each tier (cheap, mid, reasoning, compress) has its own endpoint, key, timeout, circuit breaker and optional
+    fallback model (`LLM_<TIER>_*`, `LLM_FALLBACK_<TIER>`). The **compress** tier (`LLM_MODEL_COMPRESS`, falling back to the cheap
+    model when unset) runs the jobs that distil past conversation: the rolling summary, the end-of-conversation episode line and
+    the nightly consolidation. Per-message memory extraction and the follow-up rewrite stay on the cheap tier. `scripts/compare_models.py
+    --tier compress` measures candidates on faithfulness, kept placeholders, French input, folding new messages into an old
+    summary, and a 39-message conversation with eight scattered facts. Transient failures (429, 5xx, timeouts) are retried with backoff and jitter,
     honouring `Retry-After`; permanent refusals (401, 402, 400) fail at once. A request the provider rejects as malformed
     never opens the circuit. At most `LLM_MAX_CONCURRENCY` calls per tier run at once.
   - *Tool calls:* each tool service has its own circuit breaker. Read-only tools are retried; sends, event changes and deletes

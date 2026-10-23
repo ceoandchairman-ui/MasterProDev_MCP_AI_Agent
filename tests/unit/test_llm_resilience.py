@@ -162,7 +162,7 @@ def settings(**kw):
 
 async def test_each_tier_goes_to_its_own_model():
     routed = build_llm(settings(), Recorder)
-    assert isinstance(routed, RoutedLLM) and routed.tiers == ["cheap", "mid", "reasoning"]
+    assert isinstance(routed, RoutedLLM) and routed.tiers == ["cheap", "compress", "mid", "reasoning"]
     assert (await routed.complete(MSG, tier="cheap")).text.startswith("cheap-model@")
     assert (await routed.complete(MSG, tier="reasoning")).text.startswith("reason-model@")
     assert (await routed.complete(MSG, tier="mid")).text.startswith("mid-model@")
@@ -199,7 +199,7 @@ def test_missing_configuration_means_no_model_layer():
     assert build_llm(settings(HUGGINGFACE_MODEL=None), Recorder) is None
     assert build_llm(settings(HUGGINGFACE_API_KEY=None), Recorder) is None
     only_mid = build_llm(settings(LLM_MODEL_CHEAP=None, LLM_MODEL_REASONING=None), Recorder)
-    assert only_mid.tiers == ["cheap", "mid", "reasoning"]  # unset tiers share the mid model
+    assert only_mid.tiers == ["cheap", "compress", "mid", "reasoning"]  # unset tiers share the mid model
 
 
 def test_a_tier_with_its_own_key_works_without_the_default_key():

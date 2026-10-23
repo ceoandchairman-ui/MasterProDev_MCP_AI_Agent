@@ -1,5 +1,5 @@
 """Runs the project's real prompts through candidate models and prints a pass rate, speed and size per model, so choosing the
-model for a tier is a measurement instead of a guess. Each case is a task one of the agents actually performs.
+model for a tier is a measurement instead of a guess. Each case is a task one of the agents actually performs, including the summarising jobs of the compress tier.
 
     python scripts/compare_models.py --current                       # the models configured in .env for each tier
     python scripts/compare_models.py --tier reasoning --models moonshotai/Kimi-K2-Instruct-0905,meta-llama/Llama-3.3-70B-Instruct --runs 3
@@ -85,6 +85,141 @@ def check_scope(text: str) -> Tuple[bool, str]:
     return ok, f"{len(milestones)} milestones, {len(data.get('risks') or [])} risks"
 
 
+def _words(text: str) -> int:
+    return len(text.split())
+
+
+def _verdict(problems: List[str], ok_note: str) -> Tuple[bool, str]:
+    return not problems, "; ".join(problems) or ok_note
+
+
+def check_summary(text: str) -> Tuple[bool, str]:
+    """A rolling summary: short, keeps the placeholder and the key facts, invents nothing."""
+    low = text.lower()
+    problems = []
+    if len(text) > 900 or _words(text) > 130:
+        problems.append(f"too long ({len(text)} characters, {_words(text)} words)")
+    if "<EMAIL_1>" not in text:
+        problems.append("lost the <EMAIL_1> placeholder")
+    if "march" not in low:
+        problems.append("lost the March deadline")
+    if not any(k in low for k in ("40k", "40,000", "40 000", "$40")):
+        problems.append("lost the budget")
+    if not any(k in low for k in ("dashboard", "notification")):
+        problems.append("lost the later requests")
+    invented = [w for w in ("android", "ios", "react", "stripe", "paris", "berlin") if w in low]
+    if invented:
+        problems.append(f"invented: {invented}")
+    return _verdict(problems, "faithful and short")
+
+
+LONG_FACTS = {
+    "company": ("acme",),
+    "deadline": ("march",),
+    "budget": ("40k", "40,000", "40 000"),
+    "email placeholder": ("<email_1>",),
+    "existing API": ("rest api", "existing api"),
+    "push notifications": ("push notification",),
+    "admin dashboard": ("dashboard",),
+    "location": ("toronto",),
+}
+
+
+def long_transcript() -> str:
+    """Forty-odd messages with eight facts scattered among small talk: a summary has to choose what matters."""
+    filler = [("user", "Thanks, that makes sense."), ("assistant", "Glad it helps. Anything else on your mind?"), ("user", "Not right now, just thinking it through."), ("assistant", "Take your time.")]
+    facts = [
+        "Hi, we're Acme Logistics, based in Toronto.",
+        "We need a booking app for our drivers.",
+        "We want it launched by March.",
+        "Our budget is around 40k.",
+        "We already have a REST API the app should use.",
+        "Please send the proposal to <EMAIL_1>.",
+        "We would like push notifications for drivers.",
+        "And an admin dashboard for dispatchers.",
+    ]
+    lines = []
+    for i, fact in enumerate(facts):
+        lines.append(f"user: {fact}")
+        lines.append("assistant: Noted.")
+        for role, text in filler[: 2 + i % 3]:
+            lines.append(f"{role}: {text}")
+    return "\n".join(lines)
+
+
+def check_long_summary(text: str) -> Tuple[bool, str]:
+    low = text.lower()
+    kept = [name for name, keys in LONG_FACTS.items() if any(k in low for k in keys)]
+    problems = []
+    if len(kept) < 6:
+        problems.append(f"kept only {len(kept)}/8 facts (missing {sorted(set(LONG_FACTS) - set(kept))})")
+    if len(text) > 900 or _words(text) > 130:
+        problems.append(f"too long ({_words(text)} words)")
+    invented = [w for w in ("android", "ios", "stripe", "paris", "berlin", "react") if w in low]
+    if invented:
+        problems.append(f"invented: {invented}")
+    return _verdict(problems, f"kept {len(kept)}/8 facts in {_words(text)} words")
+
+
+def check_summary_fr(text: str) -> Tuple[bool, str]:
+    low = text.lower()
+    problems = []
+    if len(text) > 900 or _words(text) > 130:
+        problems.append(f"too long ({len(text)} characters)")
+    if "<EMAIL_1>" not in text:
+        problems.append("lost the <EMAIL_1> placeholder")
+    if "mars" not in low and "march" not in low:
+        problems.append("lost the deadline")
+    if "40" not in low:
+        problems.append("lost the budget")
+    return _verdict(problems, "kept the facts from French input")
+
+
+def check_summary_update(text: str) -> Tuple[bool, str]:
+    """Folding new messages into an earlier summary: the new budget must appear, the old facts must survive."""
+    low = text.lower()
+    problems = []
+    if "55" not in low:
+        problems.append("missed the new budget")
+    if "march" not in low:
+        problems.append("dropped the earlier deadline")
+    if "<EMAIL_1>" not in text:
+        problems.append("dropped the placeholder")
+    if len(text) > 900:
+        problems.append("too long")
+    return _verdict(problems, "merged old and new")
+
+
+def check_condense(text: str) -> Tuple[bool, str]:
+    data = parse_json_object(text) or {}
+    line = data.get("text")
+    if not isinstance(line, str) or not line.strip():
+        return False, "no JSON text"
+    problems = []
+    if len(line) > 220:
+        problems.append(f"{len(line)} characters")
+    if "<" in line:
+        problems.append("kept a placeholder")
+    if "user" not in line.lower():
+        problems.append("not about 'the user'")
+    return _verdict(problems, f"one sentence: {line[:70]!r}")
+
+
+def check_consolidate(text: str) -> Tuple[bool, str]:
+    data = parse_json_object(text) or {}
+    line = data.get("text")
+    if not isinstance(line, str) or not line.strip():
+        return False, "no durable fact"
+    problems = []
+    if len(line) > 200:
+        problems.append(f"{len(line)} characters")
+    if "<" in line:
+        problems.append("kept a placeholder")
+    if not any(k in line.lower() for k in ("logistic", "fleet", "deliver")):
+        problems.append("missed what the notes share")
+    return _verdict(problems, f"fact: {line[:70]!r}")
+
+
 def judge_check(expect_supported: bool) -> Check:
     def check(text: str) -> Tuple[bool, str]:
         data = parse_json_object(text) or {}
@@ -135,6 +270,34 @@ def build_cases() -> List[Case]:
         Case("grounded French answer", "mid", _msgs(load_prompt("concierge", "system").render(language="fr"), f"Context:\n{evidence}\n\nQuestion: Que construisez-vous ?"), 400, check_french),
     ]
     cases += [Case(f"scope JSON #{i + 1}", "reasoning", _msgs(scope_prompt, text), 900, check_scope) for i, text in enumerate(scopes)]
+    summarize = load_prompt("memory", "summarize").render()
+    transcript = (
+        "user: Hi, we're Acme Logistics. We need a booking app for our drivers, launch by March, budget around 40k.\n"
+        "assistant: Great, a driver booking app. Do you have an existing API?\n"
+        "user: Yes, a REST API. Please email the proposal to <EMAIL_1>.\n"
+        "assistant: Noted. I'll prepare a scope.\n"
+        "user: Also we want push notifications and an admin dashboard.\n"
+        "assistant: Added both to the scope."
+    )
+    transcript_fr = (
+        "user: Bonjour, nous sommes Acme Logistique. Nous voulons une application de réservation pour nos chauffeurs, lancement en mars, budget d'environ 40k.\n"
+        "assistant: Très bien. Avez-vous déjà une API ?\n"
+        "user: Oui, une API REST. Envoyez la proposition à <EMAIL_1>.\n"
+        "assistant: C'est noté."
+    )
+    earlier = "The user is from Acme Logistics and wants a driver booking app launched by March with a budget of about 40k; the proposal goes to <EMAIL_1>."
+    new_messages = "user: Update: the budget is now 55k.\nassistant: Understood, I have updated the budget."
+    cases += [
+        Case("summary: english conversation", "compress", _msgs(summarize, f"Previous summary:\n(none)\n\nNew messages:\n{transcript}"), 220, check_summary),
+        Case("summary: long conversation, eight facts", "compress", _msgs(summarize, f"Previous summary:\n(none)\n\nNew messages:\n{long_transcript()}"), 220, check_long_summary),
+        Case("summary: french conversation", "compress", _msgs(summarize, f"Previous summary:\n(none)\n\nNew messages:\n{transcript_fr}"), 220, check_summary_fr),
+        Case("summary: fold in new messages", "compress", _msgs(summarize, f"Previous summary:\n{earlier}\n\nNew messages:\n{new_messages}"), 220, check_summary_update),
+        Case("episode: one sentence", "compress", _msgs(load_prompt("memory", "condense").render(), earlier + " They asked for push notifications and an admin dashboard and later raised the budget."), 120, check_condense),
+        Case(
+            "consolidation: shared fact", "compress",
+            _msgs(load_prompt("memory", "consolidate").render(), "- runs a logistics company\n- logistics firm with a delivery fleet\n- manages delivery trucks across Ontario"), 150, check_consolidate,
+        ),
+    ]
     return cases
 
 
@@ -194,7 +357,8 @@ def render_failures(outcomes: List[Outcome]) -> str:
 def plan_models(args: argparse.Namespace, settings) -> Dict[str, List[str]]:
     tiers = list(TIERS) if args.tier == "all" else [args.tier]
     if args.current:
-        configured = {"mid": settings.HUGGINGFACE_MODEL, "cheap": settings.LLM_MODEL_CHEAP or settings.HUGGINGFACE_MODEL, "reasoning": settings.LLM_MODEL_REASONING or settings.HUGGINGFACE_MODEL}
+        configured = {"mid": settings.HUGGINGFACE_MODEL, "cheap": settings.LLM_MODEL_CHEAP or settings.HUGGINGFACE_MODEL, "reasoning": settings.LLM_MODEL_REASONING or settings.HUGGINGFACE_MODEL,
+                      "compress": getattr(settings, "LLM_MODEL_COMPRESS", None) or settings.LLM_MODEL_CHEAP or settings.HUGGINGFACE_MODEL}
         return {t: [configured[t]] for t in tiers if configured[t]}
     models = [m.strip() for m in (args.models or "").split(",") if m.strip()]
     if not models:

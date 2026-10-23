@@ -1,6 +1,6 @@
 """Builds the model layer from settings: one chain per tier, each with its own endpoint, circuit breaker and fallback.
 
-    cheap / mid / reasoning  ->  [primary model -> optional fallback model], each behind its own circuit breaker
+    cheap / mid / reasoning / compress  ->  [primary model -> optional fallback model], each behind its own circuit breaker
 
 A separate breaker per tier and model means an outage of the reasoning model does not stop the cheap and mid tiers.
 """
@@ -11,7 +11,7 @@ from mpd_assistant.core.llm.client import TIERS, FallbackLLM, LLMError, LLMResul
 from mpd_assistant.core.llm.resilient import BreakerLLM
 
 # Seconds a single call may take, per tier. The reasoning tier writes long structured output, so it gets longer.
-TIER_TIMEOUTS = {"cheap": 20.0, "mid": 30.0, "reasoning": 40.0}
+TIER_TIMEOUTS = {"cheap": 20.0, "mid": 30.0, "reasoning": 40.0, "compress": 30.0}
 
 
 class RoutedLLM:
@@ -37,6 +37,8 @@ def _tier_model(settings, tier: str) -> str | None:
         return mid
     if tier == "cheap":
         return settings.LLM_MODEL_CHEAP or mid
+    if tier == "compress":  # its own model when set, else whatever the cheap tier uses
+        return getattr(settings, "LLM_MODEL_COMPRESS", None) or settings.LLM_MODEL_CHEAP or mid
     return settings.LLM_MODEL_REASONING or mid
 
 

@@ -41,7 +41,25 @@ class Scripted:
             return LLMResult(PLAN, tokens_out=60)
         if "Answer ONLY from the provided context" in system:
             return LLMResult("Nous construisons des applications mobiles pour les entreprises de logistique.", tokens_out=25)
+        if "Summarize this conversation" in system:
+            return LLMResult(summary_for(user), tokens_out=60)
+        if "Condense this conversation summary" in system:
+            return LLMResult(json.dumps({"text": "The user wanted a driver booking app by March and a larger budget later."}), tokens_out=25)
+        if "notes from past conversations" in system:
+            return LLMResult(json.dumps({"text": "Runs a logistics company with a delivery fleet.", "importance": 0.7, "confidence": 0.8}), tokens_out=30)
         return LLMResult(SCOPE, tokens_out=300)
+
+
+def summary_for(user):
+    """The summary a good model would write for each of the summarising inputs."""
+    if "Bonjour" in user:
+        return "L'utilisateur d'Acme Logistique veut une application de réservation pour mars, budget d'environ 40k; envoyer la proposition à <EMAIL_1>."
+    if "budget is now 55k" in user:
+        return "The user from Acme Logistics wants a driver booking app by March; the budget is now 55k; the proposal goes to <EMAIL_1>."
+    return (
+        "The user is from Acme Logistics in Toronto and wants a driver booking app launched by March with a budget of about 40k, "
+        "using their existing REST API. They asked for push notifications and an admin dashboard. The proposal goes to <EMAIL_1>."
+    )
 
 
 def factory(mode_by_model):
@@ -51,20 +69,20 @@ def factory(mode_by_model):
 # --- the cases ----------------------------------------------------------------------------------
 def test_there_are_cases_for_every_tier_with_real_prompts():
     cases = cm.build_cases()
-    assert {c.tier for c in cases} == {"cheap", "mid", "reasoning"} and len({c.name for c in cases}) == len(cases)
+    assert {c.tier for c in cases} == {"cheap", "mid", "reasoning", "compress"} and len({c.name for c in cases}) == len(cases)
     planner = next(c for c in cases if c.name == "plan a booking")
     assert "create_calendar_event(title: str" in planner.messages[0]["content"]  # the argument schemas are in the prompt
     assert next(c for c in cases if c.tier == "reasoning").max_tokens == 900  # the budget the Solution Architect really has
 
 
 async def test_a_good_model_passes_every_case():
-    outcomes = await cm.evaluate({"cheap": ["good-model"], "mid": ["good-model"], "reasoning": ["good-model"]}, factory({}))
+    outcomes = await cm.evaluate({"cheap": ["good-model"], "mid": ["good-model"], "reasoning": ["good-model"], "compress": ["good-model"]}, factory({}))
     failed = [(o.case, o.note) for o in outcomes if not o.ok]
     assert failed == [] and len(outcomes) == len(cm.build_cases())
 
 
 async def test_a_model_that_answers_nonsense_fails_every_case():
-    outcomes = await cm.evaluate({"cheap": ["bad"], "mid": ["bad"], "reasoning": ["bad"]}, factory({"bad": "bad"}))
+    outcomes = await cm.evaluate({"cheap": ["bad"], "mid": ["bad"], "reasoning": ["bad"], "compress": ["bad"]}, factory({"bad": "bad"}))
     assert outcomes and not any(o.ok for o in outcomes)
 
 
@@ -134,8 +152,52 @@ def test_an_empty_run_says_so():
 def test_planning_the_models_for_each_tier():
     settings = SimpleNamespace(HUGGINGFACE_MODEL="mid-m", LLM_MODEL_CHEAP="cheap-m", LLM_MODEL_REASONING=None)
     current = cm.plan_models(argparse.Namespace(tier="all", current=True, models=None), settings)
-    assert current == {"cheap": ["cheap-m"], "mid": ["mid-m"], "reasoning": ["mid-m"]}  # an unset tier shares the mid model
+    assert current == {"cheap": ["cheap-m"], "mid": ["mid-m"], "reasoning": ["mid-m"], "compress": ["cheap-m"]}  # an unset tier shares another model: compress the cheap one, reasoning the mid
     chosen = cm.plan_models(argparse.Namespace(tier="reasoning", current=False, models="a, b ,c"), settings)
     assert chosen == {"reasoning": ["a", "b", "c"]}
     with pytest.raises(SystemExit):
         cm.plan_models(argparse.Namespace(tier="mid", current=False, models=""), settings)
+
+
+# --- the compression checks ---------------------------------------------------------------------
+GOOD_EN = summary_for("")
+GOOD_UPDATE = summary_for("budget is now 55k")
+
+
+def test_summary_check_demands_the_facts_the_placeholder_and_brevity():
+    assert cm.check_summary(GOOD_EN)[0]
+    ok, note = cm.check_summary("The user wants an app.")
+    assert not ok and "<EMAIL_1>" in note and "March" in note and "budget" in note
+    assert not cm.check_summary(GOOD_EN + " " + "padding " * 140)[0]  # over the length limit
+    ok, note = cm.check_summary(GOOD_EN + " They also want an Android app.")
+    assert not ok and "invented" in note and "android" in note
+
+
+def test_french_and_update_summaries_are_checked_for_their_own_failure_modes():
+    assert cm.check_summary_fr(summary_for("Bonjour"))[0] and not cm.check_summary_fr("L'utilisateur veut une application.")[0]
+    assert cm.check_summary_update(GOOD_UPDATE)[0]
+    ok, note = cm.check_summary_update(GOOD_EN)  # still says 40k: the new budget was missed
+    assert not ok and "new budget" in note
+    assert not cm.check_summary_update("The budget is now 55k.")[0]  # dropped the deadline and the placeholder
+
+
+def test_the_long_conversation_case_really_scatters_eight_facts():
+    transcript = cm.long_transcript()
+    assert len(transcript.splitlines()) > 35
+    for keys in cm.LONG_FACTS.values():
+        assert any(k in transcript.lower() for k in keys), keys
+    ok, note = cm.check_long_summary(GOOD_EN)
+    assert ok and "8/8" in note
+    ok, note = cm.check_long_summary("The user is from Acme and wants an app by March.")
+    assert not ok and "kept only" in note
+    assert not cm.check_long_summary(GOOD_EN + " Stripe payments were discussed.")[0]
+
+
+def test_episode_and_consolidation_checks_want_clean_json():
+    assert cm.check_condense(json.dumps({"text": "The user wanted a booking app by March."}))[0]
+    assert not cm.check_condense(json.dumps({"text": "x" * 230 + " user"}))[0]
+    assert not cm.check_condense(json.dumps({"text": "The user wrote to <EMAIL_1>."}))[0]
+    assert not cm.check_condense(json.dumps({"text": "They wanted an app."}))[0]  # not about 'the user'
+    assert not cm.check_condense("The user wanted an app.")[0]  # not JSON
+    assert cm.check_consolidate(json.dumps({"text": "Runs a logistics company with a delivery fleet."}))[0]
+    assert not cm.check_consolidate(json.dumps({"text": "Likes coffee."}))[0] and not cm.check_consolidate(json.dumps({"text": ""}))[0]

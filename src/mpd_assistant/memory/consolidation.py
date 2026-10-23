@@ -84,7 +84,7 @@ class Consolidator:
         try:
             result = await self._llm.complete(
                 [{"role": "system", "content": SYSTEM}, {"role": "user", "content": notes}],
-                tier="cheap",
+                tier="compress",
                 max_tokens=150,
                 temperature=0.0,
             )

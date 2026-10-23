@@ -31,17 +31,21 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = "https://router.huggingface.co/v1"
     LLM_MODEL_CHEAP: str | None = None
     LLM_MODEL_REASONING: str | None = None
+    LLM_MODEL_COMPRESS: str | None = None  # rolling summaries, episode summaries, consolidation; empty means the cheap model
     # Each tier can use its own endpoint and key (for example a self-hosted server for the cheap tier); empty means LLM_BASE_URL
     # and HUGGINGFACE_API_KEY. A fallback model is tried on the same endpoint when the primary fails.
     LLM_CHEAP_BASE_URL: str | None = None
     LLM_CHEAP_API_KEY: str | None = None
     LLM_MID_BASE_URL: str | None = None
     LLM_MID_API_KEY: str | None = None
+    LLM_COMPRESS_BASE_URL: str | None = None
+    LLM_COMPRESS_API_KEY: str | None = None
     LLM_REASONING_BASE_URL: str | None = None
     LLM_REASONING_API_KEY: str | None = None
     LLM_FALLBACK_CHEAP: str | None = None
     LLM_FALLBACK_MID: str | None = None
     LLM_FALLBACK_REASONING: str | None = None
+    LLM_FALLBACK_COMPRESS: str | None = None
     LLM_MAX_RETRIES: int = 2
     LLM_MAX_CONCURRENCY: int = 8  # in-flight model calls per tier
     CATALOG_PATH: str | None = None
