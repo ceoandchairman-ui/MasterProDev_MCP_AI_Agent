@@ -22,6 +22,7 @@ from mcp_host.intent_router import IntentRouter, Intent
 from mcp_host.evaluator import evaluator  # Task evaluation metrics
 from mcp_host.pii_scanner import pii_scanner
 from mcp_host.config import settings
+from mcp_host.tool_policy import is_tool_allowed, role_for_user
 
 try:
     from langdetect import detect as _detect_lang, LangDetectException
@@ -240,7 +241,8 @@ class MCPAgent:
         message: str,
         session_id: str,  # Add session_id for state management
         conversation_history: Optional[List[Dict[str, str]]] = None,
-        trace_id: Optional[str] = None
+        trace_id: Optional[str] = None,
+        user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         UNIFIED Orchestration Entrypoint - Single ReAct Loop.
@@ -325,7 +327,7 @@ class MCPAgent:
             if last_answer:
                 try:
                     forced_actions = [{"tool": "search_knowledge_base", "arguments": {"query": last_answer[:300]}}]
-                    tool_runs = await self._execute_plan(forced_actions, session_id, trace_id=trace_id)
+                    tool_runs = await self._execute_plan(forced_actions, session_id, trace_id=trace_id, user_id=user_id)
                     rag_output = str(tool_runs[0].get("output", "")) if tool_runs else ""
                     has_content = (
                         bool(rag_output)
@@ -421,7 +423,7 @@ class MCPAgent:
 
             if plan.get("actions"):
                 # Execute the planned tools
-                tool_runs = await self._execute_plan(plan["actions"], session_id, trace_id=trace_id) # Pass session_id
+                tool_runs = await self._execute_plan(plan["actions"], session_id, trace_id=trace_id, user_id=user_id)
                 had_errors = any("error" in run for run in tool_runs)
                 planner_hint = None if had_errors else plan.get("final_response")
                 
@@ -644,7 +646,7 @@ class MCPAgent:
             # 5. Execute tools and stream results
             tool_runs = []
             if actions:
-                async for tool_chunk in self._execute_plan_stream(actions, session_id, trace_id=trace_id):
+                async for tool_chunk in self._execute_plan_stream(actions, session_id, trace_id=trace_id, user_id=user_id):
                     yield tool_chunk
                     if tool_chunk.get("type") == "tool_result":
                         tool_runs.append(tool_chunk["data"])
@@ -732,14 +734,20 @@ class MCPAgent:
         
         return self._parse_planner_response(raw_response)
 
-    async def _execute_plan(self, actions: List[Dict[str, Any]], session_id: str, trace_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def _execute_plan(self, actions: List[Dict[str, Any]], session_id: str, trace_id: Optional[str] = None, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Executes a list of tool actions."""
         trace_id = trace_id or str(uuid.uuid4())
         results = []
+        role = role_for_user(user_id)
         for action in actions:
             tool_name = action.get("tool")
             arguments = action.get("arguments", {})
-            
+
+            if tool_name in self.tool_map and not is_tool_allowed(tool_name, role):
+                logger.warning(f"[{trace_id}] Tool '{tool_name}' blocked for role '{role}'")
+                results.append({"tool": tool_name, "arguments": arguments, "error": "This action requires a signed-in account."})
+                continue
+
             if tool_name in self.tool_map:
                 tool = self.tool_map[tool_name]
                 logger.info(f"[{trace_id}] 🛠️ Executing tool: {tool_name} with args: {arguments}")
@@ -763,12 +771,18 @@ class MCPAgent:
         
         return results
 
-    async def _execute_plan_stream(self, actions: List[Dict[str, Any]], session_id: str, trace_id: Optional[str] = None) -> AsyncGenerator[Dict[str, Any], None]:
+    async def _execute_plan_stream(self, actions: List[Dict[str, Any]], session_id: str, trace_id: Optional[str] = None, user_id: Optional[str] = None) -> AsyncGenerator[Dict[str, Any], None]:
         """Executes a list of tool actions and streams the progress."""
         trace_id = trace_id or str(uuid.uuid4())
+        role = role_for_user(user_id)
         for action in actions:
             tool_name = action.get("tool")
             arguments = action.get("arguments", {})
+
+            if tool_name in self.tool_map and not is_tool_allowed(tool_name, role):
+                logger.warning(f"[{trace_id}] Tool '{tool_name}' blocked for role '{role}'")
+                yield {"type": "tool_result", "data": {"tool": tool_name, "arguments": arguments, "error": "This action requires a signed-in account."}}
+                continue
 
             if tool_name in self.tool_map:
                 tool = self.tool_map[tool_name]

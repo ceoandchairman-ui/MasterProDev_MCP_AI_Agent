@@ -2,12 +2,17 @@
 
 
 import asyncio
+import html
+import logging
 import os
+import re
 import json
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Any, Dict, List
 from datetime import datetime, timedelta
 from mcp_servers.base_server import BaseMCPServer
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from services._common.mcp_common.service_auth import require_service_auth
 from fastapi.responses import HTMLResponse
 
 # Google Calendar API imports
@@ -18,6 +23,30 @@ from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
 
 from mcp_servers.calendar_server.config import calendar_settings
+from services._common.mcp_common.user_token import current_user_token
+
+
+DEFAULT_TIME_ZONE = os.environ.get("DEFAULT_TIME_ZONE", "America/Toronto")
+_OFFSET_SUFFIX = re.compile(r"(Z|[+-]\d{2}:?\d{2})$")
+
+
+def resolve_time_zone(requested: Any) -> str:
+    """A valid IANA zone name from the caller, else the configured default. Never trusts the raw string."""
+    for candidate in (requested, DEFAULT_TIME_ZONE):
+        if isinstance(candidate, str) and candidate:
+            try:
+                ZoneInfo(candidate)
+                return candidate
+            except (ZoneInfoNotFoundError, ValueError):
+                continue
+    return "UTC"
+
+
+def event_time(value: str, tz_name: str) -> Dict[str, str]:
+    """A time that carries its own offset or Z is used as given; a local time gets the zone name."""
+    if _OFFSET_SUFFIX.search(value):
+        return {"dateTime": value}
+    return {"dateTime": value, "timeZone": tz_name}
 
 
 class CalendarMCPServer(BaseMCPServer):
@@ -47,7 +76,7 @@ class CalendarMCPServer(BaseMCPServer):
         }
         
         # Register OAuth callback endpoint
-        @self.app.get("/callback")
+        @self.app.get("/callback", dependencies=[Depends(require_service_auth)])
         async def oauth_callback(code: str = None, state: str = None, error: str = None):
             """Handle OAuth callback from Google"""
             if error:
@@ -55,7 +84,7 @@ class CalendarMCPServer(BaseMCPServer):
                 <html>
                     <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                         <h1>✗ Authorization Denied</h1>
-                        <p>Error: {error}</p>
+                        <p>Error: {html.escape(str(error))}</p>
                     </body>
                 </html>
                 """)
@@ -65,6 +94,8 @@ class CalendarMCPServer(BaseMCPServer):
             
             if not self._auth_flow:
                 raise HTTPException(status_code=400, detail="No pending authorization flow")
+            if not state or state != self._auth_state:
+                raise HTTPException(status_code=400, detail="Invalid OAuth state")
             
             try:
                 # Exchange code for token
@@ -90,18 +121,19 @@ class CalendarMCPServer(BaseMCPServer):
                 </html>
                 """)
             except Exception as e:
+                logging.getLogger(__name__).error('OAuth error: %s', e)
                 return HTMLResponse(f"""
                 <html>
                     <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                         <h1>✗ Authorization Failed</h1>
-                        <p>Error: {str(e)}</p>
+                        <p>Authorization could not be completed. Check the server logs.</p>
                         <p>Please try again.</p>
                     </body>
                 </html>
                 """)
         
         # Register OAuth login endpoint
-        @self.app.get("/auth")
+        @self.app.get("/auth", dependencies=[Depends(require_service_auth)])
         async def start_auth(redirect_uri: str = None):
             """Start OAuth flow and return authorization URL
             Args:
@@ -179,11 +211,12 @@ class CalendarMCPServer(BaseMCPServer):
                 </html>
                 """)
             except Exception as e:
+                logging.getLogger(__name__).error('OAuth error: %s', e)
                 return HTMLResponse(f"""
                 <html>
                     <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                         <h1>✗ Authorization Error</h1>
-                        <p>Error: {str(e)}</p>
+                        <p>Authorization could not be completed. Check the server logs.</p>
                         <p>Make sure credentials.json exists in the calendar_server directory.</p>
                     </body>
                 </html>
@@ -231,6 +264,12 @@ class CalendarMCPServer(BaseMCPServer):
 
     async def _get_calendar_service(self):
         """Return an authenticated Google Calendar service instance"""
+        user_token = current_user_token()
+        if user_token:
+            # Per-request user credentials are never cached on the server object.
+            return await asyncio.to_thread(
+                build, "calendar", "v3", credentials=Credentials(token=user_token), cache_discovery=False
+            )
         if self.service is not None:
             return self.service
 
@@ -367,12 +406,14 @@ class CalendarMCPServer(BaseMCPServer):
                     "message": "Google Calendar authorization pending. Check calendar server logs for OAuth URL."
                 }
 
+            tz_name = resolve_time_zone(params.get("time_zone"))
+
             def create():
                 event_body = {
                     "summary": params["title"],
                     "description": params.get("description", ""),
-                    "start": {"dateTime": params["start_time"], "timeZone": "UTC"},
-                    "end": {"dateTime": params["end_time"], "timeZone": "UTC"},
+                    "start": event_time(str(params["start_time"]), tz_name),
+                    "end": event_time(str(params["end_time"]), tz_name),
                 }
                 return service.events().insert(calendarId="primary", body=event_body).execute()
 

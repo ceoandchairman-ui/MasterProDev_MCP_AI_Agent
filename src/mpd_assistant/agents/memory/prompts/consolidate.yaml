@@ -1,0 +1,3 @@
+version: consolidate-v1
+text: >-
+  These are notes from past conversations with one user. Write ONE durable fact or preference that they all support, under 200 characters, with no names, contact details or placeholders. Output ONLY JSON: {{"text": str, "importance": 0-1, "confidence": 0-1}} or {{"text": ""}} if there is no common durable point.

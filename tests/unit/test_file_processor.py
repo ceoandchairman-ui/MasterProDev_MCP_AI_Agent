@@ -3,10 +3,11 @@
 import asyncio
 import io
 import json
-import textwrap
 
 import pytest
-from mcp_host.file_processor import FileProcessor, MAX_FILE_BYTES, _truncate
+
+from mcp_host.file_processor import MAX_FILE_BYTES, FileProcessor, _truncate
+
 
 # FileProcessor without OpenAI or voice (text-only formats don't need them)
 @pytest.fixture(scope="module")

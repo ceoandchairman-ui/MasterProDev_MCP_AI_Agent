@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     # MCP Servers (localhost since all services in same container)
     CALENDAR_SERVER_URL: str = "http://localhost:8001"
     GMAIL_SERVER_URL: str = "http://localhost:8002"
+    MCP_SERVICE_KEY: Optional[str] = None
+    NEW_PIPELINE_PERCENT: int = 0
 
     # HuggingFace LLM
     HUGGINGFACE_API_KEY: Optional[str] = None
@@ -53,7 +55,7 @@ class Settings(BaseSettings):
     CLAUDE_MODEL: str = "claude-3-5-haiku-20241022"
     
     # Active LLM Provider
-    ACTIVE_LLM_PROVIDER: Optional[str] = "claude"  # Options: 'claude', 'bedrock', 'huggingface', 'ollama'
+    ACTIVE_LLM_PROVIDER: Optional[str] = "huggingface"  # Options: 'huggingface', 'bedrock', 'ollama'
 
     # Google OAuth
     GOOGLE_CLIENT_ID: Optional[str] = None
@@ -89,7 +91,3 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
-
-# Debug: Print after settings are loaded (after .env is parsed)
-print(f"[DEBUG] Settings.HUGGINGFACE_API_KEY: {settings.HUGGINGFACE_API_KEY}")
-print(f"[DEBUG] Settings.ACTIVE_LLM_PROVIDER: {settings.ACTIVE_LLM_PROVIDER}")

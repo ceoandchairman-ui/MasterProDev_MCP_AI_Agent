@@ -1,0 +1,48 @@
+groups:
+  - name: mpd
+    rules:
+      - alert: HighReasonedLatency
+        expr: histogram_quantile(0.95, sum(rate(mpd_turn_latency_seconds_bucket{mode="reasoned"}[10m])) by (le)) > 15
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "p95 reasoned latency above 15s"}
+      - alert: EvaluatorFailureSpike
+        expr: sum(rate(mpd_eval_verdicts_total{verdict!="pass"}[15m])) / sum(rate(mpd_eval_verdicts_total[15m])) > 0.2
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "More than 20% of responses fail online evaluation"}
+      - alert: PiiLeakDetected
+        expr: increase(mpd_eval_reasons_total{reason="pii_leak"}[5m]) > 0
+        labels: {severity: critical}
+        annotations: {summary: "Model output contained PII that was never issued to this session"}
+      - alert: EscalationRateHigh
+        expr: sum(rate(mpd_escalations_total[1h])) / sum(rate(mpd_turns_total[1h])) > 0.25
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: "Escalation rate above 25%"}
+      - alert: DependencyDegraded
+        expr: sum by (dependency) (increase(mpd_degraded_total[10m])) > 5
+        labels: {severity: critical}
+        annotations: {summary: "Turns are being served degraded because a dependency is failing (see the dependency label)"}
+      - alert: RawPiiRefusedAtModelBoundary
+        expr: increase(mpd_pii_detections_total{boundary="B2_llm_egress"}[15m]) > 0
+        labels: {severity: warning}
+        annotations: {summary: "Raw personal data reached the model boundary and was refused: a code path is skipping pseudonymization"}
+      - alert: TokenBudgetBlocking
+        expr: sum(increase(mpd_budget_blocks_total[1h])) > 20
+        labels: {severity: warning}
+        annotations: {summary: "Token budgets are blocking requests: either abuse or limits set too low"}
+      - alert: PaymentWebhookRejected
+        expr: increase(mpd_payments_total{event=~"invalid_signature|mismatch"}[15m]) > 0
+        labels: {severity: critical}
+        annotations: {summary: "A payment webhook failed signature checks or did not match the stored quote"}
+      - alert: PromptPrefixUnstable
+        expr: sum by (agent) (rate(mpd_prompt_prefix_total{result="new"}[30m])) / sum by (agent) (rate(mpd_prompt_prefix_total[30m])) > 0.5
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: "An agent's system prompt changes on most calls, so provider prompt caching is not helping (something per-request is in the prompt)"}
+      - alert: TokenSpendSpike
+        expr: sum(rate(mpd_tokens_total[1h])) > 3 * sum(rate(mpd_tokens_total[1h] offset 1d))
+        for: 1h
+        labels: {severity: warning}
+        annotations: {summary: "Token spend is more than 3x the same hour yesterday"}

@@ -1,0 +1,108 @@
+# Local integration stack. Real Postgres with pgvector and real Redis Stack, so the "never run live" parts can run.
+#
+#   python scripts/dev_env.py                                  # once: writes .env.dev with fresh local secrets
+#   docker compose -f deploy/compose.dev.yml up -d --wait      # Postgres + Redis Stack, schema migrated
+#   pytest tests/integration/test_live_stack.py -m live        # tests that use those two services
+#   docker compose -f deploy/compose.dev.yml --profile app up -d --build     # + api and worker
+#   docker compose -f deploy/compose.dev.yml --profile tools up -d --build   # + the four tool services
+#   python scripts/smoke_test.py http://localhost:8000         # a few requests against the running api
+#
+# Ports are bound to 127.0.0.1 and differ from the usual ones (5433, 6380) so they do not clash with a local install.
+name: mpd-dev
+
+x-app-env: &app-env
+  ENV: development
+  DATABASE_URL: postgresql://mpd:mpd@postgres:5432/mpd
+  REDIS_URL: redis://redis:6379/0
+  PUBLIC_DOMAIN: http://localhost:8000
+  CALENDAR_SERVER_URL: http://mcp-calendar:8001
+  GMAIL_SERVER_URL: http://mcp-gmail:8002
+  DB_SERVER_URL: http://mcp-db:8004
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: mpd
+      POSTGRES_PASSWORD: mpd
+      POSTGRES_DB: mpd
+    ports: ["127.0.0.1:5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mpd -d mpd"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    # Redis Stack bundles the search and JSON modules that the LangGraph Redis checkpointer needs; plain Redis lacks them.
+    image: redis/redis-stack-server:7.4.0-v1
+    ports: ["127.0.0.1:6380:6379"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: { context: .., dockerfile: deploy/dockerfiles/api.Dockerfile }
+    image: mpd-api:dev
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://mpd:mpd@postgres:5432/mpd
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    profiles: ["app"]
+    image: mpd-api:dev
+    env_file: ../.env.dev
+    environment: *app-env
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker:
+    profiles: ["app"]
+    build: { context: .., dockerfile: deploy/dockerfiles/worker.Dockerfile }
+    image: mpd-worker:dev
+    env_file: ../.env.dev
+    environment: *app-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  mcp-calendar:
+    profiles: ["tools"]
+    build: { context: .., dockerfile: services/mcp_calendar/Dockerfile }
+    env_file: ../.env.dev
+    ports: ["127.0.0.1:8001:8001"]
+
+  mcp-gmail:
+    profiles: ["tools"]
+    build: { context: .., dockerfile: services/mcp_gmail/Dockerfile }
+    env_file: ../.env.dev
+    ports: ["127.0.0.1:8002:8002"]
+
+  mcp-quoting:
+    profiles: ["tools"]
+    build: { context: .., dockerfile: services/mcp_quoting/Dockerfile }
+    env_file: ../.env.dev
+    ports: ["127.0.0.1:8003:8003"]
+
+  mcp-db:
+    profiles: ["tools"]
+    build: { context: .., dockerfile: services/mcp_db/Dockerfile }
+    env_file: ../.env.dev
+    environment:
+      MCP_DB_URL: postgresql://mpd:mpd@postgres:5432/mpd
+    ports: ["127.0.0.1:8004:8004"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+volumes:
+  pgdata:
+  redisdata:

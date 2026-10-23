@@ -1,11 +1,11 @@
 """MCP Server tests"""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-import asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
+
 from mcp_servers.calendar_server.main import calendar_server
 from mcp_servers.gmail_server.main import gmail_server
-
 
 # ── Calendar mock helpers ───────────────────────────────────────────────────
 

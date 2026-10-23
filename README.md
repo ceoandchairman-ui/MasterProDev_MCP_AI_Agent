@@ -1,196 +1,50 @@
-# Master Pro Dev AI Agent - 2 Tools Version
+﻿# MasterProDev AI Assistant
 
-A scalable MCP (Model Context Protocol) based AI agent system with FastAPI, featuring Google Calendar and Gmail integration.
+A multi-agent conversational assistant for MasterProDev: it answers questions from company documents, qualifies leads, books calls, drafts scopes and quotes, takes payment through Stripe-hosted checkout, and hands over to a person when it should. Built on LangGraph, FastAPI, Postgres with pgvector, and Redis, and hosted on Railway.
 
-## 🎯 Features
+## Status
 
-- **MCP Host**: FastAPI-based central orchestrator
-- **2 MCP Servers**: Calendar (port 8001) and Gmail (port 8002)
-- **Authentication**: JWT + Bcrypt password hashing
-- **State Management**: Redis caching + PostgreSQL persistence
-- **Docker Support**: Complete docker-compose setup
-- **Tests**: Unit and integration tests included
+Under restructuring. The legacy application in `mcp_host/` and `mcp_servers/` still serves production traffic. The new package, `src/mpd_assistant/`, is complete in code and covered by unit tests, but has not yet been run against live Postgres, Redis, a language model, or any provider. `docs/ARCHITECTURE.md` lists what is wired, what is not, and what has never run live.
 
-## 🚀 Quick Start
+## Layout
 
-### Prerequisites
-- Python 3.11+
-- Docker & Docker Compose
-- PostgreSQL client tools (optional)
+- `src/mpd_assistant/` the application: core, api (and the staff console under `api/static/admin`), graph, agents, routing, responses, memory, sessions, identity, privacy, cache, retrieval, tools, business, evaluation, observability, multimodal, ingestion, messaging, channels, worker
+- `services/` tool services, one image each: Calendar, Gmail, company data, quoting (shared base in `services/_common`)
+- `web/widget/` the embeddable chat widget (no dependencies)
+- `mcp_host/`, `mcp_servers/` legacy code, removed once the new pipeline has parity
+- `migrations/`, `evals/`, `observability/`, `deploy/`, `scripts/`, `tests/`, `docs/`
 
-### Setup
+## Develop
 
-1. **Clone and install dependencies:**
 ```bash
-cd C:\AI_Agent_MCP
-pip install -r requirements.txt
+python -m venv .venv
+.venv\Scripts\activate            # Windows; use source .venv/bin/activate elsewhere
+pip install -e ".[dev]"
+cp .env.example .env
+pytest tests/unit tests/privacy tests/security
+ruff check src services tests/unit tests/privacy scripts
 ```
 
-2. **Configure environment:**
+Unit tests use fakes and in-memory SQLite, so they need no running services.
+
+## Run against real services
+
 ```bash
-copy .env.example .env
-# Edit .env with your settings
+python scripts/dev_env.py                                       # once: local secrets in .env.dev (git-ignored)
+docker compose -f deploy/compose.dev.yml up -d --wait           # Postgres with pgvector + Redis Stack, schema migrated
+pytest tests/integration/test_live_stack.py -m live -v          # migrations, vector search, checkpointer, a full conversation, payments
+docker compose -f deploy/compose.dev.yml --profile app up -d --build     # also the api and worker
+python scripts/smoke_test.py http://localhost:8000              # is it up, and are the right doors shut
 ```
 
-3. **Start services:**
-```bash
-cd docker
-docker-compose up -d
-```
+To choose between candidate models, `python scripts/compare_models.py --tier reasoning --models a,b` runs the project's own prompts through each and prints a pass rate and speed per model (it makes real, billed calls).
 
-4. **Run MCP Host:**
-```bash
-python -m mcp_host.main
-```
+Add `--profile tools` to start the four tool services. The first image pull needs a few hundred MB of free disk. Provider keys (language model, Twilio, SendGrid, Stripe, Google) go in `.env.dev`; features without a key switch themselves off.
 
-Visit: `http://localhost:8000/docs` for API documentation
+## Deploy
 
-## 📁 Structure
+Railway, one service per process. `deploy/railway/topology.yaml` lists the services, volumes, resource caps and cost limits, and `scripts/check_railway_topology.py` checks it against the service configs. Runbooks for incidents, key rotation and restore are in `docs/runbooks/`.
 
-```
-mcp_host/                 # Main FastAPI application
-├── main.py              # Server with 6 endpoints
-├── config.py            # Configuration management
-├── models.py            # Pydantic request/response models
-├── auth.py              # JWT + Bcrypt authentication
-├── state.py             # State management (Redis/PostgreSQL)
-└── __init__.py
+## Contributing
 
-mcp_servers/             # MCP Server implementations
-├── base_server.py       # Base MCP server class
-├── calendar_server/     # Calendar MCP server (port 8001)
-└── gmail_server/        # Gmail MCP server (port 8002)
-
-docker/                  # Docker infrastructure
-├── docker-compose.yml   # 4 services: mcp-host, calendar, gmail, postgres, redis
-├── Dockerfile.mcp_host
-├── Dockerfile.mcp_servers
-└── init-scripts/
-    └── postgres/
-        └── 01-schema.sql
-
-tests/                   # Testing suite
-├── unit/               # Unit tests
-├── integration/        # Integration tests
-└── conftest.py         # Pytest configuration
-```
-
-## 🧰 Tech Stack
-
-**Languages & Frameworks:** Python, FastAPI, LangChain, LlamaIndex  
-**Cloud:** AWS (EC2, S3, Bedrock, CloudWatch)  
-**Vector Database:** Pinecone (AWS region)  
-**Containerization:** Docker  
-**CI/CD:** GitHub Actions  
-**Monitoring:** CloudWatch, Grafana  
-**Integrations:** Shopify API, Google Calendar API, Vendor Scraper
-
----
-
-## 🗂 Vector Database Configuration
-
-| Namespace | Purpose |
-|------------|----------|
-| `rag_kb` | Stores embeddings for RAGCHATBOT contextual retrieval |
-| `vendor_ingestion` | Holds vendor product data from scraper pipelines |
-| `mcp_context` | Maintains orchestration metadata and tool response logs |
-
-Stored and backed up to **AWS S3**, ensuring persistence and recovery.
-
----
-
-## 🚀 Deployment (AWS Free Tier Compatible)
-
-1. **Launch EC2 Instance**  
-   - Ubuntu 22.04 (t2.micro)  
-   - Open ports 22 & 8000  
-
-2. **Install Essentials**  
-   ```bash
-   sudo apt update && sudo apt install -y python3-pip docker.io git
-   ```
-
-3. **Run Containers**
-
-   ```bash
-   docker build -t mcpagent .
-   docker run -d -p 8000:8000 mcpagent
-   ```
-
-4. **Access API**
-
-   ```
-   http://<ec2-public-ip>:8000
-   ```
-
----
-
-## 🧩 Key Functionalities
-
-* **Single-Agent MCP Orchestration** – One MCP host managing multiple tool calls.
-* **RAGCHATBOT Integration** – AWS Bedrock generation powered by Pinecone retrieval.
-* **Vendor Data Pipeline** – Automated scraping, cleaning, and indexing.
-* **Appointment Management** – Integration with Google Calendar for scheduling.
-* **Product Automation** – Seamless Shopify updates via APIs.
-* **Monitoring & CI/CD** – GitHub Actions for deployment, CloudWatch for logs.
-
----
-
-## 🔒 Security & Observability
-
-* Role-based IAM permissions for Bedrock, Pinecone, and API keys.
-* Real-time orchestration monitoring with Grafana dashboards.
-* Unified observability of all MCP tool calls and responses.
-* Logging of all retriever and generator interactions for compliance.
-
----
-
-## 🧭 Future Roadmap
-
-* Integration with AWS Lambda for serverless retraining.
-* Expansion to hybrid-cloud setup (Azure AI + AWS Bedrock).
-* RAGCHATBOT fine-tuning using company-specific corpora.
-* Enhanced context tracing through OpenTelemetry instrumentation.
-
----
-
-## 📂 Repository Layout
-
-```
-├── mcp_host/             # Main FastAPI host & orchestration logic
-├── ragchatbot/           # RAG module (Retriever + Generator)
-├── vendor_scraper/       # Web scraping scripts
-├── integrations/         # Shopify & Google Calendar tools
-├── vector_db/            # Pinecone namespace scripts
-├── docker/               # Dockerfiles for each service
-├── .github/workflows/    # CI/CD pipeline
-└── README.md
-```
-
----
-
-## Architecture Diagram
-
-![MCPAgent Architecture](docs/diagram.svg)
-
-For the Mermaid source and an ASCII variant, see `docs/architecture_diagram.md` and `docs/diagram.mmd`.
-
----
-
-## 🧑‍💻 Author’s Note
-
-This project showcases how a **single MCP-driven agent** can orchestrate complex multi-tool automation — blending **RAG intelligence**, **retrieval workflows**, and **action pipelines** under a unified, containerized architecture.
-The design demonstrates **real-world production readiness** through AWS Bedrock, Pinecone integration, and enterprise observability.
-
-> “MCPAgent doesn’t just retrieve and respond — it *acts, coordinates, and scales intelligently*.”
-> — **Srivardhan Muthyala**
-
----
-
-If you want, I can now:
-- Add badges and CI status to the top of the README.
-- Add a short Getting Started script and sample env file.
-- Add a sequence diagram for a use case (appointment booking or vendor ingestion).
-
-Which should I do next?# AI_Agent_MCP
-# AI_Agent_MCP
+See `CONTRIBUTING.md` and `SECURITY.md`.

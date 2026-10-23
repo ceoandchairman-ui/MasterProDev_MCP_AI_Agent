@@ -1,0 +1,17 @@
+# Edge: custom domain, TLS and request limits in front of the API.
+# Placeholders until the domain is chosen; replace before production.
+
+domain:
+  api: api.example.com        # PLACEHOLDER: set in Railway (api > Settings > Networking > Custom Domain)
+  grafana: grafana.example.com  # PLACEHOLDER: login-protected dashboards
+tls: railway-managed          # Railway issues and renews certificates for custom domains
+redirect_http_to_https: true
+
+app_settings:                 # environment variables on the api service
+  TRUSTED_PROXY_HOPS: "1"     # Railway's edge is one proxy; client IPs come from the forwarded header
+  EDGE_REQUESTS_PER_MINUTE: "120"  # per client IP on chat, voice, upload, identity, session and account routes
+  CORS_ORIGINS: "https://www.example.com"  # PLACEHOLDER: sites allowed to embed the widget
+
+notes:
+  - Railway has no per-IP rate limit setting in config; limiting is done in the app (EdgeRateLimitMiddleware).
+  - Set TRUSTED_PROXY_HOPS to the number of proxies in front of the app. Too high lets clients spoof their IP.

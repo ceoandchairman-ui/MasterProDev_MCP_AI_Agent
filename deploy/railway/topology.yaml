@@ -1,0 +1,95 @@
+# Railway topology: the source of truth for what the dashboard must hold.
+# railway.toml (config-as-code) covers build and deploy only. Volumes, resource caps, variables,
+# domains and usage limits are set in the Railway dashboard; scripts/check_railway_topology.py
+# verifies that the repo's tomls and this file agree.
+#
+# Resource caps are starting values. Adjust them after the load test (scripts/load_test.py).
+
+environments:
+  staging:
+    api_replicas: 1
+  production:
+    api_replicas: 1  # raise to 2 only after the two-replica test passes (docs/ARCHITECTURE.md)
+
+cost:
+  monthly_budget_usd: 90
+  usage_alert_usd: [50, 75, 90]  # Railway usage alerts
+  hard_limit_usd: 150            # Railway spend limit; must stay above the budget
+
+services:
+  api:
+    config: api.toml
+    public: true
+    memory_mb: 1024
+    vcpu: 1
+  worker:
+    config: worker.toml
+    public: false
+    memory_mb: 1024
+    vcpu: 1
+  mcp-calendar:
+    config: mcp-calendar.toml
+    public: false
+    memory_mb: 256
+    vcpu: 0.25
+  mcp-gmail:
+    config: mcp-gmail.toml
+    public: false
+    memory_mb: 256
+    vcpu: 0.25
+  mcp-db:
+    config: mcp-db.toml
+    public: false
+    memory_mb: 512
+    vcpu: 0.5
+  mcp-quoting:
+    config: mcp-quoting.toml
+    public: false
+    memory_mb: 256
+    vcpu: 0.25
+  postgres:
+    image: postgres with pgvector
+    public: false
+    memory_mb: 1024
+    vcpu: 1
+    volume: {mount: /var/lib/postgresql/data, size_gb: 10}
+  redis-state:
+    image: redis-stack
+    public: false
+    memory_mb: 512
+    vcpu: 0.25
+    volume: {mount: /data, size_gb: 1}
+  redis-cache:
+    image: redis-stack
+    public: false
+    memory_mb: 512
+    vcpu: 0.25
+  weaviate:
+    image: weaviate
+    public: false
+    memory_mb: 2048
+    vcpu: 1
+    volume: {mount: /var/lib/weaviate, size_gb: 10}  # the compose file declares weaviate_data but never mounts it
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib
+    public: false
+    memory_mb: 256
+    vcpu: 0.25
+  prometheus:
+    image: prom/prometheus
+    public: false
+    memory_mb: 512
+    vcpu: 0.25
+    volume: {mount: /prometheus, size_gb: 5}
+  grafana:
+    image: grafana/grafana
+    public: true   # login required; the only public service besides api
+    memory_mb: 256
+    vcpu: 0.25
+    volume: {mount: /var/lib/grafana, size_gb: 1}
+
+networking:
+  # Private services are reached at <service>.railway.internal from inside the project.
+  # Only api and grafana get a public domain.
+  public_services: [api, grafana]
+  private_host_pattern: "{service}.railway.internal"

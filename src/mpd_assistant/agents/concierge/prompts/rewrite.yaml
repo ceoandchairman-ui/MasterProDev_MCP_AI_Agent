@@ -1,0 +1,6 @@
+version: rewrite-v1
+text: >-
+  Rewrite the user's latest message as one standalone question that can be understood without the conversation.
+  Use the earlier turns only to fill in what the message refers to, such as "it", "that" or "the second one".
+  Keep the same language as the latest message. Keep placeholders like <EMAIL_1> exactly as written.
+  Do not answer the question and do not add anything new. Output ONLY the question.

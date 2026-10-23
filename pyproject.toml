@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mpd-assistant"
+version = "0.1.0"
+description = "MasterProDev multi-agent conversational assistant (LangGraph, Postgres sessions, OpenTelemetry)"
+requires-python = ">=3.11"
+readme = "README.md"
+dependencies = [
+    "fastapi>=0.109",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.1",
+    "python-multipart>=0.0.12",
+    "slowapi>=0.1.9",
+    "python-jose>=3.3",
+    "bcrypt>=4.0",
+    "httpx>=0.27",
+    "pyyaml>=6.0",
+    "tenacity>=8.2.3",
+    "pybreaker>=1.1",
+    "cryptography>=42",
+    "phonenumbers>=8.13",
+    "tzdata>=2024.1",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "psycopg2-binary>=2.9",
+    "alembic>=1.13",
+    "redis>=5.0.1",
+    "langgraph>=0.2",
+    "langgraph-checkpoint-redis",
+    "langchain-core>=0.2.3",
+    "pgvector>=0.3",
+    "rank-bm25>=0.2.2",
+    "python-docx>=1.1",
+    "pypdf>=4.0",
+    "pillow>=10.0",
+    "presidio-analyzer",
+    "presidio-anonymizer",
+    "prometheus-client>=0.19",
+    "opentelemetry-api>=1.24",
+    "opentelemetry-sdk>=1.24",
+    "opentelemetry-exporter-otlp>=1.24",
+    "opentelemetry-instrumentation-fastapi",
+    "opentelemetry-instrumentation-httpx",
+]
+
+[project.optional-dependencies]
+ocr = [
+    "pytesseract>=0.3.10",  # also needs the tesseract binary (installed in the api and worker images)
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "ruff>=0.5",
+    "mypy>=1.8",
+]
+eval = [
+    "ragas",
+    "datasets",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mpd_assistant = ["**/*.yaml", "api/static/**/*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501", "UP006", "UP007", "UP035", "UP042"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "--basetemp=.pytest_tmp"
+markers = ["live: needs Postgres with pgvector and Redis Stack (deploy/compose.dev.yml); skipped when they are not running"]
