@@ -19,6 +19,7 @@ def make_engine(database_url: str, pool_size: int = 5, max_overflow: int = 5, st
     are detected before use, and the pool is bounded. Size it so that replicas x (pool_size + max_overflow) stays under
     the server's max_connections; put PgBouncer in front before raising it past that."""
     url = database_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres://", "postgresql://")
+    url = url.replace("postgresql://", "postgresql+psycopg2://", 1)  # newer SQLAlchemy defaults a bare postgresql:// to psycopg 3
     if url.startswith("sqlite"):
         return create_engine(url)
 

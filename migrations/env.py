@@ -14,7 +14,8 @@ def _url() -> str:
     if not url:
         raise RuntimeError("Set DATABASE_URL")
     # Alembic uses a sync driver; the app uses asyncpg.
-    return url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres://", "postgresql://")
+    url = url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres://", "postgresql://")
+    return url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 
 def run_migrations_offline() -> None:
