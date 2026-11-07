@@ -19,9 +19,9 @@ def make_engine(database_url: str, pool_size: int = 5, max_overflow: int = 5, st
     are detected before use, and the pool is bounded. Size it so that replicas x (pool_size + max_overflow) stays under
     the server's max_connections; put PgBouncer in front before raising it past that."""
     url = database_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres://", "postgresql://")
-    url = url.replace("postgresql://", "postgresql+psycopg2://", 1)  # newer SQLAlchemy defaults a bare postgresql:// to psycopg 3
     if url.startswith("sqlite"):
         return create_engine(url)
+    engine_url = url.replace("postgresql://", "postgresql+psycopg2://", 1)  # newer SQLAlchemy defaults a bare postgresql:// to psycopg 3; libpq itself needs the plain scheme
 
     def connect():
         import psycopg2
@@ -29,7 +29,7 @@ def make_engine(database_url: str, pool_size: int = 5, max_overflow: int = 5, st
         options = f"-c statement_timeout={statement_timeout_ms}" if statement_timeout_ms else None  # a stuck query ends instead of holding a connection
         return retry_sync(lambda: psycopg2.connect(url, connect_timeout=5, options=options), attempts=3, base_delay=0.3, retry_on=(psycopg2.OperationalError,))
 
-    return create_engine(url, creator=connect, pool_pre_ping=True, pool_size=pool_size, max_overflow=max_overflow, pool_recycle=1800, pool_timeout=5)
+    return create_engine(engine_url, creator=connect, pool_pre_ping=True, pool_size=pool_size, max_overflow=max_overflow, pool_recycle=1800, pool_timeout=5)
 
 
 def check_engine(engine: Engine) -> bool:
