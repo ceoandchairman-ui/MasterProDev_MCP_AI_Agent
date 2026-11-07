@@ -34,14 +34,13 @@ locals {
   database_url = "postgresql://$${{postgres.POSTGRES_USER}}:$${{postgres.POSTGRES_PASSWORD}}@$${{postgres.RAILWAY_PRIVATE_DOMAIN}}:5432/$${{postgres.POSTGRES_DB}}"
   redis_url    = "redis://$${{redis-state.RAILWAY_PRIVATE_DOMAIN}}:6379/0"
 
-  mcp_db_enabled = var.mcp_db_url != null
+  mcp_db_enabled = nonsensitive(var.mcp_db_url != null)
 
   # Ports are fixed in each service's Dockerfile CMD; PORT is set to match so Railway's health check probes the right one.
   mcp_services = merge(
     {
       "mcp-calendar" = { dir = "mcp_calendar", port = 8001 }
       "mcp-gmail"    = { dir = "mcp_gmail", port = 8002 }
-      "mcp-quoting"  = { dir = "mcp_quoting", port = 8003 }
     },
     local.mcp_db_enabled ? { "mcp-db" = { dir = "mcp_db", port = 8004 } } : {}
   )
