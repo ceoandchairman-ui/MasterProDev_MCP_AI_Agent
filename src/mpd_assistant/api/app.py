@@ -105,7 +105,9 @@ def _checkpointer(redis_url: str, production: bool):
     try:
         from langgraph.checkpoint.redis import RedisSaver
 
-        saver = RedisSaver(redis_url=redis_url)  # from_conn_string is a context manager in current releases, not a saver
+        from mpd_assistant.graph.threaded_saver import with_async_methods
+
+        saver = with_async_methods(RedisSaver)(redis_url=redis_url)  # from_conn_string is a context manager now; the graph runs async
         saver.setup()
         return saver
     except Exception:
