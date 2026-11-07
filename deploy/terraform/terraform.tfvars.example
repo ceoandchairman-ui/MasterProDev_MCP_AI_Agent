@@ -1,0 +1,34 @@
+# Railway Infrastructure Configuration Example
+# Copy to terraform.tfvars and fill in with actual values
+
+project_name        = "mpd-assistant"
+project_description = "MasterProDev multi-agent conversational assistant"
+region              = "us-west"
+github_repo         = "ceoandchairman-ui/MasterProDev_MCP_AI_Agent"
+github_branch       = "ai-agent-mpd-dev-branch"
+
+# Database
+postgres_password = "YOUR_POSTGRES_PASSWORD_HERE"
+postgres_user     = "mpd"
+postgres_db       = "mpd"
+
+# Application Secrets (from .env.dev or generated)
+huggingface_api_key = "hf_YOUR_TOKEN_HERE"
+secret_key          = "YOUR_SECRET_KEY_HERE"
+data_encryption_key = "YOUR_DATA_ENCRYPTION_KEY_HERE"  # Fernet format
+blind_index_key     = "YOUR_BLIND_INDEX_KEY_HERE"      # Fernet format
+mcp_service_key     = "YOUR_MCP_SERVICE_KEY_HERE"
+metrics_token       = "YOUR_METRICS_TOKEN_HERE"
+
+# Models
+huggingface_model   = "meta-llama/Llama-2-7b-chat"
+llm_model_cheap     = null  # Optional: use different model for cheap tier
+llm_model_reasoning = null  # Optional: use different model for reasoning tier
+llm_model_compress  = null  # Optional: use different model for compression tier
+
+# Deployment
+api_replicas = 1  # Set to 2 only after two-replica test passes
+
+# Cost Management
+monthly_budget_usd = 90
+hard_limit_usd     = 150
