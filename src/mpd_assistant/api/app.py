@@ -105,7 +105,7 @@ def _checkpointer(redis_url: str, production: bool):
     try:
         from langgraph.checkpoint.redis import RedisSaver
 
-        saver = RedisSaver.from_conn_string(redis_url)
+        saver = RedisSaver(redis_url=redis_url)  # from_conn_string is a context manager in current releases, not a saver
         saver.setup()
         return saver
     except Exception:

@@ -191,10 +191,10 @@ def test_redis_checkpoints_survive_a_process_restart(stack):
     from langgraph.checkpoint.redis import RedisSaver
 
     thread = {"configurable": {"thread_id": "it-" + uuid.uuid4().hex}}
-    first = RedisSaver.from_conn_string(REDIS_URL)
+    first = RedisSaver(redis_url=REDIS_URL)
     first.setup()
     assert _graph(first).invoke({"items": []}, thread)["items"] == ["turn-1"]
-    second = RedisSaver.from_conn_string(REDIS_URL)  # a fresh saver and graph, as after a redeploy
+    second = RedisSaver(redis_url=REDIS_URL)  # a fresh saver and graph, as after a redeploy
     second.setup()
     assert _graph(second).invoke({"items": []}, thread)["items"] == ["turn-1", "turn-2"]
 
