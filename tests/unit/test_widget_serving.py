@@ -26,6 +26,7 @@ def test_the_hosted_page_uses_the_widget_with_a_strict_policy():
     csp = page.headers["content-security-policy"]
     assert "script-src 'self'" in csp and "'unsafe-inline'" not in csp and "frame-ancestors 'none'" in csp
     assert 'src="/widget/chat-widget.js"' in page.text and 'data-mode="full"' in page.text
+    assert 'href="/widget/widget-page.css"' in page.text and client().get("/widget/widget-page.css").status_code == 200
 
 
 @pytest.mark.parametrize("path", ["/widget/index.html", "/widget/..%2Fmain.py", "/widget/%2e%2e/app.py", "/widget/secrets"])
