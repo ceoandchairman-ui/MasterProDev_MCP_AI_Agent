@@ -58,6 +58,15 @@ ADMIN_UI_HEADERS = {
     "Cache-Control": "no-store",
 }
 
+WIDGET_UI_DIR = Path(__file__).parent / "static" / "widget"
+WIDGET_ASSETS = {"chat-widget.js": "text/javascript", "chat-widget.css": "text/css"}  # a fixed list, so no path can reach anything else
+WIDGET_PAGE_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "Cache-Control": "no-store",
+}
+# Other sites embed the script with a plain <script src>; it must be loadable cross-origin and may be cached briefly.
+WIDGET_ASSET_HEADERS = {"Cache-Control": "public, max-age=300", "Cross-Origin-Resource-Policy": "cross-origin"}
+
 MAX_UPLOADS_PER_HOUR = 20
 MAX_VOICE_PER_HOUR = 60
 EDGE_LIMITED_PREFIXES = ("/v2/chat", "/v2/voice", "/v2/upload", "/v2/identity", "/v2/session", "/v2/account")
@@ -304,6 +313,18 @@ def create_app(services: Services) -> FastAPI:
         if services.admin is None or media is None:
             raise HTTPException(status_code=404, detail="Not found")
         return FileResponse(ADMIN_UI_DIR / asset, media_type=media, headers=ADMIN_UI_HEADERS)
+
+    @app.get("/widget", include_in_schema=False)
+    async def widget_page():
+        """A full-page chat that uses the widget; other sites embed /widget/chat-widget.js directly."""
+        return FileResponse(WIDGET_UI_DIR / "index.html", media_type="text/html", headers=WIDGET_PAGE_HEADERS)
+
+    @app.get("/widget/{asset}", include_in_schema=False)
+    async def widget_asset(asset: str):
+        media = WIDGET_ASSETS.get(asset)
+        if media is None:
+            raise HTTPException(status_code=404, detail="Not found")
+        return FileResponse(WIDGET_UI_DIR / asset, media_type=media, headers=WIDGET_ASSET_HEADERS)
 
     @app.get("/v2/admin/overview", include_in_schema=False)
     def admin_overview(request: Request):

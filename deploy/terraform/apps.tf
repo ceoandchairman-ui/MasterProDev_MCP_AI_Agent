@@ -50,6 +50,7 @@ resource "railway_variable_collection" "backend" {
       { name = "ENV", value = "production" },
       { name = "PORT", value = "8000" },
       { name = "PUBLIC_DOMAIN", value = "https://${railway_service_domain.backend.domain}" },
+      { name = "CORS_ORIGINS", value = var.cors_origins },
       { name = "MCP_SERVICE_KEY", value = random_password.mcp_service_key.result },
       { name = "METRICS_TOKEN", value = random_password.metrics_token.result },
     ],

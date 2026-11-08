@@ -6,12 +6,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from mpd_assistant.api.main import ADMIN_UI_DIR, Services, create_app
+from mpd_assistant.api.main import ADMIN_UI_DIR, WIDGET_UI_DIR, Services, create_app
 from mpd_assistant.business.admin import AdminService
 from mpd_assistant.business.escalations import EscalationService, InMemoryEscalations
 
 ROOT = Path(__file__).resolve().parents[2]
-WIDGET_JS = ROOT / "web" / "widget" / "chat-widget.js"
+WIDGET_JS = WIDGET_UI_DIR / "chat-widget.js"
 ADMIN_JS = ADMIN_UI_DIR / "admin.js"
 
 

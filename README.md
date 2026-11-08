@@ -10,7 +10,7 @@ Under restructuring. The legacy application in `mcp_host/` and `mcp_servers/` st
 
 - `src/mpd_assistant/` the application: core, api (and the staff console under `api/static/admin`), graph, agents, routing, responses, memory, sessions, identity, privacy, cache, retrieval, tools, business, evaluation, observability, multimodal, ingestion, messaging, channels, worker
 - `services/` tool services, one image each: Calendar, Gmail, company data, quoting (shared base in `services/_common`)
-- `web/widget/` the embeddable chat widget (no dependencies)
+- `src/mpd_assistant/api/static/widget/` the embeddable chat widget (no dependencies), served by the backend at `/widget`
 - `mcp_host/`, `mcp_servers/` legacy code, removed once the new pipeline has parity
 - `migrations/`, `evals/`, `observability/`, `deploy/`, `scripts/`, `tests/`, `docs/`
 

@@ -20,6 +20,12 @@ variable "backend_subdomain" {
   default     = "mpd-assistant-backend"
 }
 
+variable "cors_origins" {
+  description = "Comma-separated site origins allowed to call the backend from a browser (the sites that embed the widget)"
+  type        = string
+  default     = "https://masterprodev.com,https://www.masterprodev.com"
+}
+
 variable "mcp_db_url" {
   description = "Connection string for the read-only Postgres role used by mcp-db. Leave null until that role exists: mcp-db is not created without it."
   type        = string

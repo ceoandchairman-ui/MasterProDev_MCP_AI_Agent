@@ -1,11 +1,13 @@
 /* MasterProDev chat widget. No dependencies, no innerHTML: every piece of model or user text goes in as a text node,
    so nothing the assistant says can inject markup. The session id lives in sessionStorage only (no tokens, no cookies).
-   Embed:  <script src="chat-widget.js" data-api="https://api.example.com" defer></script>
-   Options: data-mode="full" renders full-page instead of a bubble. */
+   Embed:  <script src="https://YOUR-BACKEND/widget/chat-widget.js" defer></script>
+   Options: data-api="https://other-backend" overrides the backend (default: the server the script came from);
+            data-mode="full" renders full-page instead of a bubble. */
 (function () {
   "use strict";
   var script = document.currentScript;
-  var API = ((script && script.getAttribute("data-api")) || "").replace(/\/$/, "");
+  var origin = script && script.src ? new URL(script.src, location.href).origin : "";
+  var API = ((script && script.getAttribute("data-api")) || origin).replace(/\/$/, "");
   var FULL = script && script.getAttribute("data-mode") === "full";
   var BASE = script && script.src ? script.src.replace(/[^/]*$/, "") : "";
   var LANG = (navigator.language || "en").toLowerCase().indexOf("fr") === 0 ? "fr" : "en";
