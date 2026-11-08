@@ -53,7 +53,10 @@ def test_console_assets_are_shipped_as_package_data():
 
 
 # --- static guarantees for both scripts --------------------------------------------------
-@pytest.mark.parametrize("script", [WIDGET_JS, ADMIN_JS], ids=["widget", "console"])
+LANDING_JS = WIDGET_UI_DIR / "landing.js"
+
+
+@pytest.mark.parametrize("script", [WIDGET_JS, ADMIN_JS, LANDING_JS], ids=["widget", "console", "landing"])
 def test_scripts_never_build_markup_from_text(script):
     source = script.read_text(encoding="utf-8")
     code = re.sub(r"/\*.*?\*/", "", source, flags=re.S)  # comments may mention the banned words

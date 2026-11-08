@@ -3,10 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MasterProDev Assistant</title>
+  <title>Master Pro Dev</title>
   <link rel="stylesheet" href="/widget/widget-page.css">
 </head>
 <body>
-  <script src="/widget/chat-widget.js" data-mode="full" defer></script>
+  <div class="mpd-shell">
+    <main class="mpd-content">
+      <section class="mpd-hero" id="hero"><h1>Master Pro Dev</h1></section>
+      <section class="mpd-section" aria-labelledby="pillars-title">
+        <h2 id="pillars-title"></h2>
+        <div class="mpd-pillars" id="pillars"></div>
+      </section>
+    </main>
+    <aside class="mpd-chat-slot" id="chat-slot" aria-label="Chat with the Master Pro Dev assistant"></aside>
+  </div>
+  <script src="/widget/chat-widget.js" data-mode="full" data-mount="#chat-slot" defer></script>
+  <script src="/widget/landing.js" defer></script>
 </body>
 </html>

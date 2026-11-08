@@ -1,7 +1,9 @@
-/* Only the hosted /widget page uses this: the MasterProDev brand gradient behind the chat card. */
+/* Only the hosted /widget page uses this: the brand gradient, the company content and the chat card side by side. */
 body {
   margin: 0;
   min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #202123;
   background: linear-gradient(135deg, #00c896 0%, #ffb800 40%, #2563eb 80%, #009977 100%);
   background-size: 400% 400%;
   animation: gradientShift 15s ease infinite;
@@ -12,3 +14,34 @@ body {
   100% { background-position: 0% 50%; }
 }
 @media (prefers-reduced-motion: reduce) { body { animation: none; } }
+
+.mpd-shell { max-width: 1280px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 24px; align-items: start; }
+.mpd-content { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+
+.mpd-hero, .mpd-section { background: #ffffff; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); padding: 28px 32px; }
+.mpd-hero h1 { margin: 0 0 10px; font-size: 36px; line-height: 1.1; letter-spacing: -0.02em; }
+.mpd-eyebrow { margin: 0 0 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #00805f; }
+.mpd-hero-tagline { margin: 0 0 14px; font-size: 20px; font-weight: 600; line-height: 1.35; color: #202123; }
+.mpd-hero-text { margin: 0 0 10px; font-size: 15px; line-height: 1.6; color: #3f3f46; }
+.mpd-meta { margin: 0; font-size: 13px; line-height: 1.5; color: #71717a; }
+
+.mpd-section h2 { margin: 0 0 16px; font-size: 18px; letter-spacing: -0.01em; }
+.mpd-pillars { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.mpd-pillar { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; text-align: left; padding: 16px; font: inherit; color: inherit; background: #fafafa; border: 1px solid #e8e8e8; border-radius: 12px; cursor: pointer; transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
+.mpd-pillar:hover { transform: translateY(-2px); border-color: #00c896; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08); }
+.mpd-pillar:focus-visible { outline: 2px solid #00c896; outline-offset: 2px; }
+.mpd-pillar-num { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border-radius: 8px; background: #00805f; color: #ffffff; font-size: 13px; font-weight: 700; }
+.mpd-pillar-name { font-size: 15px; font-weight: 600; line-height: 1.3; }
+.mpd-pillar-sum { font-size: 13px; line-height: 1.5; color: #52525b; }
+
+.mpd-chat-slot { position: sticky; top: 24px; }
+.mpd-chat-slot .mpd-full { display: block; min-height: 0; padding: 0; }
+.mpd-chat-slot .mpd-full .mpd-panel { max-width: none; height: calc(100vh - 48px); max-height: none; border-radius: 16px; }
+
+@media (max-width: 980px) {
+  .mpd-shell { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+  .mpd-chat-slot { position: static; }
+  .mpd-chat-slot .mpd-full .mpd-panel { height: min(640px, 80vh); }
+  .mpd-hero, .mpd-section { padding: 22px 20px; }
+  .mpd-hero h1 { font-size: 30px; }
+}

@@ -9,6 +9,7 @@
   var origin = script && script.src ? new URL(script.src, location.href).origin : "";
   var API = ((script && script.getAttribute("data-api")) || origin).replace(/\/$/, "");
   var FULL = script && script.getAttribute("data-mode") === "full";
+  var MOUNT = script && script.getAttribute("data-mount");
   var BASE = script && script.src ? script.src.replace(/[^/]*$/, "") : "";
   var LANG = (navigator.language || "en").toLowerCase().indexOf("fr") === 0 ? "fr" : "en";
 
@@ -93,7 +94,10 @@
   var panel = el("section", "mpd-panel");
   panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", T.title);
   var header = el("header", "mpd-header");
-  header.appendChild(el("span", "mpd-title", T.title));
+  var nameEl = el("span", "mpd-name", T.title), taglineEl = el("span", "mpd-tagline");
+  var titleBox = el("span", "mpd-titletext"); titleBox.appendChild(nameEl); titleBox.appendChild(taglineEl);
+  var titleEl = el("span", "mpd-title"); titleEl.appendChild(titleBox);
+  header.appendChild(titleEl);
   var verifyBtn = el("button", "mpd-link-btn", T.verify); verifyBtn.type = "button";
   var closeBtn = el("button", "mpd-icon-btn", "×"); closeBtn.type = "button"; closeBtn.setAttribute("aria-label", T.close);
   var acctBtn = el("button", "mpd-link-btn", T.account); acctBtn.type = "button"; acctBtn.hidden = true;
@@ -115,7 +119,7 @@
 
   var bubble = el("button", "mpd-bubble", "\u{1F4AC}"); bubble.type = "button"; bubble.setAttribute("aria-label", T.open);
   root.appendChild(panel); if (!FULL) root.appendChild(bubble);
-  document.body.appendChild(root);
+  (MOUNT && document.querySelector(MOUNT) || document.body).appendChild(root);
   if (!FULL) panel.hidden = true;
 
   function scroll() { log.scrollTop = log.scrollHeight; }
@@ -354,6 +358,25 @@
     acctPanel.appendChild(btn(T.close2, function () { acctPanel.hidden = true; }, "mpd-link-btn"));
   }
   acctBtn.addEventListener("click", function () { if (acctPanel.hidden) { buildAccount(); acctPanel.hidden = false; idPanel.hidden = true; } else acctPanel.hidden = true; });
+
+  // --- company content: the name, tagline and service pillars come from company.json, which is built from the company's own
+  // documents (scripts/build_company_content.py). It is English only, so other languages keep the plain header.
+  var FEATURED_PILLARS = [5, 6, 8, 10];  // AI Agents, AI Engineering & Machine Learning, Software Development & IT Consulting, Cloud & DevOps / MLOps
+  function showCompany(c) {
+    if (LANG !== "en" || !c || !c.name) return;
+    nameEl.textContent = c.name;
+    if (c.tagline) taglineEl.textContent = c.tagline;
+    panel.setAttribute("aria-label", c.name);
+    if (log.childNodes.length || busy) return;
+    bubbleMsg("bot", "Welcome to " + c.name + ". " + (c.tagline || "") + " Choose a topic below or ask me anything.");
+    (c.pillars || []).filter(function (p) { return FEATURED_PILLARS.indexOf(p.number) >= 0; }).forEach(function (p) {
+      var b = el("button", "mpd-chip", p.name); b.type = "button";
+      b.addEventListener("click", function () { ask("Tell me about " + p.name, p.name); });
+      quick.appendChild(b);
+    });
+  }
+  fetch(BASE + "company.json").then(function (r) { return r.ok ? r.json() : null; }).then(showCompany).catch(function () {});
+  if (FULL) window.MPDWidget = { ask: function (message, shown) { ask(message, shown); } };
 
   if (sessionId) {
     fetch(API + "/v2/session/" + encodeURIComponent(sessionId)).then(function (r) {

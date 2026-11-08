@@ -59,7 +59,10 @@ ADMIN_UI_HEADERS = {
 }
 
 WIDGET_UI_DIR = Path(__file__).parent / "static" / "widget"
-WIDGET_ASSETS = {"chat-widget.js": "text/javascript", "chat-widget.css": "text/css", "widget-page.css": "text/css"}  # a fixed list, so no path can reach anything else
+WIDGET_ASSETS = {
+    "chat-widget.js": "text/javascript", "chat-widget.css": "text/css", "widget-page.css": "text/css",
+    "landing.js": "text/javascript", "company.json": "application/json",
+}  # a fixed list, so no path can reach anything else
 WIDGET_PAGE_HEADERS = {
     "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     "Cache-Control": "no-store",

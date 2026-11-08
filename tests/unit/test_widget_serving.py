@@ -29,6 +29,33 @@ def test_the_hosted_page_uses_the_widget_with_a_strict_policy():
     assert 'href="/widget/widget-page.css"' in page.text and client().get("/widget/widget-page.css").status_code == 200
 
 
+def test_company_content_is_served_and_matches_the_company_documents():
+    import importlib.util
+    import json
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[2] / "scripts" / "build_company_content.py"
+    spec = importlib.util.spec_from_file_location("build_company_content", script)
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+
+    served = client().get("/widget/company.json")
+    assert served.status_code == 200 and "application/json" in served.headers["content-type"]
+    content = served.json()
+    assert content == builder.build(), "company.json is out of date: run python scripts/build_company_content.py"
+    assert content["name"] and content["tagline"] and content["overview"] and content["subtitle"]
+    assert [p["number"] for p in content["pillars"]] == list(range(1, 13)) and all(p["name"] and p["summary"] for p in content["pillars"])
+    assert json.loads((WIDGET_UI_DIR / "company.json").read_text(encoding="utf-8")) == content
+
+
+def test_the_hosted_page_places_the_chat_beside_the_company_content():
+    c = client()
+    page = c.get("/widget").text
+    assert 'id="hero"' in page and 'id="pillars"' in page and 'id="chat-slot"' in page and 'data-mount="#chat-slot"' in page
+    landing = c.get("/widget/landing.js")
+    assert landing.status_code == 200 and "javascript" in landing.headers["content-type"] and "company.json" in landing.text
+
+
 @pytest.mark.parametrize("path", ["/widget/index.html", "/widget/..%2Fmain.py", "/widget/%2e%2e/app.py", "/widget/secrets"])
 def test_nothing_else_under_widget_is_reachable(path):
     assert client().get(path).status_code == 404
