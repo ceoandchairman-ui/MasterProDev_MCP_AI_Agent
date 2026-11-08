@@ -35,6 +35,7 @@ from mpd_assistant.multimodal.uploads import UploadRejected
 from mpd_assistant.multimodal.voice import MAX_AUDIO_BYTES, VoiceError
 from mpd_assistant.observability.metrics import DEGRADED, PAYMENTS, REGISTRY, UPLOADS
 from mpd_assistant.responses.engine import render
+from mpd_assistant.responses.presentation import avatar_state, spoken_text
 from mpd_assistant.sessions.service import SessionService
 
 MAX_MESSAGE_CHARS = 4000
@@ -117,6 +118,8 @@ def _sentences(text: str) -> list:
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
     session_id: str | None = None
+    mode: Literal["text", "voice", "hybrid"] = "text"  # voice and hybrid add a short spoken version for the client to read aloud
+    avatar: bool = False  # true adds the avatar state the client should show
 
 
 class ChatOut(BaseModel):
@@ -124,6 +127,19 @@ class ChatOut(BaseModel):
     session_id: str
     escalated: bool = False
     reference: str | None = None
+    spoken: str | None = None
+    avatar_state: str | None = None
+
+
+def _presented(body: ChatIn, reply: str, intent: str = "", escalated: bool = False) -> dict:
+    """The mode-specific extras for a reply; empty for plain text without an avatar, so older clients see no change."""
+    extras = {}
+    spoken = spoken_text(reply, body.mode)
+    if spoken:
+        extras["spoken"] = spoken
+    if body.avatar:
+        extras["avatar_state"] = avatar_state(intent, escalated, reply)
+    return extras
 
 
 class StartIn(BaseModel):
@@ -466,7 +482,8 @@ def create_app(services: Services) -> FastAPI:
         if services.kv is not None:
             limit = VERIFIED_DAILY_MESSAGES if session.verified else GUEST_DAILY_MESSAGES
             if await run_in_threadpool(services.kv.incr, f"quota:{session.id}", 86400) > limit:
-                return ChatOut(reply=render("rate_limited", "en"), session_id=session.id)
+                limited = render("rate_limited", "en")
+                return ChatOut(reply=limited, session_id=session.id, **_presented(body, limited, "rate_limited"))
         result = await services.chat.chat(
             session.thread_id, body.message, verified=session.verified, user_id=session.user_id, session_row=session.id
         )
@@ -476,7 +493,10 @@ def create_app(services: Services) -> FastAPI:
             except Exception as exc:
                 # A lost history row is better than a failed reply; it shows up in the metric and the log.
                 DEGRADED.labels(infrastructure_failure(exc) or "turn_record").inc()
-        return ChatOut(reply=result.reply, session_id=session.id, escalated=result.escalated, reference=result.reference)
+        return ChatOut(
+            reply=result.reply, session_id=session.id, escalated=result.escalated, reference=result.reference,
+            **_presented(body, result.reply, result.intent, result.escalated),
+        )
 
     @app.post("/v2/session", status_code=201)
     def new_session():
@@ -572,11 +592,15 @@ def create_app(services: Services) -> FastAPI:
                         yield ": keepalive\n\n"
                 out = task.result()
             except Exception:
-                yield _sse({"type": "error", "text": render("temporary_error", "en")})
+                failure = render("temporary_error", "en")
+                yield _sse({"type": "error", "text": failure, **_presented(body, failure, "error")})
                 return
             for piece in _sentences(out.reply):
                 yield _sse({"type": "chunk", "text": piece})
-            yield _sse({"type": "done", "session_id": out.session_id, "escalated": out.escalated, "reference": out.reference})
+            yield _sse({
+                "type": "done", "session_id": out.session_id, "escalated": out.escalated, "reference": out.reference,
+                **({"spoken": out.spoken} if out.spoken else {}), **({"avatar_state": out.avatar_state} if out.avatar_state else {}),
+            })
 
         return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 

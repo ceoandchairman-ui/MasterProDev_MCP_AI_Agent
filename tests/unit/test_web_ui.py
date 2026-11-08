@@ -87,6 +87,14 @@ def test_widget_account_panel_covers_the_account_api():
     assert "noopener" in code  # the Google tab cannot reach back into the page
 
 
+def test_widget_sends_the_reply_style_and_uses_the_avatar_state_and_spoken_text():
+    code = WIDGET_JS.read_text(encoding="utf-8")
+    for needed in ("mode: mode", "avatar: avatarOn", "ev.avatar_state", "ev.spoken", "speechSynthesis", 'data-master', "mpd_mode"):
+        assert needed in code, needed
+    for state in ("idle", "listening", "thinking", "delighted", "helpful"):
+        assert f'data-state="{state}"' in (WIDGET_UI_DIR / "chat-widget.css").read_text(encoding="utf-8") or state == "idle"
+
+
 def test_console_calls_the_admin_routes_with_the_staff_token_only():
     code = ADMIN_JS.read_text(encoding="utf-8")
     assert "Authorization" in code and "localStorage" not in code  # the token lives in the tab, not on disk

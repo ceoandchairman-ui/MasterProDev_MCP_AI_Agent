@@ -24,7 +24,9 @@
       googleOff: "Disconnect Google", googleOn: "Google is connected.", googleNone: "Google is not connected.", googleOpened: "Finish connecting in the new tab.",
       memoryOn: "Remember me", memoryOff: "Stop remembering", memoryShow: "What do you remember?", memoryNone: "Nothing is remembered.", memoryForget: "Forget everything",
       memoryDone: "Done.", download: "Download my data", del: "Delete my account", delHint: 'Type DELETE to confirm', deleted: "Your account was deleted.",
-      endChat: "End this conversation", ended: "Conversation ended." },
+      endChat: "End this conversation", ended: "Conversation ended.",
+      modeChat: "Chat", modeVoice: "Voice", modeHybrid: "Hybrid", avatarLabel: "Avatar", modes: "Reply style",
+      stateIdle: "Ready", stateListening: "Listening", stateThinking: "Thinking", stateDelighted: "Delighted", stateHelpful: "Here to help", speaking: "Speaking" },
     fr: { title: "Assistant MasterProDev", placeholder: "Écrivez votre message", send: "Envoyer", open: "Ouvrir le clavardage", close: "Fermer",
       thinking: "Un instant...", yes: "Oui", no: "Non", verify: "Vérifier mon identité", name: "Nom complet", email: "Courriel", phone: "Téléphone mobile",
       sendCodes: "Envoyer les codes", emailCode: "Code reçu par courriel", phoneCode: "Code reçu par texto", confirm: "Confirmer", attach: "Joindre un fichier",
@@ -35,7 +37,9 @@
       googleOff: "Déconnecter Google", googleOn: "Google est connecté.", googleNone: "Google n'est pas connecté.", googleOpened: "Terminez la connexion dans le nouvel onglet.",
       memoryOn: "Se souvenir de moi", memoryOff: "Arrêter de se souvenir", memoryShow: "De quoi vous souvenez-vous ?", memoryNone: "Rien n'est mémorisé.", memoryForget: "Tout oublier",
       memoryDone: "C'est fait.", download: "Télécharger mes données", del: "Supprimer mon compte", delHint: "Tapez DELETE pour confirmer", deleted: "Votre compte a été supprimé.",
-      endChat: "Terminer cette conversation", ended: "Conversation terminée." }
+      endChat: "Terminer cette conversation", ended: "Conversation terminée.",
+      modeChat: "Texte", modeVoice: "Voix", modeHybrid: "Hybride", avatarLabel: "Avatar", modes: "Style de réponse",
+      stateIdle: "Prêt", stateListening: "À l'écoute", stateThinking: "Réflexion", stateDelighted: "Ravi", stateHelpful: "Pour vous aider", speaking: "Parle" }
   }[LANG];
 
   function el(tag, cls, text) {
@@ -103,6 +107,59 @@
   var acctBtn = el("button", "mpd-link-btn", T.account); acctBtn.type = "button"; acctBtn.hidden = true;
   header.appendChild(verifyBtn); header.appendChild(acctBtn); if (!FULL) header.appendChild(closeBtn);
 
+  // --- reply style (chat, voice, hybrid), the optional avatar, and the Master View test strip ---
+  function stored(key) { try { return sessionStorage.getItem(key); } catch (e) { return null; } }
+  function store(key, value) { try { sessionStorage.setItem(key, value); } catch (e) {} }
+  var mode = ["text", "voice", "hybrid"].indexOf(stored("mpd_mode")) >= 0 ? stored("mpd_mode") : "text";
+  var avatarOn = stored("mpd_avatar") === "1";
+  var MASTER = (script && script.getAttribute("data-master") === "true") || /[?&]master=1\b/.test(location.search);
+
+  var modebar = el("div", "mpd-modebar"); modebar.setAttribute("role", "group"); modebar.setAttribute("aria-label", T.modes);
+  var modeButtons = {};
+  [["text", T.modeChat], ["voice", T.modeVoice], ["hybrid", T.modeHybrid]].forEach(function (pair) {
+    var b = el("button", "mpd-mode", pair[1]); b.type = "button";
+    b.addEventListener("click", function () { setMode(pair[0]); });
+    modeButtons[pair[0]] = b; modebar.appendChild(b);
+  });
+  var avatarBtn = el("button", "mpd-mode mpd-avatar-toggle", T.avatarLabel); avatarBtn.type = "button";
+  avatarBtn.addEventListener("click", function () { avatarOn = !avatarOn; store("mpd_avatar", avatarOn ? "1" : "0"); renderStyle(); });
+  modebar.appendChild(avatarBtn);
+
+  var avatarBox = el("div", "mpd-avatar"); avatarBox.hidden = true;
+  var face = el("div", "mpd-face"); face.setAttribute("aria-hidden", "true");
+  face.appendChild(el("span", "mpd-eye")); face.appendChild(el("span", "mpd-eye")); face.appendChild(el("span", "mpd-mouth"));
+  var avatarLabel = el("span", "mpd-avatar-label"); avatarLabel.setAttribute("role", "status");
+  avatarBox.appendChild(face); avatarBox.appendChild(avatarLabel);
+  var avatarState = "idle", speaking = false;
+  function paintAvatar() {
+    avatarBox.setAttribute("data-state", avatarState);
+    avatarBox.setAttribute("data-speaking", speaking ? "true" : "false");
+    var names = { idle: T.stateIdle, listening: T.stateListening, thinking: T.stateThinking, delighted: T.stateDelighted, helpful: T.stateHelpful };
+    avatarLabel.textContent = speaking ? T.speaking : (names[avatarState] || T.stateIdle);
+  }
+  function setAvatar(state) { avatarState = state; paintAvatar(); }
+  function setMode(next) {
+    mode = next; store("mpd_mode", mode);
+    if (mode === "text" && window.speechSynthesis) window.speechSynthesis.cancel();
+    renderStyle();
+  }
+  function renderStyle() {
+    Object.keys(modeButtons).forEach(function (k) { modeButtons[k].setAttribute("aria-pressed", String(k === mode)); });
+    avatarBtn.setAttribute("aria-pressed", String(avatarOn));
+    avatarBox.hidden = !avatarOn; paintAvatar();
+  }
+  // Read a reply aloud with the browser's own speech engine (no key, no server audio).
+  function speak(text, onStart) {
+    if (!text || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text); u.lang = LANG === "fr" ? "fr-CA" : "en-US";
+    u.onstart = function () { speaking = true; paintAvatar(); if (onStart) onStart(); };
+    u.onend = u.onerror = function () { speaking = false; paintAvatar(); };
+    window.speechSynthesis.speak(u);
+  }
+  var master = el("div", "mpd-master"); master.hidden = !MASTER;
+  function masterReport(parts) { master.textContent = parts.join("  |  "); }
+
   var log = el("div", "mpd-log"); log.setAttribute("role", "log"); log.setAttribute("aria-live", "polite");
   var quick = el("div", "mpd-quick");
   var idPanel = el("form", "mpd-identity"); idPanel.hidden = true;
@@ -115,7 +172,8 @@
   var mic = el("button", "mpd-icon-btn", "\u{1F3A4}"); mic.type = "button"; mic.setAttribute("aria-label", T.mic);
   var send = el("button", "mpd-send", T.send); send.type = "submit";
   [attach, input, mic, send, fileInput].forEach(function (n) { form.appendChild(n); });
-  [header, log, quick, idPanel, acctPanel, form].forEach(function (n) { panel.appendChild(n); });
+  [header, modebar, avatarBox, log, quick, idPanel, acctPanel, master, form].forEach(function (n) { panel.appendChild(n); });
+  renderStyle();
 
   var bubble = el("button", "mpd-bubble", "\u{1F4AC}"); bubble.type = "button"; bubble.setAttribute("aria-label", T.open);
   root.appendChild(panel); if (!FULL) root.appendChild(bubble);
@@ -146,10 +204,18 @@
   function ask(message, shown) {
     if (busy || !message.trim()) return;
     busy = true; send.disabled = true; quick.textContent = "";
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
     bubbleMsg("user", shown || message);
     var thinking = status(T.thinking), reply = null, full = "";
+    var t0 = performance.now(), tFirst = null, tSpeech = null, finalState = "idle", finished = false;
+    function ms(v) { return v === null ? "n/a" : Math.round(v) + " ms"; }
+    function report() {
+      if (!MASTER) return;
+      masterReport(["mode: " + mode, "avatar: " + (avatarOn ? avatarState : "off"), "first reply: " + ms(tFirst), "total: " + (finished ? ms(performance.now() - t0) : "..."), "speech start: " + ms(tSpeech)]);
+    }
+    setAvatar("thinking"); report();
     ensureSession().then(function (sid) {
-      return post("/v2/chat/stream", { message: message, session_id: sid });
+      return post("/v2/chat/stream", { message: message, session_id: sid, mode: mode, avatar: avatarOn });
     }).then(function (res) {
       if (!res.ok || !res.body) throw new Error("http");
       var reader = res.body.getReader(), dec = new TextDecoder(), buf = "";
@@ -164,6 +230,7 @@
             if (!line) return;
             var ev; try { ev = JSON.parse(line.slice(6)); } catch (e) { return; }
             if (ev.type === "chunk") {
+              if (tFirst === null) tFirst = performance.now() - t0;
               if (thinking) { thinking.remove(); thinking = null; }
               full += (full ? " " : "") + ev.text;
               if (!reply) reply = el("div", "mpd-msg mpd-bot"); else reply.textContent = "";
@@ -172,8 +239,10 @@
               scroll();
             } else if (ev.type === "done") {
               if (ev.session_id) setSession(ev.session_id);
+              finalState = ev.avatar_state || "idle";
+              if (ev.spoken && mode !== "text") speak(ev.spoken, function () { tSpeech = performance.now() - t0; report(); });
             } else if (ev.type === "error") {
-              full = ev.text || T.error;
+              full = ev.text || T.error; finalState = ev.avatar_state || "helpful";
             }
           });
           return pump();
@@ -182,9 +251,11 @@
       return pump();
     }).catch(function () {
       if (!full) full = T.error;
-      if (thinking) { thinking.remove(); thinking = null; }
-      if (!reply) bubbleMsg("bot", full);
+      finalState = "helpful";
     }).then(function () {
+      if (thinking) { thinking.remove(); thinking = null; }
+      if (!reply && full) reply = bubbleMsg("bot", full);
+      finished = true; setAvatar(finalState); report();
       busy = false; send.disabled = false; showQuickReplies(full); input.focus();
     });
   }
@@ -225,6 +296,7 @@
           .then(function (x) {
             if (!x.ok) { status(typeof x.j.detail === "string" ? x.j.detail : T.error); return; }
             setSession(x.j.session_id); bubbleMsg("user", x.j.transcript); bubbleMsg("bot", x.j.reply); showQuickReplies(x.j.reply);
+            if (mode !== "text") speak(x.j.reply);
           }).catch(function () { status(T.error); });
       };
       recorder.start(); mic.textContent = "⏹"; mic.setAttribute("aria-label", T.stop);
