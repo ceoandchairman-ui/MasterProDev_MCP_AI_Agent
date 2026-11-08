@@ -1,4 +1,4 @@
-/* The hosted /widget page: shows the company's own content (company.json, built from Company_Documents/) next to the chat.
+/* The hosted /widget page: shows the company's own content (company.json, built from Company_Documents/) around the chat.
    Everything is inserted as text nodes, never as markup. Clicking a service pillar asks the assistant about it. */
 (function () {
   "use strict";
@@ -14,14 +14,20 @@
 
   function render(c) {
     if (!c || !c.name) return;
-    var hero = document.getElementById("hero"), grid = document.getElementById("pillars"), heading = document.getElementById("pillars-title");
-    if (hero) {
-      hero.textContent = "";
-      if (c.subtitle) hero.appendChild(el("p", "mpd-eyebrow", c.subtitle));
-      hero.appendChild(el("h1", "", c.name));
-      if (c.tagline) hero.appendChild(el("p", "mpd-hero-tagline", c.tagline));
-      if (c.overview) hero.appendChild(el("p", "mpd-hero-text", c.overview));
-      if (c.presence) hero.appendChild(el("p", "mpd-meta", c.presence));
+    var brand = document.getElementById("brand"), grid = document.getElementById("pillars");
+    var heading = document.getElementById("pillars-title"), about = document.getElementById("about");
+    if (brand) {
+      brand.textContent = "";
+      brand.appendChild(el("span", "mpd-brand-mark", c.name.charAt(0)));
+      var names = el("span", "mpd-brand-text");
+      names.appendChild(el("span", "mpd-brand-name", c.name));
+      if (c.subtitle) names.appendChild(el("span", "mpd-brand-sub", c.subtitle));
+      brand.appendChild(names);
+    }
+    if (about) {
+      about.textContent = "";
+      if (c.overview) about.appendChild(el("p", "mpd-hero-text", c.overview));
+      if (c.presence) about.appendChild(el("p", "mpd-meta", c.presence));
     }
     if (heading) heading.textContent = "Pillars of Service";
     if (!grid) return;
@@ -34,7 +40,7 @@
       card.addEventListener("click", function () {
         if (window.MPDWidget) window.MPDWidget.ask("Tell me about " + p.name, p.name);
         var slot = document.getElementById("chat-slot");
-        if (slot && window.innerWidth < 980) slot.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (slot) slot.scrollIntoView({ behavior: "smooth", block: "center" });
       });
       grid.appendChild(card);
     });

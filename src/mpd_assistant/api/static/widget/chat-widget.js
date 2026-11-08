@@ -205,6 +205,7 @@
     if (busy || !message.trim()) return;
     busy = true; send.disabled = true; quick.textContent = "";
     if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (welcomeEl) { welcomeEl.remove(); welcomeEl = null; }
     bubbleMsg("user", shown || message);
     var thinking = status(T.thinking), reply = null, full = "";
     var t0 = performance.now(), tFirst = null, tSpeech = null, finalState = "idle", finished = false;
@@ -433,6 +434,7 @@
 
   // --- company content: the name, tagline and service pillars come from company.json, which is built from the company's own
   // documents (scripts/build_company_content.py). It is English only, so other languages keep the plain header.
+  var welcomeEl = null;
   var FEATURED_PILLARS = [5, 6, 8, 10];  // AI Agents, AI Engineering & Machine Learning, Software Development & IT Consulting, Cloud & DevOps / MLOps
   function showCompany(c) {
     if (LANG !== "en" || !c || !c.name) return;
@@ -440,12 +442,19 @@
     if (c.tagline) taglineEl.textContent = c.tagline;
     panel.setAttribute("aria-label", c.name);
     if (log.childNodes.length || busy) return;
-    bubbleMsg("bot", "Welcome to " + c.name + ". " + (c.tagline || "") + " Choose a topic below or ask me anything.");
+    welcomeEl = el("div", "mpd-welcome");
+    var mark = el("div", "mpd-welcome-mark", c.name.charAt(0)); mark.setAttribute("aria-hidden", "true");
+    welcomeEl.appendChild(mark);
+    welcomeEl.appendChild(el("p", "mpd-welcome-title", "Welcome to " + c.name));
+    if (c.tagline) welcomeEl.appendChild(el("p", "mpd-welcome-sub", c.tagline + " Choose a topic or ask me anything."));
+    var chips = el("div", "mpd-welcome-chips");
     (c.pillars || []).filter(function (p) { return FEATURED_PILLARS.indexOf(p.number) >= 0; }).forEach(function (p) {
       var b = el("button", "mpd-chip", p.name); b.type = "button";
       b.addEventListener("click", function () { ask("Tell me about " + p.name, p.name); });
-      quick.appendChild(b);
+      chips.appendChild(b);
     });
+    welcomeEl.appendChild(chips);
+    log.appendChild(welcomeEl);
   }
   fetch(BASE + "company.json").then(function (r) { return r.ok ? r.json() : null; }).then(showCompany).catch(function () {});
   if (FULL) window.MPDWidget = { ask: function (message, shown) { ask(message, shown); } };

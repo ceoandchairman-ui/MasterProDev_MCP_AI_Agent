@@ -51,7 +51,8 @@ def test_company_content_is_served_and_matches_the_company_documents():
 def test_the_hosted_page_places_the_chat_beside_the_company_content():
     c = client()
     page = c.get("/widget").text
-    assert 'id="hero"' in page and 'id="pillars"' in page and 'id="chat-slot"' in page and 'data-mount="#chat-slot"' in page
+    assert 'id="brand"' in page and 'id="pillars"' in page and 'id="about"' in page
+    assert 'id="chat-slot"' in page and 'data-mount="#chat-slot"' in page and page.index('id="chat-slot"') < page.index('id="pillars"')  # the chat comes first
     landing = c.get("/widget/landing.js")
     assert landing.status_code == 200 and "javascript" in landing.headers["content-type"] and "company.json" in landing.text
 

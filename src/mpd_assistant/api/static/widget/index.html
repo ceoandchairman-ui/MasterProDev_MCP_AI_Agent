@@ -7,16 +7,17 @@
   <link rel="stylesheet" href="/widget/widget-page.css">
 </head>
 <body>
-  <div class="mpd-shell">
-    <main class="mpd-content">
-      <section class="mpd-hero" id="hero"><h1>Master Pro Dev</h1></section>
-      <section class="mpd-section" aria-labelledby="pillars-title">
-        <h2 id="pillars-title"></h2>
-        <div class="mpd-pillars" id="pillars"></div>
-      </section>
-    </main>
-    <aside class="mpd-chat-slot" id="chat-slot" aria-label="Chat with the Master Pro Dev assistant"></aside>
-  </div>
+  <header class="mpd-topbar">
+    <div class="mpd-brand" id="brand"><span class="mpd-brand-mark">M</span><span class="mpd-brand-text"><span class="mpd-brand-name">Master Pro Dev</span></span></div>
+  </header>
+  <main class="mpd-center">
+    <section class="mpd-chat-slot" id="chat-slot" aria-label="Chat with the Master Pro Dev assistant"></section>
+    <section class="mpd-section" aria-labelledby="pillars-title">
+      <h2 id="pillars-title"></h2>
+      <div class="mpd-pillars" id="pillars"></div>
+    </section>
+    <section class="mpd-section mpd-about" id="about"></section>
+  </main>
   <script src="/widget/chat-widget.js" data-mode="full" data-mount="#chat-slot" defer></script>
   <script src="/widget/landing.js" defer></script>
 </body>
