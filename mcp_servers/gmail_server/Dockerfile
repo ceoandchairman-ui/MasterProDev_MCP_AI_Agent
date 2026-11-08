@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Copy all server code to make Python imports work
 COPY mcp_servers/ ./mcp_servers
+COPY services/ ./services
 
 # Install build-essential for compiling packages
 RUN apt-get update && apt-get install -y build-essential

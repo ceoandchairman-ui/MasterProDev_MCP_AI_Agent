@@ -1,0 +1,113 @@
+name: ci
+
+on:
+  push:
+    branches: [main, ai-agent-mpd-dev-branch]
+  pull_request:
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # Placeholder values so the settings object loads in tests; no real services are used.
+      SECRET_KEY: ci-only-secret-key
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      REDIS_URL: redis://localhost:6379/0
+      REDIS_PASSWORD: ci
+      ADMIN_EMAIL: ci@example.com
+      ADMIN_PASSWORD: ci-only-password
+      MCP_ALLOW_UNAUTHENTICATED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install (new package and legacy dependencies)
+        run: |
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check src services tests/unit tests/privacy scripts
+      - name: Unit and privacy tests
+        run: pytest tests/unit tests/privacy -q
+      - name: Migrations apply and roll back
+        env:
+          DATABASE_URL: sqlite:///./ci_migration.db
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+
+  # Tests that need the real stores (see deploy/compose.dev.yml). Non-blocking until they have passed once against real
+  # Postgres and Redis Stack; then remove `continue-on-error` so a regression blocks the merge.
+  live:
+    runs-on: ubuntu-latest
+    needs: test
+    continue-on-error: true
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mpd
+          POSTGRES_PASSWORD: mpd
+          POSTGRES_DB: mpd
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mpd -d mpd" --health-interval 3s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis/redis-stack-server:7.4.0-v1
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      INTEGRATION_DATABASE_URL: postgresql://mpd:mpd@localhost:5432/mpd
+      INTEGRATION_REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-only-secret-key
+      DATABASE_URL: postgresql://mpd:mpd@localhost:5432/mpd
+      REDIS_URL: redis://localhost:6379/0
+      ADMIN_EMAIL: ci@example.com
+      ADMIN_PASSWORD: ci-only-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+      - name: Live-stack tests
+        run: pytest tests/integration/test_live_stack.py -m live -v
+
+  eval:
+    runs-on: ubuntu-latest
+    needs: test
+    env:
+      SECRET_KEY: ci-only-secret-key
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      REDIS_URL: redis://localhost:6379/0
+      REDIS_PASSWORD: ci
+      ADMIN_EMAIL: ci@example.com
+      ADMIN_PASSWORD: ci-only-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev]"
+      # Release gate: a regression in routing, retrieval or agentic metrics blocks the merge.
+      - name: Golden sets and agentic thresholds
+        run: pytest tests/unit/test_routing_golden.py tests/unit/test_retrieval_golden.py tests/unit/test_retrieval_eval.py -q

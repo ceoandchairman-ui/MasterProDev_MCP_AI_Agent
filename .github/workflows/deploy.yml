@@ -1,0 +1,47 @@
+name: deploy
+
+# Deploys the single production environment. Runs only after CI passes on main.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+      # Placeholder: RAILWAY_TOKEN is a repository secret, created once the Railway project exists.
+      # Database migrations are not run from here: the GitHub runner cannot reach Railway's private Postgres address.
+      # They run inside Railway as the api's preDeployCommand (deploy/railway/api.toml) before the new version takes traffic.
+      - name: Deploy API
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service api --detach
+      - name: Smoke test
+        env:
+          PUBLIC_DOMAIN: ${{ vars.PUBLIC_DOMAIN }}
+        run: |
+          test -n "$PUBLIC_DOMAIN" || { echo "PUBLIC_DOMAIN variable is not set"; exit 1; }
+          for i in $(seq 1 20); do
+            if curl -fsS "$PUBLIC_DOMAIN/health" | grep -q '"ok"'; then echo "healthy"; exit 0; fi
+            sleep 6
+          done
+          echo "health check failed"; exit 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # Beyond "is it up": a conversation works, staff routes and webhooks refuse unsigned callers, security headers are present.
+      - name: Post-deploy checks
+        env:
+          PUBLIC_DOMAIN: ${{ vars.PUBLIC_DOMAIN }}
+          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
+        run: |
+          pip install httpx
+          python scripts/smoke_test.py "$PUBLIC_DOMAIN" ${METRICS_TOKEN:+--metrics-token "$METRICS_TOKEN"}

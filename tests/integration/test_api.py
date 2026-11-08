@@ -1,11 +1,10 @@
 """Integration tests for API endpoints"""
 
-import io
 import json
 import textwrap
 
-import pytest
 from fastapi.testclient import TestClient
+
 from mcp_host.main import app
 
 client = TestClient(app)

@@ -1,49 +1,59 @@
-# Environment & Secrets
+﻿# Environment and secrets (keep .env.example tracked)
 .env
 .env.*
-credentials.json
-*.key
+!.env.example
+.secrets/
 *.pem
+*.key
 *.p12
+credentials.json
+token.json
 
-# Python
-__pycache__/
-*.pyc
-*.py[cod]
-*.so
-.Python
-build/
-dist/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
-venv/
+# Virtual environments
 .venv/
+venv/
 ENV/
+env/
 
-# IDE
+# IDE / OS
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
 Thumbs.db
-.envrc
 
-# Cache & Logs
-.cache/
+# Python
+__pycache__/
+*.py[cod]
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing and tooling
 .pytest_cache/
-*.log
-logs/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Documentation
-docs/*.png
-docs/*.svg
+# Logs
+logs/
+*.log
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
 
 # Docker
 docker-compose.override.yml
+.pytest_tmp/
+evals/reports/
+.test_out.txt
+.lint_out.txt
+
+.pytest_*.txt

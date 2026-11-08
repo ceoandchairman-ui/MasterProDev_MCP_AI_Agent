@@ -2523,6 +2523,9 @@ class ArmosaChatWidget {
         }
 
         bubble.insertAdjacentHTML('beforeend', this.parseMessage(content, role));
+        bubble.querySelectorAll('.code-copy-btn').forEach((btn) => {
+            btn.addEventListener('click', () => navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code)));
+        });
 
         const time = document.createElement('div');
         time.className = 'message-time';
@@ -2559,8 +2562,8 @@ class ArmosaChatWidget {
         return `
             <div class="code-block">
                 <div class="code-header">
-                    <span class="code-language">${language}</span>
-                    <button class="code-copy-btn" onclick="navigator.clipboard.writeText(\`${code.replace(/`/g, '\\`')}\`)">Copy</button>
+                    <span class="code-language">${this.escapeHtml(language)}</span>
+                    <button class="code-copy-btn" data-code="${encodeURIComponent(code)}">Copy</button>
                 </div>
                 <div class="code-content">${this.escapeHtml(code)}</div>
             </div>
@@ -2589,9 +2592,15 @@ class ArmosaChatWidget {
     }
 
     parseInlineMarkdown(text) {
+        // Escape first so model output can never inject markup, then apply a small markdown subset.
+        text = this.escapeHtml(text);
         text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
         text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
-        text = text.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" style="color: #2563EB; text-decoration: underline;">$1</a>');
+        text = text.replace(/\[([^\]]*?)\]\(([^)\s]*?)\)/g, (match, label, url) => {
+            const decoded = url.replace(/&amp;/g, '&');
+            if (!/^(https?:\/\/|mailto:)/i.test(decoded)) return label;
+            return '<a href="' + this.escapeHtml(decoded).replace(/"/g, '&quot;') + '" target="_blank" rel="noopener noreferrer" style="color: #2563EB; text-decoration: underline;">' + label + '</a>';
+        });
         text = text.replace(/`(.*?)`/g, '<code style="background: rgba(0,200,150,0.1); color: #00C896; padding: 2px 6px; border-radius: 4px; font-family: monospace;">$1</code>');
         return text;
     }

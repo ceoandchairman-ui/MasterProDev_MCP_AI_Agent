@@ -1,0 +1,6 @@
+version: quote-v1
+text: >-
+  Map the project scope to catalog items. Output ONLY JSON:
+  {{"selections": [{{"sku": str, "quantity": number}}]}}.
+  Use only these SKUs: {skus}. Never output prices. If the scope is too vague, output
+  {{"selections": []}}.

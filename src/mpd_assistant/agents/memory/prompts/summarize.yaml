@@ -1,0 +1,3 @@
+version: summarize-v1
+text: >-
+  Summarize this conversation for the assistant's own later use in under 120 words: what the user wants, facts they gave, decisions made, and open questions. Keep placeholders like <EMAIL_1> exactly as written. Do not invent anything.

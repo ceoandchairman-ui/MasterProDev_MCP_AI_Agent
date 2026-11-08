@@ -1,6 +1,8 @@
 """Gmail MCP Server - Google Gmail Integration"""
 
 import sys
+import html
+import logging
 import os
 import base64
 import asyncio
@@ -9,7 +11,10 @@ from email.mime.text import MIMEText
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from fastapi import Depends
 from mcp_servers.base_server import BaseMCPServer
+from services._common.mcp_common.service_auth import require_service_auth
+from services._common.mcp_common.user_token import current_user_token
 from mcp_servers.gmail_server.config import gmail_settings
 from typing import Any, Dict, List
 from datetime import datetime
@@ -49,7 +54,7 @@ class GmailMCPServer(BaseMCPServer):
         }
         
         # Register OAuth authorization endpoint
-        @self.app.get("/auth")
+        @self.app.get("/auth", dependencies=[Depends(require_service_auth)])
         async def auth_endpoint(redirect_uri: str = None):
             """Start OAuth flow
             Args:
@@ -111,7 +116,7 @@ class GmailMCPServer(BaseMCPServer):
             """)
         
         # Register OAuth callback endpoint
-        @self.app.get("/callback")
+        @self.app.get("/callback", dependencies=[Depends(require_service_auth)])
         async def oauth_callback(code: str = None, state: str = None, error: str = None):
             """Handle OAuth callback from Google"""
             from fastapi import HTTPException
@@ -122,7 +127,7 @@ class GmailMCPServer(BaseMCPServer):
                 <html>
                     <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                         <h1>✗ Authorization Denied</h1>
-                        <p>Error: {error}</p>
+                        <p>Error: {html.escape(str(error))}</p>
                     </body>
                 </html>
                 """)
@@ -132,6 +137,8 @@ class GmailMCPServer(BaseMCPServer):
             
             if not self._auth_flow:
                 raise HTTPException(status_code=400, detail="No pending authorization flow")
+            if not state or state != self._auth_state:
+                raise HTTPException(status_code=400, detail="Invalid OAuth state")
             
             try:
                 # Exchange code for token
@@ -157,11 +164,12 @@ class GmailMCPServer(BaseMCPServer):
                 </html>
                 """)
             except Exception as e:
+                logging.getLogger(__name__).error('OAuth error: %s', e)
                 return HTMLResponse(f"""
                 <html>
                     <body style="text-align: center; padding: 50px; font-family: Arial; color: red;">
                         <h1>✗ Authorization Failed</h1>
-                        <p>Error: {str(e)}</p>
+                        <p>Authorization could not be completed. Check the server logs.</p>
                         <p>Please try again.</p>
                     </body>
                 </html>
@@ -200,6 +208,12 @@ class GmailMCPServer(BaseMCPServer):
 
     async def _get_gmail_service(self):
         """Return an authenticated Gmail service instance"""
+        user_token = current_user_token()
+        if user_token:
+            # Per-request user credentials are never cached on the server object.
+            return await asyncio.to_thread(
+                build, "gmail", "v1", credentials=Credentials(token=user_token), cache_discovery=False
+            )
         if self.service is not None:
             return self.service
 
@@ -272,8 +286,11 @@ class GmailMCPServer(BaseMCPServer):
 
     async def _get_emails(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get recent emails"""
-        limit = params.get("limit", 10)
-        query = params.get("query", "")
+        try:
+            limit = max(1, min(int(params.get("limit", 10)), 25))
+        except (TypeError, ValueError):
+            limit = 10
+        query = str(params.get("query", ""))[:200]
         
         try:
             service = await self._get_gmail_service()
@@ -326,11 +343,6 @@ class GmailMCPServer(BaseMCPServer):
             return {"status": "error", "error": f"Gmail API error: {error}"}
         except Exception as exc:
             return {"status": "error", "error": str(exc)}
-        return {
-            "status": "success",
-            "emails": emails[:limit],
-            "count": len(emails)
-        }
 
     async def _send_email(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Send email via Gmail"""

@@ -1,21 +1,17 @@
-# Security Policy
+﻿# Security Policy
 
-## Supported Versions
+## Reporting a vulnerability
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Do not open a public issue. Report privately to the repository owner (MasterProDev) with a description, reproduction steps and impact.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## Rules for contributors
 
-## Reporting a Vulnerability
+- Secrets live in environment variables or Railway variables only. `.env`, `token.json` and `credentials.json` are git-ignored and docker-ignored; `.env.example` is the only tracked env file.
+- Never print or log settings, tokens or keys.
+- Tools that send, delete or modify data require an authenticated user and, where destructive, a confirmation.
+- Text from uploads, email bodies and retrieved documents is untrusted and must never trigger a tool call by itself.
+- Personal data must not reach logs, traces, caches or third parties in raw form (see the privacy epic in the plan).
 
-Use this section to tell people how to report a vulnerability.
+## Status
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Hardening is in progress; see `docs/` and the Wave 0 plan for open items.

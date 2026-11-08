@@ -1,7 +1,6 @@
 """Basic unit tests for auth module"""
 
-import pytest
-from mcp_host.auth import hash_password, verify_password, create_access_token, decode_token
+from mcp_host.auth import create_access_token, decode_token, hash_password, verify_password
 
 
 def test_hash_password():
@@ -24,7 +23,7 @@ def test_create_and_decode_token():
     """Test JWT token creation and decoding"""
     data = {"sub": "user_123", "email": "test@example.com"}
     token = create_access_token(data)
-    
+
     assert token is not None
     decoded = decode_token(token)
     assert decoded is not None

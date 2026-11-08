@@ -87,8 +87,9 @@ COPY --from=calendar-builder /calendar_server /app/mcp_servers/calendar_server
 COPY --from=gmail-builder /gmail_server /app/mcp_servers/gmail_server
 COPY --from=seeder-builder /seed.py /app/seed.py
 
-# Copy entire project
-COPY . /app/
+# Shared tool-server base (explicit copy; never copy the whole build context)
+COPY services/ /app/services/
+COPY mcp_servers/__init__.py mcp_servers/base_server.py /app/mcp_servers/
 
 # Copy Company_Documents for seeding
 COPY Company_Documents /app/Company_Documents
@@ -102,7 +103,7 @@ EXPOSE 8000 8001 8002
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/docs || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # Start all services
 CMD ["/app/docker-entrypoint.sh"]

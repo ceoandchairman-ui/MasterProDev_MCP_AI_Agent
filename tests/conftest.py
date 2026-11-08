@@ -1,10 +1,12 @@
 """Pytest configuration"""
 
-import pytest
 import asyncio
-import sys
 import os
-from unittest.mock import AsyncMock, MagicMock
+import sys
+from unittest.mock import AsyncMock
+
+import pytest
+
 from mcp_host.state import state_manager
 
 # Add project root to path
@@ -27,13 +29,13 @@ def mock_redis():
     mock_redis_client.delete = AsyncMock(return_value=True)
     mock_redis_client.close = AsyncMock()
     mock_redis_client.ping = AsyncMock(return_value=True)
-    
+
     # Inject into StateManager
     state_manager.redis = mock_redis_client
     state_manager.db_pool = None  # No PostgreSQL in tests
-    
+
     yield
-    
+
     # Cleanup
     state_manager.redis = None
 
